@@ -49,6 +49,11 @@ pad-oler-ssi-val/
       FeatureExtraction_3.6.0.zip
       CohortGenerator_0.9.0.zip
       PatientLevelPrediction_6.4.0.zip
+  .github/
+    copilot-instructions.md
+    instructions/
+      r-packages.instructions.md
+      omop-ohdsi.instructions.md
   drivers/
     mssql-jdbc-13.2.1.zip
 ```
@@ -189,6 +194,21 @@ Output files (written to `output/risk_score_eval/`):
 - `calibration_table_recalibrated.csv`
 - `calibration_lookup.png` (if lookup is available)
 - `calibration_recalibrated.png`
+
+## GitHub Copilot Customizations
+
+This repository ships Copilot instruction files so AI-assisted coding automatically
+follows project conventions — no need to repeat constraints in chat.
+
+| File | Scope | Purpose |
+|------|-------|---------|
+| `.github/copilot-instructions.md` | Every chat request | Language (R only), CRAN mirror, offline packages, DB config, security rules |
+| `.github/instructions/r-packages.instructions.md` | `*.R` files | CRAN mirror enforcement, `renv` workflow, local binary installs for OHDSI packages |
+| `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` files | `DatabaseConnector`/`SqlRender` patterns, OMOP CDM table reference, cohort conventions, PLP validation-only guard |
+
+The scoped instruction files (`.instructions.md`) are auto-attached by VS Code Copilot
+when a matching file is open or referenced, and are also discoverable on-demand from
+their `description` fields.
 
 ## Notes
 
