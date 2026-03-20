@@ -49,6 +49,9 @@ pad-oler-ssi-val/
       FeatureExtraction_3.6.0.zip
       CohortGenerator_0.9.0.zip
       PatientLevelPrediction_6.4.0.zip
+  synthea/
+    modules/
+      pad_ssi.json
   .github/
     copilot-instructions.md
     instructions/
@@ -194,6 +197,44 @@ Output files (written to `output/risk_score_eval/`):
 - `calibration_table_recalibrated.csv`
 - `calibration_lookup.png` (if lookup is available)
 - `calibration_recalibrated.png`
+
+## Synthea Module
+
+`synthea/modules/pad_ssi.json` is a Synthea Generic Module Framework (GMF) module that
+generates synthetic PAD patients who undergo open lower extremity revascularization and
+may develop a surgical site infection — exactly matching the target/outcome cohort logic
+of this study.
+
+To use it:
+1. Copy `synthea/modules/pad_ssi.json` into `<synthea_home>/src/main/resources/modules/`
+2. Run Synthea to generate CSV output (the module co-exists with other modules such as
+   `diabetes.json` and `metabolic_syndrome.json`, whose conditions it checks for risk adjustment)
+3. Load the output into the `omop_synth` database using the Synthea OMOP ETL pipeline
+
+Key clinical parameters modeled:
+
+| Parameter | Value |
+|-----------|-------|
+| PAD prevalence (age 40+) | 6% |
+| SSI — baseline | 6% |
+| SSI — with Type 2 diabetes | 12% |
+| SSI — with obesity (BMI ≥ 30) | 10% |
+| SSI requiring rehospitalization | 15% of SSIs |
+| Hospital stay | 3–7 days |
+| SSI onset window | 5–25 days post-discharge |
+
+Primary concept codes (OMOP-mappable):
+
+| Concept | Vocabulary | Code |
+|---------|-----------|------|
+| Peripheral arterial occlusive disease | SNOMED-CT | 399957001 |
+| Bypass of femoral artery to popliteal artery | SNOMED-CT | 232723009 |
+| Infection of surgical wound | SNOMED-CT | 76844004 |
+| Debridement (reoperation) | SNOMED-CT | 118294005 |
+| Ankle-brachial index | LOINC | 59574-4 |
+| Wound culture | LOINC | 6463-4 |
+| Cefazolin (perioperative prophylaxis) | RxNorm | 20496 |
+| Cephalexin (SSI treatment) | RxNorm | 2673 |
 
 ## GitHub Copilot Customizations
 

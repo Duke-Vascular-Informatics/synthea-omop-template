@@ -1,0 +1,442 @@
+{
+  "name": "PAD Open Lower Extremity Revascularization with SSI",
+  "remarks": [
+    "Models open lower extremity revascularization surgery in patients with peripheral",
+    "arterial disease (PAD) and simulates surgical site infection (SSI) as a 30-day",
+    "outcome. Designed to generate synthetic OMOP CDM v5 data compatible with the",
+    "PAD/OLER SSI validation study cohort definitions:",
+    "  Target  : inpatient surgery for open lower extremity revascularization",
+    "  Outcome : SSI diagnosis within 30 days of index surgery",
+    "",
+    "This module is self-contained. It generates a PAD diagnosis, schedules an inpatient",
+    "revascularization, and applies comorbidity-adjusted SSI risk. It checks for diabetes",
+    "and obesity that may have been set by other Synthea modules (e.g., diabetes.json,",
+    "metabolic_syndrome.json) using Active Condition and Observation guards.",
+    "",
+    "SSI incidence assumptions (per published literature):",
+    "  With Type 2 diabetes                 : 12%",
+    "  With obesity (BMI >= 30), no DM      : 10%",
+    "  Baseline (no major risk factors)     : 6%",
+    "  Requiring rehospitalization/re-op    : 15% of SSI cases",
+    "",
+    "Primary concept codes (OMOP-mappable):",
+    "  PAD condition          : SNOMED-CT 399957001",
+    "  Femoro-popliteal bypass: SNOMED-CT 232723009",
+    "  SSI condition          : SNOMED-CT 76844004",
+    "  Debridement (re-op)    : SNOMED-CT 118294005",
+    "  Ankle-brachial index   : LOINC     59574-4",
+    "  Wound culture          : LOINC     6463-4",
+    "  BMI                    : LOINC     39156-5",
+    "  Cefazolin (ppx)        : RxNorm    20496",
+    "  Cephalexin (SSI tx)    : RxNorm    2673",
+    "",
+    "Timing:",
+    "  Pre-surgical workup delay : 1-6 months after PAD diagnosis",
+    "  Inpatient stay            : 3-7 days post-surgery",
+    "  SSI onset window          : 5-25 days post-discharge (8-32 days post-surgery)",
+    "  SSI antibiotic course     : 7-14 days",
+    "  Rehospitalization stay    : 7-21 days",
+    "",
+    "Usage:",
+    "  Copy to <synthea_home>/src/main/resources/modules/ and run Synthea normally.",
+    "  To load into the omop_synth database, run the Synthea-OMOP ETL pipeline against",
+    "  the generated CSV output.",
+    "",
+    "Does NOT model: mortality, limb loss, graft failure, or recurrent PAD."
+  ],
+  "states": {
+
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Age_Guard"
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 40,
+        "unit": "years"
+      },
+      "direct_transition": "PAD_Onset_Chance"
+    },
+
+    "PAD_Onset_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "PAD prevalence: ~6% in adults age 40+ (combined symptomatic + asymptomatic).",
+        "The remaining 94% exit at Terminal without PAD or surgery."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.06, "transition": "PAD_Onset" },
+        { "distribution": 0.94, "transition": "Terminal" }
+      ]
+    },
+
+    "PAD_Onset": {
+      "type": "ConditionOnset",
+      "target_encounter": "PAD_Diagnosis_Encounter",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "399957001",
+          "display": "Peripheral arterial occlusive disease"
+        }
+      ],
+      "direct_transition": "PAD_Diagnosis_Encounter"
+    },
+
+    "PAD_Diagnosis_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "outpatient",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up"
+        }
+      ],
+      "direct_transition": "ABI_Observation"
+    },
+
+    "ABI_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "ratio",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "59574-4",
+          "display": "Ankle-brachial index"
+        }
+      ],
+      "remarks": [
+        "ABI < 0.9 indicates PAD; < 0.5 indicates severe/critical limb ischemia.",
+        "Range reflects moderate-to-severe PAD requiring revascularization."
+      ],
+      "range": { "low": 0.3, "high": 0.85 },
+      "direct_transition": "End_PAD_Diagnosis_Encounter"
+    },
+
+    "End_PAD_Diagnosis_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "Pre_Surgical_Workup_Delay"
+    },
+
+    "Pre_Surgical_Workup_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Time from PAD diagnosis to open revascularization surgery.",
+        "Includes pre-operative imaging, cardiac risk stratification, and scheduling."
+      ],
+      "range": { "low": 1, "high": 6, "unit": "months" },
+      "direct_transition": "Surgical_Admission"
+    },
+
+    "Surgical_Admission": {
+      "type": "Encounter",
+      "encounter_class": "inpatient",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "32485007",
+          "display": "Hospital admission"
+        }
+      ],
+      "direct_transition": "Pre_Op_Antibiotic"
+    },
+
+    "Pre_Op_Antibiotic": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "prophylactic_antibiotic",
+      "reason": "PAD_Onset",
+      "remarks": [
+        "Single-dose perioperative cefazolin per SCIP/ACS NSQIP guidelines.",
+        "Ended immediately after the procedure."
+      ],
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "20496",
+          "display": "cefazolin"
+        }
+      ],
+      "direct_transition": "Revascularization_Procedure"
+    },
+
+    "Revascularization_Procedure": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "remarks": [
+        "Femoro-popliteal bypass is modeled as the representative open LE revascularization.",
+        "To model additional procedure types (aortofemoral bypass SNOMED 174814006,",
+        "femoral endarterectomy SNOMED 85356008), replace with a distributed_transition",
+        "to separate procedure states."
+      ],
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "232723009",
+          "display": "Bypass of femoral artery to popliteal artery"
+        }
+      ],
+      "duration": { "low": 2, "high": 5, "unit": "hours" },
+      "direct_transition": "Pre_Op_Antibiotic_End"
+    },
+
+    "Pre_Op_Antibiotic_End": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "prophylactic_antibiotic",
+      "direct_transition": "Post_Op_Inpatient_Delay"
+    },
+
+    "Post_Op_Inpatient_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Standard inpatient stay after open lower extremity bypass: 3-7 days."
+      ],
+      "range": { "low": 3, "high": 7, "unit": "days" },
+      "direct_transition": "End_Surgical_Admission"
+    },
+
+    "End_Surgical_Admission": {
+      "type": "EncounterEnd",
+      "direct_transition": "Post_Discharge_Delay"
+    },
+
+    "Post_Discharge_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Time from hospital discharge to SSI diagnosis (if SSI occurs).",
+        "Combined with inpatient stay (3-7 days), the SSI onset window is 8-32 days",
+        "post-surgery — consistent with 30-day outcome definition in target study."
+      ],
+      "range": { "low": 5, "high": 25, "unit": "days" },
+      "direct_transition": "SSI_Risk_Check"
+    },
+
+    "SSI_Risk_Check": {
+      "type": "Simple",
+      "remarks": [
+        "Adjusts SSI probability based on active comorbidities set by other Synthea",
+        "modules. Checks diabetes first (strongest risk factor), then obesity."
+      ],
+      "conditional_transition": [
+        {
+          "condition": {
+            "condition_type": "Active Condition",
+            "codes": [
+              {
+                "system": "SNOMED-CT",
+                "code": "44054006",
+                "display": "Diabetes mellitus type 2"
+              }
+            ]
+          },
+          "transition": "SSI_High_Risk"
+        },
+        {
+          "condition": {
+            "condition_type": "Observation",
+            "codes": [
+              {
+                "system": "LOINC",
+                "code": "39156-5",
+                "display": "Body Mass Index"
+              }
+            ],
+            "operator": ">=",
+            "value": 30
+          },
+          "transition": "SSI_Moderate_Risk"
+        },
+        {
+          "transition": "SSI_Baseline_Risk"
+        }
+      ]
+    },
+
+    "SSI_High_Risk": {
+      "type": "Simple",
+      "remarks": ["12% SSI incidence with diabetes."],
+      "distributed_transition": [
+        { "distribution": 0.12, "transition": "SSI_Onset" },
+        { "distribution": 0.88, "transition": "Terminal" }
+      ]
+    },
+
+    "SSI_Moderate_Risk": {
+      "type": "Simple",
+      "remarks": ["10% SSI incidence with obesity (no diabetes)."],
+      "distributed_transition": [
+        { "distribution": 0.10, "transition": "SSI_Onset" },
+        { "distribution": 0.90, "transition": "Terminal" }
+      ]
+    },
+
+    "SSI_Baseline_Risk": {
+      "type": "Simple",
+      "remarks": ["6% SSI incidence in absence of major risk factors."],
+      "distributed_transition": [
+        { "distribution": 0.06, "transition": "SSI_Onset" },
+        { "distribution": 0.94, "transition": "Terminal" }
+      ]
+    },
+
+    "SSI_Onset": {
+      "type": "ConditionOnset",
+      "target_encounter": "SSI_Encounter",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "76844004",
+          "display": "Infection of surgical wound"
+        }
+      ],
+      "direct_transition": "SSI_Encounter"
+    },
+
+    "SSI_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "outpatient",
+      "reason": "SSI_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "390906007",
+          "display": "Follow-up encounter"
+        }
+      ],
+      "direct_transition": "Wound_Culture"
+    },
+
+    "Wound_Culture": {
+      "type": "Observation",
+      "category": "laboratory",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "6463-4",
+          "display": "Bacteria identified in Wound by Culture"
+        }
+      ],
+      "remarks": [
+        "Nominal/coded observation — reports identified organism.",
+        "E. coli models a common gram-negative wound pathogen after vascular surgery."
+      ],
+      "value_code": {
+        "system": "SNOMED-CT",
+        "code": "112283007",
+        "display": "Escherichia coli"
+      },
+      "direct_transition": "SSI_Antibiotic_Order"
+    },
+
+    "SSI_Antibiotic_Order": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ssi_antibiotic",
+      "reason": "SSI_Onset",
+      "remarks": [
+        "Cephalexin for outpatient SSI management.",
+        "Patients requiring IV therapy will be captured in SSI_Rehospitalization."
+      ],
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2673",
+          "display": "cephalexin"
+        }
+      ],
+      "direct_transition": "End_SSI_Encounter"
+    },
+
+    "End_SSI_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "SSI_Treatment_Delay"
+    },
+
+    "SSI_Treatment_Delay": {
+      "type": "Delay",
+      "remarks": ["Standard antibiotic course for wound infection: 7-14 days."],
+      "range": { "low": 7, "high": 14, "unit": "days" },
+      "direct_transition": "SSI_Resolution_Check"
+    },
+
+    "SSI_Resolution_Check": {
+      "type": "Simple",
+      "remarks": [
+        "85% of SSIs resolve with outpatient management.",
+        "15% require rehospitalization and operative debridement."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.85, "transition": "SSI_Resolution" },
+        { "distribution": 0.15, "transition": "SSI_Rehospitalization" }
+      ]
+    },
+
+    "SSI_Resolution": {
+      "type": "ConditionEnd",
+      "condition_onset": "SSI_Onset",
+      "direct_transition": "SSI_Antibiotic_End"
+    },
+
+    "SSI_Rehospitalization": {
+      "type": "Encounter",
+      "encounter_class": "inpatient",
+      "reason": "SSI_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "32485007",
+          "display": "Hospital admission"
+        }
+      ],
+      "direct_transition": "Reoperation_Procedure"
+    },
+
+    "Reoperation_Procedure": {
+      "type": "Procedure",
+      "reason": "SSI_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "118294005",
+          "display": "Debridement"
+        }
+      ],
+      "duration": { "low": 30, "high": 120, "unit": "minutes" },
+      "direct_transition": "End_Rehospitalization"
+    },
+
+    "End_Rehospitalization": {
+      "type": "EncounterEnd",
+      "direct_transition": "Post_Reoperation_Delay"
+    },
+
+    "Post_Reoperation_Delay": {
+      "type": "Delay",
+      "range": { "low": 7, "high": 21, "unit": "days" },
+      "direct_transition": "SSI_End_From_Reoperation"
+    },
+
+    "SSI_End_From_Reoperation": {
+      "type": "ConditionEnd",
+      "condition_onset": "SSI_Onset",
+      "direct_transition": "SSI_Antibiotic_End"
+    },
+
+    "SSI_Antibiotic_End": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "ssi_antibiotic",
+      "direct_transition": "Terminal"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+
+  }
+}
