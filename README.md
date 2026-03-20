@@ -47,6 +47,7 @@ pad-oler-ssi-val/
     generate_synthea_mermaid.R
     run_synthea_pad_ssi.ps1
     run_fhir_to_omop_etl.R
+    build_portable_risk_score_bundle.ps1
     sql/
       fhir_to_omop_transform_draft.sql
   internal_repo/
@@ -59,6 +60,22 @@ pad-oler-ssi-val/
       pad_ssi.json
       pad_ssi.mmd
       pad_ssi.diagram.md
+  portable/
+    risk_score_validation_bundle/
+      run_risk_score_pipeline.R
+      config.R
+      install_packages_risk_score.R
+      README.md
+      R/
+        connection.R
+        drivers.R
+        risk_score_pipeline.R
+      risk_score/
+        components.csv
+        component_concepts.csv
+        risk_lookup.csv
+      drivers/
+        mssql-jdbc-13.2.1.zip
   .github/
     copilot-instructions.md
     instructions/
@@ -206,6 +223,27 @@ Output files (written to `output/risk_score_eval/`):
 - `calibration_table_recalibrated.csv`
 - `calibration_lookup.png` (if lookup is available)
 - `calibration_recalibrated.png`
+
+### Portable Bundle For External OMOP Sites
+
+To make risk score validation easy to share and run at other OMOP sites, this repo
+includes a curated portable bundle under:
+
+- `portable/risk_score_validation_bundle/`
+
+Create a downloadable zip in one command:
+
+```powershell
+.\scripts\build_portable_risk_score_bundle.ps1
+```
+
+This creates:
+
+- `dist/risk_score_validation_bundle_<timestamp>.zip`
+
+The zip contains only the required risk score scripts, templates, and JDBC artifact,
+so collaborators can unzip, edit `config.R`, and run `run_risk_score_pipeline.R`
+directly against their OMOP database.
 
 ## Synthea Module
 

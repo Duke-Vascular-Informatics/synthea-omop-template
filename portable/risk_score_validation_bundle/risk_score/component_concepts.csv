@@ -1,0 +1,6 @@
+component_id,concept_id,include_descendants
+# Add one or more standard OMOP concept IDs per component.
+# Example:
+# diabetes,201820,TRUE
+# prior_antibiotic,21602796,TRUE
+# reoperation,2105440,TRUE

@@ -28,3 +28,6 @@ drivers/etl-checkpoints/
 # Temporary files
 *.tmp
 *.log
+
+# Generated portable bundle archives
+dist/*.zip
