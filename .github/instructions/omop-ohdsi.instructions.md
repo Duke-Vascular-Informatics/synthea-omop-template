@@ -108,8 +108,32 @@ For the `R/risk_score_pipeline.R` pipeline:
 - Exposure windows are relative to `cohort_start_date` and parameterized via
   `lookback_start_day` / `lookback_end_day` from `risk_score/components.csv`.
 
+## Concept ID Lookup (Live Vocabulary)
+
+Never guess or assume OMOP concept IDs from training knowledge. Always verify against
+the actual vocabulary loaded in `cdm_synthea` by running the `/concept-lookup` prompt.
+
+Invoke it in chat before writing any concept ID into code or CSV files:
+
+```
+/concept-lookup <clinical term> [domain]
+```
+
+Examples:
+```
+/concept-lookup peripheral arterial disease condition
+/concept-lookup cefazolin drug
+/concept-lookup ankle brachial index measurement
+/concept-lookup femoral popliteal bypass procedure
+```
+
+The prompt connects to `omop_synth` via the MSSQL MCP tooling and queries
+`cdm_synthea.concept` directly — returning only standard concepts (`standard_concept = 'S'`)
+that are confirmed to exist in this database instance.
+
 ## Anti-patterns
 
 - Do not hardcode schema or table names — always use `@cdm_schema`, `@results_schema`, etc.
 - Do not use `dbplyr` or `dplyr` remote tables for this project; use explicit SQL.
 - Do not use source-vocabulary concept codes (ICD-10, NDC) — map to standard OMOP concept IDs first.
+- Do not hard-code concept IDs without first running `/concept-lookup` to confirm they exist in `cdm_synthea`.
