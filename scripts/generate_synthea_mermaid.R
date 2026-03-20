@@ -81,9 +81,9 @@ for (state_name in state_names) {
   node_id <- node_ids[[state_name]]
 
   state_type <- if (!is.null(state$type)) state$type else "State"
-  label <- sprintf("%s<br/>(%s)", state_name, state_type)
+  label <- sprintf("%s - %s", state_name, state_type)
   label <- escape_mermaid(label)
-  node_lines <- c(node_lines, sprintf("  %s[%s]", node_id, label))
+  node_lines <- c(node_lines, sprintf("  %s[\"%s\"]", node_id, label))
 
   if (!is.null(state$direct_transition)) {
     to_name <- state$direct_transition
@@ -134,3 +134,16 @@ if (!dir.exists(out_dir)) {
 
 writeLines(mermaid_lines, con = output_mmd, useBytes = TRUE)
 cat(sprintf("Wrote Mermaid diagram: %s\n", output_mmd))
+
+if (grepl("\\.mmd$", output_mmd, ignore.case = TRUE)) {
+  output_md <- sub("\\.mmd$", ".diagram.md", output_mmd, ignore.case = TRUE)
+  md_lines <- c(
+    "# Synthea Module Diagram",
+    "",
+    "```mermaid",
+    mermaid_lines,
+    "```"
+  )
+  writeLines(md_lines, con = output_md, useBytes = TRUE)
+  cat(sprintf("Wrote Markdown wrapper: %s\n", output_md))
+}

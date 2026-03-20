@@ -45,6 +45,7 @@ pad-oler-ssi-val/
   scripts/
     prebuild_github_binaries.R
     generate_synthea_mermaid.R
+    run_synthea_pad_ssi.ps1
   internal_repo/
     bin/windows/contrib/4.5/
       FeatureExtraction_3.6.0.zip
@@ -54,6 +55,7 @@ pad-oler-ssi-val/
     modules/
       pad_ssi.json
       pad_ssi.mmd
+      pad_ssi.diagram.md
   .github/
     copilot-instructions.md
     instructions/
@@ -211,9 +213,23 @@ of this study.
 
 To use it:
 1. Copy `synthea/modules/pad_ssi.json` into `<synthea_home>/src/main/resources/modules/`
-2. Run Synthea to generate CSV output (the module co-exists with other modules such as
+2. Run Synthea to generate FHIR output (the module co-exists with other modules such as
    `diabetes.json` and `metabolic_syndrome.json`, whose conditions it checks for risk adjustment)
-3. Load the output into the `omop_synth` database using the Synthea OMOP ETL pipeline
+3. If OMOP loading is needed, run Synthea separately with CSV export enabled for the ETL pipeline
+
+### Run Synthea (FHIR, 5000 Patients)
+
+Use the project runner script:
+
+```powershell
+.\scripts\run_synthea_pad_ssi.ps1 -SyntheaHome "C:\path\to\synthea" -Population 5000
+```
+
+This script:
+- copies `synthea/modules/pad_ssi.json` into the Synthea modules folder
+- runs Synthea for the requested population
+- forces FHIR export (`exporter.fhir.export=true`, `exporter.csv.export=false`)
+- prints the output folder at `output/fhir` under your Synthea installation
 
 Key clinical parameters modeled:
 
@@ -246,6 +262,7 @@ This repository includes a local generator script and a rendered Mermaid file:
 
 - `scripts/generate_synthea_mermaid.R`
 - `synthea/modules/pad_ssi.mmd`
+- `synthea/modules/pad_ssi.diagram.md`
 
 Regenerate the diagram after editing the JSON module:
 
@@ -253,17 +270,20 @@ Regenerate the diagram after editing the JSON module:
 & "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.mmd
 ```
 
+The generator also refreshes `synthea/modules/pad_ssi.diagram.md` automatically
+for Markdown preview.
+
 Open `synthea/modules/pad_ssi.mmd` in VS Code and use a Mermaid preview extension,
 or paste it into the built-in Mermaid renderer in Chat for quick visualization.
 
-View the `.mmd` diagram in VS Code:
+View the `.diagram.md` diagram in VS Code:
 
-1. Open `synthea/modules/pad_ssi.mmd`.
+1. Open `synthea/modules/pad_ssi.diagram.md`.
 2. Install a Mermaid preview extension if needed (for example, **Markdown Preview Mermaid Support**).
 3. Preview the file:
   - `Ctrl+Shift+V` (preview in current tab), or
   - `Ctrl+K` then `V` (side-by-side preview).
-4. If preview does not render for `.mmd`, copy the content into a temporary `.md` file and open Markdown preview again.
+4. If preview still does not render, close and reopen the preview tab to clear extension cache.
 
 ## GitHub Copilot Customizations
 
