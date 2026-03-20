@@ -31,7 +31,7 @@ if (!dir.exists(java_home)) {
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 # --- CRAN mirror --------------------------------------------------------------
-options(repos = c(CRAN = "https://cran.duke.edu/"))
+options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
 
 # --- Ensure remotes / pak are available for GitHub installs ------------------
 if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
@@ -69,25 +69,57 @@ for (pkg in cran_packages) {
 }
 
 # --- OHDSI GitHub packages ----------------------------------------------------
-# Install in dependency order.
+# Strategy:
+# 1) Prefer internal prebuilt binaries in internal_repo/bin/windows/contrib/<R>.
+# 2) If missing, fall back to GitHub install (for online bootstrap only).
 
 github_packages <- list(
-  list(repo = "OHDSI/FeatureExtraction",        ref = "v3.6.0"),
-  list(repo = "OHDSI/CohortGenerator",          ref = "v0.9.0"),
-  list(repo = "OHDSI/PatientLevelPrediction",   ref = "v6.4.0")
+  list(package = "FeatureExtraction",      repo = "OHDSI/FeatureExtraction",      ref = "v3.6.0"),
+  list(package = "CohortGenerator",        repo = "OHDSI/CohortGenerator",        ref = "v0.9.0"),
+  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0")
 )
+
+r_ver <- paste(R.version$major, sub("\\..*$", "", R.version$minor), sep = ".")
+internal_repo <- file.path(getwd(), "internal_repo", "bin", "windows", "contrib", r_ver)
+
+install_from_internal_binary <- function(pkg_name, repo_path) {
+  if (!dir.exists(repo_path)) return(FALSE)
+
+  # Match package zip regardless of version suffix.
+  zip_files <- list.files(
+    repo_path,
+    pattern = paste0("^", pkg_name, "_.*\\.zip$"),
+    full.names = TRUE
+  )
+  if (length(zip_files) == 0) return(FALSE)
+
+  zip_files <- zip_files[order(file.info(zip_files)$mtime, decreasing = TRUE)]
+  zip_file <- zip_files[[1]]
+  message("Installing ", pkg_name, " from internal binary: ", basename(zip_file))
+  install.packages(zip_file, repos = NULL, type = "win.binary")
+  TRUE
+}
 
 installed <- rownames(installed.packages())
 
 for (p in github_packages) {
-  pkg_name <- basename(p$repo)
-  # Normalise ETL-Synthea → ETLSyntheaBuilder style name mismatches
-  if (!pkg_name %in% installed) {
-    message("Installing ", pkg_name, " @ ", p$ref, " from GitHub ...")
-    remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
-  } else {
+  pkg_name <- p$package
+
+  if (pkg_name %in% installed) {
     message(pkg_name, " already installed – skipping.")
+    next
   }
+
+  installed_from_internal <- install_from_internal_binary(pkg_name, internal_repo)
+  if (isTRUE(installed_from_internal)) {
+    next
+  }
+
+  message(
+    "No internal binary found for ", pkg_name,
+    " in ", internal_repo, ". Falling back to GitHub install ..."
+  )
+  remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
 }
 
 # --- Snapshot environment ----------------------------------------------------

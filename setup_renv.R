@@ -6,7 +6,7 @@
 # Usage: source("setup_renv.R")
 # =============================================================================
 
-options(repos = c(CRAN = "https://cran.r-project.org/"))
+options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
 
 # Install renv if not present
 if (!requireNamespace("renv", quietly = TRUE)) {
