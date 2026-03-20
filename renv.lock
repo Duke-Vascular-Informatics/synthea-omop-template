@@ -1,0 +1,34 @@
+{
+  "R": {
+    "Version": "4.5.2",
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://cran.duke.edu/"
+      }
+    ]
+  },
+  "Packages": {
+    "renv": {
+      "Package": "renv",
+      "Version": "1.1.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "e4a3491f20d2f2d1da7c9e5ab9bb84d5"
+    },
+    "SqlRender": {
+      "Package": "SqlRender",
+      "Version": "1.19.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "b5f9e8e8bd6ba5f1e87e9a86c10a3bd9"
+    },
+    "DatabaseConnector": {
+      "Package": "DatabaseConnector",
+      "Version": "7.1.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "c4f2bd1b8f33a9234db4dce1afce5ee7"
+    }
+  }
+}

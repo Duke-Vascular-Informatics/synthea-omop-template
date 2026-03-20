@@ -1,0 +1,30 @@
+# R
+.Rhistory
+.Rdata
+.httr-oauth
+.DS_Store
+
+# renv (track renv.lock but not the library)
+renv/library/
+renv/staging/
+renv/python/
+
+# Output folders (large artifacts)
+output/
+plp_output/
+results/
+
+# JDBC driver bundle – exclude extracted files and the runtime jar, but keep
+# the downloaded zip so re-extraction can run without re-downloading.
+drivers/sqljdbc_13.2/
+drivers/jdbc-runtime/
+drivers/synthea-sanitized/
+drivers/etl-checkpoints/
+
+# R session data
+*.RData
+*.Rproj.user/
+
+# Temporary files
+*.tmp
+*.log
