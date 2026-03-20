@@ -36,6 +36,12 @@ pad-oler-ssi-val/
     drivers.R
     cohorts.R
     validation.R
+    risk_score_pipeline.R
+  run_risk_score_pipeline.R
+  risk_score/
+    components.csv
+    component_concepts.csv
+    risk_lookup.csv
   scripts/
     prebuild_github_binaries.R
   internal_repo/
@@ -143,6 +149,46 @@ What happens at runtime:
 
 If your ATLAS cohort table lives in another schema or table, update
 `atlas_cohort_schema` and `atlas_cohort_table` in `config.R`.
+
+## Integer Risk Score Pipeline
+
+This repository also includes a configurable pipeline for evaluating a simple
+integer-based risk score in the same target/outcome cohorts.
+
+Entry point:
+
+```r
+setwd("C:/Users/rapiduser/pad-oler-ssi-val")
+source("run_risk_score_pipeline.R")
+```
+
+Configuration files:
+
+- `risk_score/components.csv`
+  - Defines each score component, lookback window, minimum event count, and points.
+- `risk_score/component_concepts.csv`
+  - Maps each component to OMOP standard concept IDs and descendant expansion.
+- `risk_score/risk_lookup.csv`
+  - Optional score-to-risk lookup table from the original score publication.
+
+Behavior:
+
+- Computes person-level component points and total score for the target cohort.
+- Defines 30-day outcome from the configured outcome cohort (`prediction_window_days`).
+- Evaluates discrimination (AUROC, AUPRC).
+- Evaluates calibration when probabilities are available:
+  - lookup-based probabilities (if `risk_lookup.csv` is populated)
+  - recalibrated probabilities using logistic mapping from score.
+
+Output files (written to `output/risk_score_eval/`):
+
+- `person_level_scores.csv`
+- `component_summary.csv`
+- `metrics.csv`
+- `calibration_table_lookup.csv` (if lookup is available)
+- `calibration_table_recalibrated.csv`
+- `calibration_lookup.png` (if lookup is available)
+- `calibration_recalibrated.png`
 
 ## Notes
 

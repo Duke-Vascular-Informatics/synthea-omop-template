@@ -69,6 +69,15 @@ get_validation_config <- function() {
     atlas_target_cohort_id = 1796269L,
     atlas_outcome_cohort_id = 1796278L,
 
+    # ---------------------------------------------------------------------------
+    # Integer risk score pipeline settings
+    # ---------------------------------------------------------------------------
+    risk_score_components_file = file.path(getwd(), "risk_score", "components.csv"),
+    risk_score_concepts_file   = file.path(getwd(), "risk_score", "component_concepts.csv"),
+    risk_score_lookup_file     = file.path(getwd(), "risk_score", "risk_lookup.csv"),
+    risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
+    prediction_window_days     = 30L,
+
     # Study date window applied to both cohort instantiation and PLP data pull.
     # Adjust to match the date range of the original training study so that
     # temporal drift analysis is meaningful.

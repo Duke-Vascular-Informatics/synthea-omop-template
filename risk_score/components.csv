@@ -1,0 +1,4 @@
+component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points
+diabetes,Diabetes diagnosis,condition,-365,-1,1,2
+prior_antibiotic,Prior antibiotic exposure,drug,-90,-1,1,1
+reoperation,Prior relevant procedure,procedure,-365,-1,1,3
