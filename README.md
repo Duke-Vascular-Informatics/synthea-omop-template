@@ -57,6 +57,8 @@ pad-oler-ssi-val/
     instructions/
       r-packages.instructions.md
       omop-ohdsi.instructions.md
+    prompts/
+      concept-lookup.prompt.md
   drivers/
     mssql-jdbc-13.2.1.zip
 ```
@@ -238,18 +240,42 @@ Primary concept codes (OMOP-mappable):
 
 ## GitHub Copilot Customizations
 
-This repository ships Copilot instruction files so AI-assisted coding automatically
+This repository ships Copilot instruction and prompt files so AI-assisted coding automatically
 follows project conventions — no need to repeat constraints in chat.
 
+### Always-on Instructions
+
 | File | Scope | Purpose |
-|------|-------|---------|
+|------|-------|------|
 | `.github/copilot-instructions.md` | Every chat request | Language (R only), CRAN mirror, offline packages, DB config, security rules |
 | `.github/instructions/r-packages.instructions.md` | `*.R` files | CRAN mirror enforcement, `renv` workflow, local binary installs for OHDSI packages |
-| `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` files | `DatabaseConnector`/`SqlRender` patterns, OMOP CDM table reference, cohort conventions, PLP validation-only guard |
+| `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` files | `DatabaseConnector`/`SqlRender` patterns, OMOP CDM table reference, cohort conventions, PLP validation-only guard, concept lookup requirement |
 
-The scoped instruction files (`.instructions.md`) are auto-attached by VS Code Copilot
-when a matching file is open or referenced, and are also discoverable on-demand from
-their `description` fields.
+The `.instructions.md` files are auto-attached by VS Code Copilot when a matching file
+is open or referenced, and discoverable on-demand from their `description` fields.
+
+### Slash Commands (Prompts)
+
+| Command | File | Purpose |
+|---------|------|---------|
+| `/concept-lookup` | `.github/prompts/concept-lookup.prompt.md` | Live OMOP vocabulary lookup against `cdm_synthea.concept` via the MSSQL MCP tools |
+
+**`/concept-lookup` usage:**
+
+Type `/concept-lookup` in chat before writing any concept ID into code or CSV files:
+
+```
+/concept-lookup peripheral arterial disease condition
+/concept-lookup cefazolin drug
+/concept-lookup ankle brachial index measurement
+/concept-lookup femoral popliteal bypass procedure
+```
+
+The prompt connects to `omop_synth`, queries `cdm_synthea.concept` for standard concepts
+(`standard_concept = 'S'`), and falls back to `concept_synonym` if fewer than 3 direct
+matches are found. It returns a ranked table and a single recommended `concept_id`.
+This ensures concept IDs are grounded in the actual vocabulary loaded by the Synthea ETL
+rather than assumed from training data.
 
 ## Notes
 
