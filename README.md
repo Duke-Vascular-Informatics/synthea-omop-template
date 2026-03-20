@@ -256,6 +256,15 @@ Regenerate the diagram after editing the JSON module:
 Open `synthea/modules/pad_ssi.mmd` in VS Code and use a Mermaid preview extension,
 or paste it into the built-in Mermaid renderer in Chat for quick visualization.
 
+View the `.mmd` diagram in VS Code:
+
+1. Open `synthea/modules/pad_ssi.mmd`.
+2. Install a Mermaid preview extension if needed (for example, **Markdown Preview Mermaid Support**).
+3. Preview the file:
+  - `Ctrl+Shift+V` (preview in current tab), or
+  - `Ctrl+K` then `V` (side-by-side preview).
+4. If preview does not render for `.mmd`, copy the content into a temporary `.md` file and open Markdown preview again.
+
 ## GitHub Copilot Customizations
 
 This repository ships Copilot instruction and prompt files so AI-assisted coding automatically
