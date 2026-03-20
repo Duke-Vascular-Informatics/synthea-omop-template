@@ -9,15 +9,21 @@
     "  Outcome : SSI diagnosis within 30 days of index surgery",
     "",
     "This module is self-contained. It generates a PAD diagnosis, schedules an inpatient",
-    "revascularization, and applies comorbidity-adjusted SSI risk. It checks for diabetes",
-    "and obesity that may have been set by other Synthea modules (e.g., diabetes.json,",
-    "metabolic_syndrome.json) using Active Condition and Observation guards.",
+    "revascularization, and applies comorbidity-adjusted SSI risk. It also generates",
+    "site-relevant comorbidities directly within the module: current smoking, type 2",
+    "diabetes mellitus, and BMI-defined obesity.",
     "",
     "SSI incidence assumptions (per published literature):",
     "  With Type 2 diabetes                 : 12%",
     "  With obesity (BMI >= 30), no DM      : 10%",
+    "  With current smoking only            : 9%",
     "  Baseline (no major risk factors)     : 6%",
     "  Requiring rehospitalization/re-op    : 15% of SSI cases",
+    "",
+    "Comorbidity prevalence assumptions in this surgical PAD population:",
+    "  Current smoker                       : 35%",
+    "  Type 2 diabetes mellitus             : 30%",
+    "  Obesity (BMI >= 30)                  : 40%",
     "",
     "Primary concept codes (OMOP-mappable):",
     "  PAD condition          : SNOMED-CT 399957001",
@@ -26,6 +32,7 @@
     "  Debridement (re-op)    : SNOMED-CT 118294005",
     "  Ankle-brachial index   : LOINC     59574-4",
     "  Wound culture          : LOINC     6463-4",
+    "  Tobacco smoking status : LOINC     72166-2",
     "  BMI                    : LOINC     39156-5",
     "  Cefazolin (ppx)        : RxNorm    20496",
     "  Cephalexin (SSI tx)    : RxNorm    2673",
@@ -122,6 +129,117 @@
 
     "End_PAD_Diagnosis_Encounter": {
       "type": "EncounterEnd",
+      "direct_transition": "Smoking_Status_Chance"
+    },
+
+    "Smoking_Status_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Current smoking prevalence in PAD revascularization candidates is modeled at 35%."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.35, "transition": "Current_Smoker_Observation" },
+        { "distribution": 0.65, "transition": "Non_Smoker_Observation" }
+      ]
+    },
+
+    "Current_Smoker_Observation": {
+      "type": "Observation",
+      "category": "social-history",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "72166-2",
+          "display": "Tobacco smoking status"
+        }
+      ],
+      "value_code": {
+        "system": "SNOMED-CT",
+        "code": "449868002",
+        "display": "Current every day smoker"
+      },
+      "direct_transition": "Diabetes_Chance"
+    },
+
+    "Non_Smoker_Observation": {
+      "type": "Observation",
+      "category": "social-history",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "72166-2",
+          "display": "Tobacco smoking status"
+        }
+      ],
+      "value_code": {
+        "system": "SNOMED-CT",
+        "code": "266919005",
+        "display": "Never smoked tobacco"
+      },
+      "direct_transition": "Diabetes_Chance"
+    },
+
+    "Diabetes_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Type 2 diabetes prevalence in PAD surgery patients is modeled at 30%."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.30, "transition": "Diabetes_Onset" },
+        { "distribution": 0.70, "transition": "BMI_Chance" }
+      ]
+    },
+
+    "Diabetes_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "44054006",
+          "display": "Diabetes mellitus type 2"
+        }
+      ],
+      "direct_transition": "BMI_Chance"
+    },
+
+    "BMI_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Obesity prevalence is modeled at 40% using a BMI observation."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.40, "transition": "BMI_Obese_Observation" },
+        { "distribution": 0.60, "transition": "BMI_NonObese_Observation" }
+      ]
+    },
+
+    "BMI_Obese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "kg/m2",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "39156-5",
+          "display": "Body Mass Index"
+        }
+      ],
+      "range": { "low": 30, "high": 40 },
+      "direct_transition": "Pre_Surgical_Workup_Delay"
+    },
+
+    "BMI_NonObese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "kg/m2",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "39156-5",
+          "display": "Body Mass Index"
+        }
+      ],
+      "range": { "low": 22, "high": 29.9 },
       "direct_transition": "Pre_Surgical_Workup_Delay"
     },
 
@@ -221,8 +339,8 @@
     "SSI_Risk_Check": {
       "type": "Simple",
       "remarks": [
-        "Adjusts SSI probability based on active comorbidities set by other Synthea",
-        "modules. Checks diabetes first (strongest risk factor), then obesity."
+        "Adjusts SSI probability based on module-generated comorbidities.",
+        "Checks diabetes first, then obesity, then current smoking."
       ],
       "conditional_transition": [
         {
@@ -254,6 +372,24 @@
           "transition": "SSI_Moderate_Risk"
         },
         {
+          "condition": {
+            "condition_type": "Observation",
+            "codes": [
+              {
+                "system": "LOINC",
+                "code": "72166-2",
+                "display": "Tobacco smoking status"
+              }
+            ],
+            "value_code": {
+              "system": "SNOMED-CT",
+              "code": "449868002",
+              "display": "Current every day smoker"
+            }
+          },
+          "transition": "SSI_Smoking_Risk"
+        },
+        {
           "transition": "SSI_Baseline_Risk"
         }
       ]
@@ -274,6 +410,15 @@
       "distributed_transition": [
         { "distribution": 0.10, "transition": "SSI_Onset" },
         { "distribution": 0.90, "transition": "Terminal" }
+      ]
+    },
+
+    "SSI_Smoking_Risk": {
+      "type": "Simple",
+      "remarks": ["9% SSI incidence with current smoking in the absence of diabetes or obesity."],
+      "distributed_transition": [
+        { "distribution": 0.09, "transition": "SSI_Onset" },
+        { "distribution": 0.91, "transition": "Terminal" }
       ]
     },
 

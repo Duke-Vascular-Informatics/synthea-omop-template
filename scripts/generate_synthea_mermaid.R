@@ -136,7 +136,12 @@ writeLines(mermaid_lines, con = output_mmd, useBytes = TRUE)
 cat(sprintf("Wrote Mermaid diagram: %s\n", output_mmd))
 
 if (grepl("\\.mmd$", output_mmd, ignore.case = TRUE)) {
+  output_mermaid <- sub("\\.mmd$", ".mermaid", output_mmd, ignore.case = TRUE)
   output_md <- sub("\\.mmd$", ".diagram.md", output_mmd, ignore.case = TRUE)
+
+  writeLines(mermaid_lines, con = output_mermaid, useBytes = TRUE)
+  cat(sprintf("Wrote Mermaid source : %s\n", output_mermaid))
+
   md_lines <- c(
     "# Synthea Module Diagram",
     "",
