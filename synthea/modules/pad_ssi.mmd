@@ -1,0 +1,76 @@
+flowchart TD
+  n001[Initial\n(Initial)]
+  n002[Age_Guard\n(Guard)]
+  n003[PAD_Onset_Chance\n(Simple)]
+  n004[PAD_Onset\n(ConditionOnset)]
+  n005[PAD_Diagnosis_Encounter\n(Encounter)]
+  n006[ABI_Observation\n(Observation)]
+  n007[End_PAD_Diagnosis_Encounter\n(EncounterEnd)]
+  n008[Pre_Surgical_Workup_Delay\n(Delay)]
+  n009[Surgical_Admission\n(Encounter)]
+  n010[Pre_Op_Antibiotic\n(MedicationOrder)]
+  n011[Revascularization_Procedure\n(Procedure)]
+  n012[Pre_Op_Antibiotic_End\n(MedicationEnd)]
+  n013[Post_Op_Inpatient_Delay\n(Delay)]
+  n014[End_Surgical_Admission\n(EncounterEnd)]
+  n015[Post_Discharge_Delay\n(Delay)]
+  n016[SSI_Risk_Check\n(Simple)]
+  n017[SSI_High_Risk\n(Simple)]
+  n018[SSI_Moderate_Risk\n(Simple)]
+  n019[SSI_Baseline_Risk\n(Simple)]
+  n020[SSI_Onset\n(ConditionOnset)]
+  n021[SSI_Encounter\n(Encounter)]
+  n022[Wound_Culture\n(Observation)]
+  n023[SSI_Antibiotic_Order\n(MedicationOrder)]
+  n024[End_SSI_Encounter\n(EncounterEnd)]
+  n025[SSI_Treatment_Delay\n(Delay)]
+  n026[SSI_Resolution_Check\n(Simple)]
+  n027[SSI_Resolution\n(ConditionEnd)]
+  n028[SSI_Rehospitalization\n(Encounter)]
+  n029[Reoperation_Procedure\n(Procedure)]
+  n030[End_Rehospitalization\n(EncounterEnd)]
+  n031[Post_Reoperation_Delay\n(Delay)]
+  n032[SSI_End_From_Reoperation\n(ConditionEnd)]
+  n033[SSI_Antibiotic_End\n(MedicationEnd)]
+  n034[Terminal\n(Terminal)]
+
+  n001 --> n002
+  n002 --> n003
+  n003 -- 6% --> n004
+  n003 -- 94% --> n034
+  n004 --> n005
+  n005 --> n006
+  n006 --> n007
+  n007 --> n008
+  n008 --> n009
+  n009 --> n010
+  n010 --> n011
+  n011 --> n012
+  n012 --> n013
+  n013 --> n014
+  n014 --> n015
+  n015 --> n016
+  n016 -- Active Condition: Diabetes mellitus type 2 --> n017
+  n016 -- Observation: Body Mass Index: >= 30 --> n018
+  n016 -- else --> n019
+  n017 -- 12% --> n020
+  n017 -- 88% --> n034
+  n018 -- 10% --> n020
+  n018 -- 90% --> n034
+  n019 -- 6% --> n020
+  n019 -- 94% --> n034
+  n020 --> n021
+  n021 --> n022
+  n022 --> n023
+  n023 --> n024
+  n024 --> n025
+  n025 --> n026
+  n026 -- 85% --> n027
+  n026 -- 15% --> n028
+  n027 --> n033
+  n028 --> n029
+  n029 --> n030
+  n030 --> n031
+  n031 --> n032
+  n032 --> n033
+  n033 --> n034

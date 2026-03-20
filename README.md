@@ -44,6 +44,7 @@ pad-oler-ssi-val/
     risk_lookup.csv
   scripts/
     prebuild_github_binaries.R
+    generate_synthea_mermaid.R
   internal_repo/
     bin/windows/contrib/4.5/
       FeatureExtraction_3.6.0.zip
@@ -52,6 +53,7 @@ pad-oler-ssi-val/
   synthea/
     modules/
       pad_ssi.json
+      pad_ssi.mmd
   .github/
     copilot-instructions.md
     instructions/
@@ -237,6 +239,22 @@ Primary concept codes (OMOP-mappable):
 | Wound culture | LOINC | 6463-4 |
 | Cefazolin (perioperative prophylaxis) | RxNorm | 20496 |
 | Cephalexin (SSI treatment) | RxNorm | 2673 |
+
+### Visualize the Module (Mermaid)
+
+This repository includes a local generator script and a rendered Mermaid file:
+
+- `scripts/generate_synthea_mermaid.R`
+- `synthea/modules/pad_ssi.mmd`
+
+Regenerate the diagram after editing the JSON module:
+
+```powershell
+& "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.mmd
+```
+
+Open `synthea/modules/pad_ssi.mmd` in VS Code and use a Mermaid preview extension,
+or paste it into the built-in Mermaid renderer in Chat for quick visualization.
 
 ## GitHub Copilot Customizations
 
