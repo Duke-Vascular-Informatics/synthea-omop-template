@@ -54,6 +54,21 @@ get_validation_config <- function() {
     target_cohort_id  = 1L,
     outcome_cohort_id = 2L,
 
+    # ---------------------------------------------------------------------------
+    # Existing ATLAS cohorts (optional, recommended when cohorts are already
+    # generated in the database).
+    #
+    # If use_atlas_cohorts = TRUE:
+    # - target cohort will be copied from atlas_target_cohort_id
+    # - outcome cohort will be copied from atlas_outcome_cohort_id IF provided
+    #   (non-NA), otherwise outcome is generated from cohorts/outcome_ssi.sql
+    # ---------------------------------------------------------------------------
+    use_atlas_cohorts      = TRUE,
+    atlas_cohort_schema    = "results",
+    atlas_cohort_table     = "cohort",
+    atlas_target_cohort_id = 1796269L,
+    atlas_outcome_cohort_id = 1796278L,
+
     # Study date window applied to both cohort instantiation and PLP data pull.
     # Adjust to match the date range of the original training study so that
     # temporal drift analysis is meaningful.

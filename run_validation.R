@@ -78,7 +78,18 @@ message("  Connection OK.")
 # ---------------------------------------------------------------------------
 # Step 3 – Cohort instantiation
 # ---------------------------------------------------------------------------
-message("\n[Step 3] Instantiating cohorts ...")
+if (isTRUE(config$use_atlas_cohorts)) {
+  message("\n[Step 3] Preparing cohorts (ATLAS mode for target cohort) ...")
+  message("  Source ATLAS table : ", config$atlas_cohort_schema, ".", config$atlas_cohort_table)
+  message("  Source target id   : ", config$atlas_target_cohort_id)
+  if (!is.na(config$atlas_outcome_cohort_id)) {
+    message("  Source outcome id  : ", config$atlas_outcome_cohort_id)
+  } else {
+    message("  Source outcome id  : <not set; will use local outcome SQL>")
+  }
+} else {
+  message("\n[Step 3] Instantiating cohorts from local SQL definitions ...")
+}
 conn <- DatabaseConnector::connect(connection_details)
 tryCatch(
   {

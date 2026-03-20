@@ -110,9 +110,39 @@ source("run_validation.R")
 Pipeline stages:
 1. Load config
 2. Build DB connection details and verify connection
-3. Instantiate target and outcome cohorts
+3. Prepare target and outcome cohorts (ATLAS copy mode or local SQL mode)
 4. Run `externalValidateDbPlp()`
 5. Save outputs and launch PLP result viewer
+
+## ATLAS Cohorts
+
+This project is configured to use pre-built cohorts from ATLAS/WebAPI.
+
+- Target cohort ID: `1796269`
+- Outcome cohort ID: `1796278`
+
+Default mapping in `config.R`:
+
+```r
+use_atlas_cohorts       = TRUE
+atlas_cohort_schema     = "results"
+atlas_cohort_table      = "cohort"
+atlas_target_cohort_id  = 1796269L
+atlas_outcome_cohort_id = 1796278L
+
+# Destination IDs used by PLP
+target_cohort_id  = 1L
+outcome_cohort_id = 2L
+```
+
+What happens at runtime:
+
+- Step 3 copies ATLAS cohort `1796269` into the project cohort table as target ID `1`.
+- Step 3 copies ATLAS cohort `1796278` into the project cohort table as outcome ID `2`.
+- Date filtering is applied using `study_start_date` and `study_end_date` from `config.R`.
+
+If your ATLAS cohort table lives in another schema or table, update
+`atlas_cohort_schema` and `atlas_cohort_table` in `config.R`.
 
 ## Notes
 
