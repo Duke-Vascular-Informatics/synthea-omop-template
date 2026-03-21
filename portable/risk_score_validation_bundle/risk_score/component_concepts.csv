@@ -1,6 +1,26 @@
-component_id,concept_id,include_descendants
+component_id,concept_id,include_descendants,concept_role
 # Add one or more standard OMOP concept IDs per component.
 # Example:
 # diabetes,201820,TRUE
 # prior_antibiotic,21602796,TRUE
 # reoperation,2105440,TRUE
+# Placeholder mappings for PAD SSI score components.
+# Replace concept_id = 0 with validated standard OMOP concept IDs from your CDM vocabulary.
+female,8532,FALSE,
+overweight,3025315,FALSE,weight
+overweight,3036277,FALSE,height
+obese,3025315,FALSE,weight
+obese,3036277,FALSE,height
+urgnt,4158569,TRUE,
+urgnt,4250892,TRUE,
+abi_35,40489833,TRUE,
+abi_35,46237026,TRUE,
+prrevasc_any,4159960,TRUE,
+prolong_abx,21603553,TRUE,
+optime4h,0,TRUE,
+mFI_high,201820,TRUE,diabetes
+mFI_high,255573,TRUE,copd
+mFI_high,316139,TRUE,chf
+mFI_high,316866,TRUE,hypertension
+mFI_high,4215267,TRUE,functional_status
+indicationClaudication,442774,TRUE,

@@ -46,6 +46,11 @@ read_score_specs <- function(config) {
 
   concepts$concept_id <- as.integer(concepts$concept_id)
   concepts$include_descendants <- tolower(trimws(as.character(concepts$include_descendants))) %in% c("true", "1", "t", "yes", "y")
+  if (!"concept_role" %in% names(concepts)) {
+    concepts$concept_role <- NA_character_
+  }
+  concepts$concept_role <- tolower(trimws(as.character(concepts$concept_role)))
+  concepts$concept_role[concepts$concept_role == ""] <- NA_character_
 
   if (any(is.na(concepts$concept_id))) {
     stop("component_concepts.csv contains non-integer concept_id values.")
@@ -122,7 +127,449 @@ get_outcomes <- function(connection, config) {
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+query_bmi_component_counts <- function(connection, config, component, component_concepts) {
+  if (!"concept_role" %in% names(component_concepts)) {
+    stop("BMI-derived components require concept_role values: weight and height.")
+  }
+
+  roles <- tolower(trimws(as.character(component_concepts$concept_role)))
+  weight_ids <- unique(component_concepts$concept_id[roles == "weight"])
+  height_ids <- unique(component_concepts$concept_id[roles == "height"])
+  weight_ids <- weight_ids[!is.na(weight_ids) & weight_ids > 0]
+  height_ids <- height_ids[!is.na(height_ids) & height_ids > 0]
+
+  if (length(weight_ids) == 0 || length(height_ids) == 0) {
+    stop(
+      "Component ", component$component_id,
+      " requires at least one weight and one height concept_id with concept_role set in component_concepts.csv"
+    )
+  }
+
+  bmi_where_clause <- switch(
+    component$component_id,
+    overweight = "b.bmi >= 25 AND b.bmi < 30",
+    obese = "b.bmi >= 30",
+    stop("Unsupported BMI-derived component_id: ", component$component_id)
+  )
+
+  # OMOP standard UCUM units validated in this database instance.
+  kilogram_unit_id <- 9529L
+  pound_unit_ids <- c(8739L)
+  meter_unit_id <- 9546L
+  centimeter_unit_id <- 8582L
+  inch_unit_ids <- c(9326L, 9327L, 9330L)
+
+  sql <- SqlRender::render(
+    sql = "WITH target_population AS (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ),
+           weight_concepts AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@weight_concept_ids', ',')) s
+           ),
+           height_concepts AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@height_concept_ids', ',')) s
+           ),
+           latest_weight AS (
+             SELECT t.subject_id,
+                    CASE
+                      WHEN m.unit_concept_id = @kilogram_unit_id THEN m.value_as_number
+                      WHEN m.unit_concept_id IN (@pound_unit_ids) THEN m.value_as_number * 0.45359237
+                      ELSE NULL
+                    END AS weight_kg,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY t.subject_id
+                      ORDER BY m.measurement_date DESC, m.measurement_id DESC
+                    ) AS rn
+             FROM target_population t
+             JOIN @cdm_schema.measurement m
+               ON m.person_id = t.subject_id
+             JOIN weight_concepts wc
+               ON m.measurement_concept_id = wc.concept_id
+             WHERE m.value_as_number IS NOT NULL
+               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)
+               AND m.measurement_date <= DATEADD(DAY, @lookback_end, t.index_date)
+           ),
+           latest_height AS (
+             SELECT t.subject_id,
+                    CASE
+                      WHEN m.unit_concept_id = @meter_unit_id THEN m.value_as_number
+                      WHEN m.unit_concept_id = @centimeter_unit_id THEN m.value_as_number / 100.0
+                      WHEN m.unit_concept_id IN (@inch_unit_ids) THEN m.value_as_number * 0.0254
+                      ELSE NULL
+                    END AS height_m,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY t.subject_id
+                      ORDER BY m.measurement_date DESC, m.measurement_id DESC
+                    ) AS rn
+             FROM target_population t
+             JOIN @cdm_schema.measurement m
+               ON m.person_id = t.subject_id
+             JOIN height_concepts hc
+               ON m.measurement_concept_id = hc.concept_id
+             WHERE m.value_as_number IS NOT NULL
+               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)
+               AND m.measurement_date <= DATEADD(DAY, @lookback_end, t.index_date)
+           ),
+           bmi_values AS (
+             SELECT w.subject_id,
+                    CASE
+                      WHEN h.height_m IS NULL OR w.weight_kg IS NULL THEN NULL
+                      WHEN h.height_m <= 0 THEN NULL
+                      WHEN w.weight_kg <= 0 THEN NULL
+                      ELSE w.weight_kg / POWER(h.height_m, 2)
+                    END AS bmi
+             FROM latest_weight w
+             JOIN latest_height h
+               ON w.subject_id = h.subject_id
+             WHERE w.rn = 1
+               AND h.rn = 1
+           )
+           SELECT b.subject_id,
+                  1 AS event_count
+           FROM bmi_values b
+           WHERE @bmi_where_clause",
+    results_schema = config$results_schema,
+    cohort_table = config$cohort_table,
+    target_id = config$target_cohort_id,
+    cdm_schema = config$cdm_schema,
+    weight_concept_ids = paste(weight_ids, collapse = ","),
+    height_concept_ids = paste(height_ids, collapse = ","),
+    kilogram_unit_id = kilogram_unit_id,
+    pound_unit_ids = paste(pound_unit_ids, collapse = ","),
+    meter_unit_id = meter_unit_id,
+    centimeter_unit_id = centimeter_unit_id,
+    inch_unit_ids = paste(inch_unit_ids, collapse = ","),
+    lookback_start = as.integer(component$lookback_start_day),
+    lookback_end = as.integer(component$lookback_end_day),
+    bmi_where_clause = bmi_where_clause
+  )
+
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
+query_abi_component_counts <- function(connection, config, component, component_concepts) {
+  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
+  include_desc <- any(component_concepts$include_descendants)
+
+  if (length(concept_ids) == 0) {
+    stop(
+      "Component ", component$component_id,
+      " requires at least one ABI measurement concept_id in component_concepts.csv"
+    )
+  }
+
+  sql <- SqlRender::render(
+    sql = "WITH target_population AS (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ),
+           concept_ids AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@concept_ids', ',')) s
+           ),
+           expanded_concepts AS (
+             SELECT concept_id FROM concept_ids
+             UNION
+             SELECT ca.descendant_concept_id AS concept_id
+             FROM @cdm_schema.concept_ancestor ca
+             JOIN concept_ids i
+               ON ca.ancestor_concept_id = i.concept_id
+             WHERE @include_descendants = 1
+           )
+           SELECT t.subject_id,
+                  COUNT(*) AS event_count
+           FROM target_population t
+           JOIN @cdm_schema.measurement m
+             ON m.person_id = t.subject_id
+           JOIN expanded_concepts ec
+             ON m.measurement_concept_id = ec.concept_id
+           WHERE m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)
+             AND m.measurement_date <= DATEADD(DAY, @lookback_end, t.index_date)
+             AND m.value_as_number IS NOT NULL
+             AND m.value_as_number < @abi_threshold
+           GROUP BY t.subject_id",
+    results_schema = config$results_schema,
+    cohort_table = config$cohort_table,
+    target_id = config$target_cohort_id,
+    cdm_schema = config$cdm_schema,
+    concept_ids = paste(concept_ids, collapse = ","),
+    include_descendants = ifelse(include_desc, 1, 0),
+    lookback_start = as.integer(component$lookback_start_day),
+    lookback_end = as.integer(component$lookback_end_day),
+    abi_threshold = 0.35
+  )
+
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
+query_prolonged_antibiotic_counts <- function(connection, config, component, component_concepts) {
+  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
+  include_desc <- any(component_concepts$include_descendants)
+
+  if (length(concept_ids) == 0) {
+    stop(
+      "Component ", component$component_id,
+      " requires at least one antibiotic drug concept_id in component_concepts.csv"
+    )
+  }
+
+  # Operational definition for non-prophylactic prior antibiotic exposure:
+  # - Exposure must start before the day immediately prior to index (<= index - 2 days)
+  # - Exposure must represent a treatment-like duration (>= 2 days from end date or days_supply)
+  sql <- SqlRender::render(
+    sql = "WITH target_population AS (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ),
+           concept_ids AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@concept_ids', ',')) s
+           ),
+           expanded_concepts AS (
+             SELECT concept_id FROM concept_ids
+             UNION
+             SELECT ca.descendant_concept_id AS concept_id
+             FROM @cdm_schema.concept_ancestor ca
+             JOIN concept_ids i
+               ON ca.ancestor_concept_id = i.concept_id
+             WHERE @include_descendants = 1
+           )
+           SELECT t.subject_id,
+                  COUNT(*) AS event_count
+           FROM target_population t
+           JOIN @cdm_schema.drug_exposure d
+             ON d.person_id = t.subject_id
+           JOIN expanded_concepts ec
+             ON d.drug_concept_id = ec.concept_id
+           WHERE d.drug_exposure_start_date >= DATEADD(DAY, @lookback_start, t.index_date)
+             AND d.drug_exposure_start_date <= DATEADD(DAY, @lookback_end, t.index_date)
+             AND d.drug_exposure_start_date <= DATEADD(DAY, -@non_prophylaxis_buffer_days, t.index_date)
+             AND (
+               (d.drug_exposure_end_date IS NOT NULL
+                AND DATEDIFF(DAY, d.drug_exposure_start_date, d.drug_exposure_end_date) > @min_treatment_days)
+               OR (d.days_supply IS NOT NULL AND d.days_supply > @min_treatment_days)
+             )
+           GROUP BY t.subject_id",
+    results_schema = config$results_schema,
+    cohort_table = config$cohort_table,
+    target_id = config$target_cohort_id,
+    cdm_schema = config$cdm_schema,
+    concept_ids = paste(concept_ids, collapse = ","),
+    include_descendants = ifelse(include_desc, 1, 0),
+    lookback_start = as.integer(component$lookback_start_day),
+    lookback_end = as.integer(component$lookback_end_day),
+    non_prophylaxis_buffer_days = 1,
+    min_treatment_days = 2
+  )
+
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
+query_operative_time_component_counts <- function(connection, config, component, component_concepts) {
+  # Captures operative time > 240 minutes (4 hours) from either:
+  # 1. procedure_end_datetime (calculated duration from procedure_occurrence)
+  # 2. Measurement/Observation concepts for operative time
+  # Combines both sources to identify patients with prolonged operative time.
+  
+  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
+  include_desc <- any(component_concepts$include_descendants)
+  
+  operative_time_threshold_minutes <- 240  # 4 hours
+  
+  sql <- SqlRender::render(
+    sql = "WITH target_population AS (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ),
+           concept_ids AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@concept_ids', ',')) s
+           ),
+           expanded_concepts AS (
+             SELECT concept_id FROM concept_ids
+             UNION
+             SELECT ca.descendant_concept_id AS concept_id
+             FROM @cdm_schema.concept_ancestor ca
+             JOIN concept_ids i
+               ON ca.ancestor_concept_id = i.concept_id
+             WHERE @include_descendants = 1
+           ),
+           procedure_duration_mins AS (
+             -- Extract operative time from procedure_end_datetime if available
+             SELECT DISTINCT t.subject_id
+             FROM target_population t
+             JOIN @cdm_schema.procedure_occurrence po
+               ON po.person_id = t.subject_id
+             WHERE CAST(po.procedure_date AS DATE) = t.index_date
+               AND po.procedure_end_datetime IS NOT NULL
+               AND DATEDIFF(MINUTE, po.procedure_datetime, po.procedure_end_datetime) > @operative_time_threshold
+           ),
+           measurement_operative_time AS (
+             -- Extract operative time from measurement table (e.g., LOINC operative time)
+             SELECT DISTINCT t.subject_id
+             FROM target_population t
+             JOIN @cdm_schema.measurement m
+               ON m.person_id = t.subject_id
+             JOIN expanded_concepts ec
+               ON m.measurement_concept_id = ec.concept_id
+             WHERE CAST(m.measurement_date AS DATE) >= DATEADD(DAY, @lookback_start, t.index_date)
+               AND CAST(m.measurement_date AS DATE) <= DATEADD(DAY, @lookback_end, t.index_date)
+               AND m.value_as_number > @operative_time_threshold
+           ),
+           combined_operative_time AS (
+             SELECT subject_id FROM procedure_duration_mins
+             UNION
+             SELECT subject_id FROM measurement_operative_time
+           )
+           SELECT subject_id,
+                  COUNT(*) AS event_count
+           FROM combined_operative_time
+           GROUP BY subject_id",
+    results_schema = config$results_schema,
+    cohort_table = config$cohort_table,
+    target_id = config$target_cohort_id,
+    cdm_schema = config$cdm_schema,
+    concept_ids = paste(concept_ids, collapse = ","),
+    include_descendants = ifelse(include_desc, 1, 0),
+    lookback_start = as.integer(component$lookback_start_day),
+    lookback_end = as.integer(component$lookback_end_day),
+    operative_time_threshold = operative_time_threshold_minutes
+  )
+  
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
+query_mfi_component_counts <- function(connection, config, component, component_concepts) {
+  # Modified Frailty Index: binary flag if (# sub-components present / total sub-components) > 0.25
+  # Each sub-component is identified by concept_role in component_concepts.
+  # Sub-components are queried from condition_occurrence.
+  mfi_threshold <- 0.25
+
+  valid_rows <- component_concepts[
+    !is.na(component_concepts$concept_role) &
+    trimws(component_concepts$concept_role) != "" &
+    !is.na(component_concepts$concept_id) &
+    component_concepts$concept_id > 0, ]
+
+  roles <- unique(trimws(valid_rows$concept_role))
+  n_sub <- length(roles)
+
+  if (n_sub == 0) {
+    stop("mFI_high requires concept_role entries with valid concept_ids in component_concepts.csv")
+  }
+
+  # Build CTE for target population
+  tp_cte <- sprintf(
+    paste0("target_population AS (\n",
+           "  SELECT c.subject_id, CAST(c.cohort_start_date AS DATE) AS index_date\n",
+           "  FROM %s.%s c\n",
+           "  WHERE c.cohort_definition_id = %d\n",
+           ")"),
+    config$results_schema, config$cohort_table, as.integer(config$target_cohort_id)
+  )
+
+  # Build one CTE per sub-component, joined to target_population
+  sub_cte_names <- paste0("sub_comp_", seq_along(roles))
+
+  sub_ctes <- mapply(function(role, cte_name) {
+    sc   <- valid_rows[trimws(valid_rows$concept_role) == role, ]
+    ids  <- paste(unique(sc$concept_id), collapse = ", ")
+    desc <- if (any(sc$include_descendants)) 1L else 0L
+
+    concept_filter <- sprintf(
+      paste0("(co.condition_concept_id IN (%s)\n",
+             "         OR (%d = 1 AND co.condition_concept_id IN (\n",
+             "               SELECT ca.descendant_concept_id\n",
+             "               FROM %s.concept_ancestor ca\n",
+             "               WHERE ca.ancestor_concept_id IN (%s)\n",
+             "             )))"),
+      ids, desc, config$cdm_schema, ids
+    )
+
+    sprintf(
+      paste0("%s AS (\n",
+             "  SELECT DISTINCT t.subject_id\n",
+             "  FROM target_population t\n",
+             "  JOIN %s.condition_occurrence co ON co.person_id = t.subject_id\n",
+             "  WHERE %s\n",
+             "    AND CAST(co.condition_start_date AS DATE) >= DATEADD(DAY, %d, t.index_date)\n",
+             "    AND CAST(co.condition_start_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
+             ")"),
+      cte_name, config$cdm_schema, concept_filter,
+      as.integer(component$lookback_start_day),
+      as.integer(component$lookback_end_day)
+    )
+  }, roles, sub_cte_names, SIMPLIFY = TRUE)
+
+  # CTE that sums sub-component flags per patient
+  flag_expr <- paste(
+    sprintf("CASE WHEN %s.subject_id IS NOT NULL THEN 1 ELSE 0 END", sub_cte_names),
+    collapse = " +\n               "
+  )
+  join_clauses <- paste(
+    sprintf("LEFT JOIN %s ON %s.subject_id = tp.subject_id",
+            sub_cte_names, sub_cte_names),
+    collapse = "\n  "
+  )
+  mfi_counts_cte <- sprintf(
+    paste0("mfi_counts AS (\n",
+           "  SELECT tp.subject_id,\n",
+           "         (%s) AS sub_count\n",
+           "  FROM target_population tp\n",
+           "  %s\n",
+           ")"),
+    flag_expr, join_clauses
+  )
+
+  all_ctes <- paste(c(tp_cte, sub_ctes, mfi_counts_cte), collapse = ",\n")
+
+  sql <- sprintf(
+    paste0("WITH %s\n",
+           "SELECT subject_id,\n",
+           "       1 AS event_count\n",
+           "FROM mfi_counts\n",
+           "WHERE CAST(sub_count AS FLOAT) / %d > %s"),
+    all_ctes, n_sub, mfi_threshold
+  )
+
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
 query_component_counts <- function(connection, config, component, component_concepts) {
+  if (component$component_id %in% c("overweight", "obese")) {
+    return(query_bmi_component_counts(connection, config, component, component_concepts))
+  }
+
+  if (component$component_id == "abi_35") {
+    return(query_abi_component_counts(connection, config, component, component_concepts))
+  }
+
+  if (component$component_id == "prolong_abx") {
+    return(query_prolonged_antibiotic_counts(connection, config, component, component_concepts))
+  }
+
+  if (component$component_id == "optime4h") {
+    return(query_operative_time_component_counts(connection, config, component, component_concepts))
+  }
+
+  if (component$component_id == "mFI_high") {
+    return(query_mfi_component_counts(connection, config, component, component_concepts))
+  }
+
   map <- get_domain_mapping(component$domain)
 
   concept_ids <- unique(component_concepts$concept_id)

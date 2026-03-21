@@ -202,6 +202,21 @@ Configuration files:
   - Defines each score component, lookback window, minimum event count, and points.
 - `risk_score/component_concepts.csv`
   - Maps each component to OMOP standard concept IDs and descendant expansion.
+  - All components are fully mapped:
+
+  | Component | Concept(s) | Notes |
+  |---|---|---|
+  | `female` | 8532 | Biological sex = Female |
+  | `overweight` | 3025315 (weight), 3036277 (height) | BMI 25–30 derived from measurements |
+  | `obese` | 3025315 (weight), 3036277 (height) | BMI ≥ 30 derived from measurements |
+  | `urgnt` | 4158569, 4250892 + descendants | Emergency or urgent procedure flag |
+  | `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
+  | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
+  | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
+  | `optime4h` | procedure_end_datetime (primary) | Operative time > 240 minutes; measurement table used if concept present |
+  | `mFI_high` | 201820, 255573, 316139, 316866, 4215267 | Composite modified Frailty Index > 0.25 (≥2/5 conditions: diabetes, COPD, CHF, hypertension, functional status) |
+  | `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
+
 - `risk_score/risk_lookup.csv`
   - Optional score-to-risk lookup table from the original score publication.
 
@@ -223,6 +238,34 @@ Output files (written to `output/risk_score_eval/`):
 - `calibration_table_recalibrated.csv`
 - `calibration_lookup.png` (if lookup is available)
 - `calibration_recalibrated.png`
+
+### Missing Value Handling
+
+The risk score pipeline handles missing component data by **treating missing values as null/zero evidence**.
+
+**Approach:**
+- When a component's event count cannot be determined from the OMOP CDM (no matching records), 
+  the component's event count is set to 0.
+- The component score is then calculated normally: if `event_count < min_count`, the component 
+  scores 0 points; otherwise, it scores the full component points.
+- The total risk score is computed by summing all component scores, even if some components 
+  had no matching data.
+
+**Interpretation:**
+- A total score of 15 could mean: (1) patient has 15 points worth of evidence, OR 
+  (2) three of five components had no data, so those components contributed 0 points by default.
+- The output file `person_level_scores.csv` includes individual component scores 
+  (`score_<component_id>` columns), so you can review which components had evidence.
+
+**Clinical Context:**
+This approach assumes that **missing data from the EMR equals no documented evidence** of that 
+risk factor. It is suitable when:
+- Data completeness is expected to be high (well-curated OMOP CDM)
+- Missing values should not prevent risk score calculation
+- A missing risk factor is treated conservatively as "nil risk" rather than "unknown risk"
+
+If your use case requires **marking scores as incomplete when data is missing**, contact the 
+development team to discuss alternative imputation or missing-data handling strategies.
 
 ### Portable Bundle For External OMOP Sites
 
