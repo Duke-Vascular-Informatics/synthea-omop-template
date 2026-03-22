@@ -21,6 +21,11 @@ source("config.R")
 source("R/drivers.R")
 source("R/connection.R")
 source("R/risk_score_pipeline.R")
+source("R/cohorts.R")
+
+# configure_java() MUST be called before library(DatabaseConnector) loads rJava,
+# as java.parameters can only be set once, before the JVM is first initialised.
+configure_java(get_validation_config())
 
 library(DatabaseConnector)
 library(SqlRender)
@@ -35,6 +40,12 @@ config <- get_validation_config()
 
 message("[RiskScore] Building DB connection details ...")
 connection_details <- build_connection_details(config)
+
+message("[RiskScore] Setting up cohort table ...")
+cohort_conn <- DatabaseConnector::connect(connection_details)
+ensure_results_schema(cohort_conn, config)
+build_cohorts(cohort_conn, config)
+DatabaseConnector::disconnect(cohort_conn)
 
 message("[RiskScore] Running integer risk score pipeline ...")
 results <- run_integer_risk_score_pipeline(config, connection_details)

@@ -128,9 +128,9 @@ copy_atlas_cohort <- function(connection,
 # Count the rows in a cohort to give quick feedback.
 count_cohort <- function(connection, config, cohort_id, label) {
   count_sql <- SqlRender::render(
-    sql = "SELECT COUNT(*) AS n
-           FROM @results_schema.@cohort_table
-           WHERE cohort_definition_id = @cohort_id",
+        sql = "SELECT COUNT(*) AS N
+          FROM @results_schema.@cohort_table
+          WHERE cohort_definition_id = @cohort_id",
     results_schema = config$results_schema,
     cohort_table   = config$cohort_table,
     cohort_id      = cohort_id

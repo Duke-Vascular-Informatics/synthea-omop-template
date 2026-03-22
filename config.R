@@ -63,7 +63,7 @@ get_validation_config <- function() {
     # - outcome cohort will be copied from atlas_outcome_cohort_id IF provided
     #   (non-NA), otherwise outcome is generated from cohorts/outcome_ssi.sql
     # ---------------------------------------------------------------------------
-    use_atlas_cohorts      = TRUE,
+    use_atlas_cohorts      = FALSE,
     atlas_cohort_schema    = "results",
     atlas_cohort_table     = "cohort",
     atlas_target_cohort_id = 1796269L,

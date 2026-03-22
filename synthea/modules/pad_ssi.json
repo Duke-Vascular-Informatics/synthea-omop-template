@@ -10,8 +10,10 @@
     "",
     "This module is self-contained. It generates a PAD diagnosis, schedules an inpatient",
     "revascularization, and applies comorbidity-adjusted SSI risk. It also generates",
-    "site-relevant comorbidities directly within the module: current smoking, type 2",
-    "diabetes mellitus, and BMI-defined obesity.",
+    "risk-model variables used by the PAD/OLER validation pipeline: claudication",
+    "indication, ABI severity, urgency flag, prior revascularization, pre-index",
+    "prolonged antibiotic exposure, BMI/height/weight, and modified frailty",
+    "comorbidities (diabetes, COPD, CHF, hypertension, functional impairment).",
     "",
     "SSI incidence assumptions (per published literature):",
     "  With Type 2 diabetes                 : 12%",
@@ -72,12 +74,12 @@
     "PAD_Onset_Chance": {
       "type": "Simple",
       "remarks": [
-        "PAD prevalence: ~6% in adults age 40+ (combined symptomatic + asymptomatic).",
-        "The remaining 94% exit at Terminal without PAD or surgery."
+        "Tuned prevalence for validation dataset yield.",
+        "20% of adults age 40+ progress to PAD pathway; remaining exit module."
       ],
       "distributed_transition": [
-        { "distribution": 0.06, "transition": "PAD_Onset" },
-        { "distribution": 0.94, "transition": "Terminal" }
+        { "distribution": 0.20, "transition": "PAD_Onset" },
+        { "distribution": 0.80, "transition": "Terminal" }
       ]
     },
 
@@ -129,6 +131,29 @@
 
     "End_PAD_Diagnosis_Encounter": {
       "type": "EncounterEnd",
+      "direct_transition": "Claudication_Chance"
+    },
+
+    "Claudication_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Most surgical PAD presentations in this module include intermittent claudication."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.70, "transition": "Claudication_Onset" },
+        { "distribution": 0.30, "transition": "Smoking_Status_Chance" }
+      ]
+    },
+
+    "Claudication_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "266261006",
+          "display": "Intermittent claudication"
+        }
+      ],
       "direct_transition": "Smoking_Status_Chance"
     },
 
@@ -186,7 +211,7 @@
       ],
       "distributed_transition": [
         { "distribution": 0.30, "transition": "Diabetes_Onset" },
-        { "distribution": 0.70, "transition": "BMI_Chance" }
+        { "distribution": 0.70, "transition": "Hypertension_Chance" }
       ]
     },
 
@@ -197,6 +222,86 @@
           "system": "SNOMED-CT",
           "code": "44054006",
           "display": "Diabetes mellitus type 2"
+        }
+      ],
+      "direct_transition": "Hypertension_Chance"
+    },
+
+    "Hypertension_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.60, "transition": "Hypertension_Onset" },
+        { "distribution": 0.40, "transition": "COPD_Chance" }
+      ]
+    },
+
+    "Hypertension_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "38341003",
+          "display": "Hypertensive disorder, systemic arterial"
+        }
+      ],
+      "direct_transition": "COPD_Chance"
+    },
+
+    "COPD_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.20, "transition": "COPD_Onset" },
+        { "distribution": 0.80, "transition": "CHF_Chance" }
+      ]
+    },
+
+    "COPD_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "13645005",
+          "display": "Chronic obstructive lung disease"
+        }
+      ],
+      "direct_transition": "CHF_Chance"
+    },
+
+    "CHF_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.15, "transition": "CHF_Onset" },
+        { "distribution": 0.85, "transition": "Functional_Impairment_Chance" }
+      ]
+    },
+
+    "CHF_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "84114007",
+          "display": "Heart failure"
+        }
+      ],
+      "direct_transition": "Functional_Impairment_Chance"
+    },
+
+    "Functional_Impairment_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.20, "transition": "Functional_Impairment_Onset" },
+        { "distribution": 0.80, "transition": "BMI_Chance" }
+      ]
+    },
+
+    "Functional_Impairment_Onset": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "129839007",
+          "display": "Impaired mobility"
         }
       ],
       "direct_transition": "BMI_Chance"
@@ -225,7 +330,37 @@
         }
       ],
       "range": { "low": 30, "high": 40 },
-      "direct_transition": "Pre_Surgical_Workup_Delay"
+      "direct_transition": "Height_Obese_Observation"
+    },
+
+    "Height_Obese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "cm",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "8302-2",
+          "display": "Body height"
+        }
+      ],
+      "range": { "low": 155, "high": 188 },
+      "direct_transition": "Weight_Obese_Observation"
+    },
+
+    "Weight_Obese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "kg",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "29463-7",
+          "display": "Body weight"
+        }
+      ],
+      "range": { "low": 90, "high": 130 },
+      "direct_transition": "Prior_Revascularization_Chance"
     },
 
     "BMI_NonObese_Observation": {
@@ -240,7 +375,105 @@
         }
       ],
       "range": { "low": 22, "high": 29.9 },
+      "direct_transition": "Height_NonObese_Observation"
+    },
+
+    "Height_NonObese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "cm",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "8302-2",
+          "display": "Body height"
+        }
+      ],
+      "range": { "low": 155, "high": 188 },
+      "direct_transition": "Weight_NonObese_Observation"
+    },
+
+    "Weight_NonObese_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "kg",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "29463-7",
+          "display": "Body weight"
+        }
+      ],
+      "range": { "low": 60, "high": 90 },
+      "direct_transition": "Prior_Revascularization_Chance"
+    },
+
+    "Prior_Revascularization_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.25, "transition": "Prior_Revascularization_Delay" },
+        { "distribution": 0.75, "transition": "Pre_Surgical_Workup_Delay" }
+      ]
+    },
+
+    "Prior_Revascularization_Delay": {
+      "type": "Delay",
+      "range": { "low": 30, "high": 365, "unit": "days" },
+      "direct_transition": "Prior_Revascularization_Procedure"
+    },
+
+    "Prior_Revascularization_Procedure": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "232723009",
+          "display": "Bypass of femoral artery to popliteal artery"
+        }
+      ],
+      "duration": { "low": 2, "high": 4, "unit": "hours" },
+      "direct_transition": "Prior_Revascularization_Recovery"
+    },
+
+    "Prior_Revascularization_Recovery": {
+      "type": "Delay",
+      "range": { "low": 14, "high": 60, "unit": "days" },
       "direct_transition": "Pre_Surgical_Workup_Delay"
+    },
+
+    "Pre_Index_Antibiotic_Chance": {
+      "type": "Simple",
+      "distributed_transition": [
+        { "distribution": 0.30, "transition": "Pre_Index_Antibiotic_Order" },
+        { "distribution": 0.70, "transition": "Urgent_Case_Chance" }
+      ]
+    },
+
+    "Pre_Index_Antibiotic_Order": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "preop_nonprophylaxis_antibiotic",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2673",
+          "display": "cephalexin"
+        }
+      ],
+      "direct_transition": "Pre_Index_Antibiotic_Delay"
+    },
+
+    "Pre_Index_Antibiotic_Delay": {
+      "type": "Delay",
+      "range": { "low": 3, "high": 10, "unit": "days" },
+      "direct_transition": "Pre_Index_Antibiotic_End"
+    },
+
+    "Pre_Index_Antibiotic_End": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "preop_nonprophylaxis_antibiotic",
+      "direct_transition": "Urgent_Case_Chance"
     },
 
     "Pre_Surgical_Workup_Delay": {
@@ -250,6 +483,30 @@
         "Includes pre-operative imaging, cardiac risk stratification, and scheduling."
       ],
       "range": { "low": 1, "high": 6, "unit": "months" },
+      "direct_transition": "Pre_Index_Antibiotic_Chance"
+    },
+
+    "Urgent_Case_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Subset of surgeries are flagged urgent/emergent for risk-score compatibility."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.25, "transition": "Urgent_Case_Observation" },
+        { "distribution": 0.75, "transition": "Surgical_Admission" }
+      ]
+    },
+
+    "Urgent_Case_Observation": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "25876001",
+          "display": "Emergency operation"
+        }
+      ],
       "direct_transition": "Surgical_Admission"
     },
 

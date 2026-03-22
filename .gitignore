@@ -29,5 +29,9 @@ drivers/etl-checkpoints/
 *.tmp
 *.log
 
+# Generated error reports from DatabaseConnector
+errorReportSql.txt
+errorReportR.txt
+
 # Generated portable bundle archives
 dist/*.zip

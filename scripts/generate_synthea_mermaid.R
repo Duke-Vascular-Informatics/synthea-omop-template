@@ -80,8 +80,7 @@ for (state_name in state_names) {
   state <- states[[state_name]]
   node_id <- node_ids[[state_name]]
 
-  state_type <- if (!is.null(state$type)) state$type else "State"
-  label <- sprintf("%s - %s", state_name, state_type)
+  label <- gsub("_", " ", state_name, fixed = TRUE)
   label <- escape_mermaid(label)
   node_lines <- c(node_lines, sprintf("  %s[\"%s\"]", node_id, label))
 
