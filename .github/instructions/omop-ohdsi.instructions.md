@@ -119,6 +119,20 @@ Invoke it in chat before writing any concept ID into code or CSV files:
 /concept-lookup <clinical term> [domain]
 ```
 
+## Methodology Reference
+
+When implementing new OHDSI methodology (cohort design, characterization, prediction,
+estimation, data quality), consult the Book of OHDSI first:
+
+  https://ohdsi.github.io/TheBookOfOhdsi/
+
+Key chapters by task:
+- Cohort definition → Chapter 11 (Cohorts)
+- Feature extraction / characterization → Chapter 12 (Characterization)
+- Patient-level prediction → Chapter 13 (Patient-Level Prediction)
+- Population-level estimation → Chapter 14 (Population-Level Estimation)
+- Data quality → Chapter 15 (Data Quality)
+
 Examples:
 ```
 /concept-lookup peripheral arterial disease condition

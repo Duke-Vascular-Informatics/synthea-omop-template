@@ -10,7 +10,7 @@ applyTo: "**/*.R"
 Always use the project-approved CRAN mirror — never suggest the default or any other mirror:
 
 ```r
-options(repos = c(CRAN = "https://archive.linux.dc.duke.edu/cran/"))
+options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
 ```
 
 ## renv

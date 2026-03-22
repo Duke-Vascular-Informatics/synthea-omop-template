@@ -16,7 +16,7 @@ intentionally self-contained and offline-capable.
 - This project uses **renv** for reproducible package management.
   - Always suggest `renv::install()` instead of bare `install.packages()`.
   - Never modify `renv.lock` manually; use `renv::snapshot()` after adding packages.
-- CRAN packages must be installed from the mirror `https://archive.linux.dc.duke.edu/cran/`.
+- CRAN packages must be installed from the mirror `https://archive.linux.duke.edu/cran/`.
   Do not suggest the default `https://cloud.r-project.org` or any other mirror.
 - See `install_packages.R` for the canonical install workflow.
 
