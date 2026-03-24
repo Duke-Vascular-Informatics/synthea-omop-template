@@ -10,14 +10,32 @@
 -- Scope (draft):
 --   - Patient -> person
 --   - Encounter -> visit_occurrence
+--   - Procedure -> procedure_occurrence
 --   - Condition -> condition_occurrence
---
--- Notes:
---   1) This is a scaffold and intentionally conservative.
---   2) Concept IDs are placeholders where source coding is not fully mapped.
---   3) Add joins to concept / source_to_concept_map for production-grade mapping.
 -- =============================================================================
 
+-- [BLOCK: cleanup]
+-- Remove all FHIR-sourced rows in FK-safe order before inserting.
+-- This guarantees a clean slate regardless of previous partial runs.
+DELETE FROM @cdm_schema.condition_occurrence
+WHERE person_id IN (
+    SELECT person_id FROM @cdm_schema.person
+    WHERE person_source_value LIKE 'fhir:%'
+);
+
+DELETE FROM @cdm_schema.procedure_occurrence
+WHERE person_id IN (
+    SELECT person_id FROM @cdm_schema.person
+    WHERE person_source_value LIKE 'fhir:%'
+);
+
+DELETE FROM @cdm_schema.visit_occurrence
+WHERE visit_source_value LIKE 'fhir:%';
+
+DELETE FROM @cdm_schema.person
+WHERE person_source_value LIKE 'fhir:%';
+
+-- [BLOCK: person]
 -- -------------------------
 -- Patient -> PERSON
 -- -------------------------
@@ -31,9 +49,16 @@ WITH patient_src AS (
   WHERE fr.run_name = '@run_name'
     AND fr.resource_type = 'Patient'
 ),
+patient_dedup AS (
+  SELECT
+      patient_resource_id,
+      birth_date,
+      gender_text,
+      ROW_NUMBER() OVER (PARTITION BY patient_resource_id ORDER BY patient_resource_id) AS rn
+  FROM patient_src
+),
 patient_typed AS (
   SELECT
-      run_name,
       patient_resource_id,
       YEAR(birth_date) AS year_of_birth,
       MONTH(birth_date) AS month_of_birth,
@@ -42,9 +67,25 @@ patient_typed AS (
         WHEN gender_text = 'male' THEN 8507
         WHEN gender_text = 'female' THEN 8532
         ELSE 8551
-      END AS gender_concept_id,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':patient:', patient_resource_id))) AS BIGINT) AS person_id
-  FROM patient_src
+      END AS gender_concept_id
+  FROM patient_dedup
+  WHERE rn = 1
+),
+patient_new AS (
+  SELECT
+      p.patient_resource_id,
+      p.year_of_birth,
+      p.month_of_birth,
+      p.day_of_birth,
+      p.gender_concept_id,
+      ROW_NUMBER() OVER (ORDER BY p.patient_resource_id)
+        + COALESCE((SELECT MAX(person_id) FROM @cdm_schema.person), 0) AS person_id
+  FROM patient_typed p
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM @cdm_schema.person x
+    WHERE x.person_source_value = CONCAT('fhir:', p.patient_resource_id)
+  )
 )
 INSERT INTO @cdm_schema.person (
     person_id,
@@ -83,17 +124,14 @@ SELECT
     0,
     NULL,
     0
-FROM patient_typed p
-WHERE NOT EXISTS (
-  SELECT 1 FROM @cdm_schema.person x WHERE x.person_id = p.person_id
-);
+FROM patient_new p;
 
+-- [BLOCK: visit]
 -- -------------------------
 -- Encounter -> VISIT_OCCURRENCE
 -- -------------------------
 WITH encounter_src AS (
   SELECT
-      fr.run_name,
       fr.resource_id AS encounter_resource_id,
       JSON_VALUE(fr.payload_json, '$.subject.reference') AS subject_reference,
       JSON_VALUE(fr.payload_json, '$.period.start') AS visit_start_ts,
@@ -103,11 +141,24 @@ WITH encounter_src AS (
   WHERE fr.run_name = '@run_name'
     AND fr.resource_type = 'Encounter'
 ),
+encounter_dedup AS (
+  SELECT
+      encounter_resource_id,
+      subject_reference,
+      visit_start_ts,
+      visit_end_ts,
+      encounter_class_code,
+      ROW_NUMBER() OVER (PARTITION BY encounter_resource_id ORDER BY visit_start_ts, encounter_resource_id) AS rn
+  FROM encounter_src
+),
 encounter_typed AS (
   SELECT
-      run_name,
       encounter_resource_id,
-      REPLACE(subject_reference, 'Patient/', '') AS patient_resource_id,
+      CASE
+        WHEN subject_reference LIKE 'Patient/%' THEN REPLACE(subject_reference, 'Patient/', '')
+        WHEN subject_reference LIKE 'urn:uuid:%' THEN REPLACE(subject_reference, 'urn:uuid:', '')
+        ELSE subject_reference
+      END AS patient_resource_id,
       TRY_CONVERT(datetime2, visit_start_ts) AS visit_start_datetime,
       TRY_CONVERT(datetime2, visit_end_ts) AS visit_end_datetime,
       CASE
@@ -115,10 +166,37 @@ encounter_typed AS (
         WHEN encounter_class_code IN ('amb', 'outpatient') THEN 9202
         WHEN encounter_class_code IN ('emergency', 'emerg') THEN 9203
         ELSE 0
-      END AS visit_concept_id,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':encounter:', encounter_resource_id))) AS BIGINT) AS visit_occurrence_id,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':patient:', REPLACE(subject_reference, 'Patient/', '')))) AS BIGINT) AS person_id
-  FROM encounter_src
+      END AS visit_concept_id
+  FROM encounter_dedup
+  WHERE rn = 1
+),
+encounter_with_person AS (
+  SELECT
+      e.encounter_resource_id,
+      p.person_id,
+      e.visit_start_datetime,
+      e.visit_end_datetime,
+      e.visit_concept_id
+  FROM encounter_typed e
+  INNER JOIN @cdm_schema.person p
+    ON p.person_source_value = CONCAT('fhir:', e.patient_resource_id)
+),
+encounter_new AS (
+  SELECT
+      e.encounter_resource_id,
+      e.person_id,
+      e.visit_start_datetime,
+      e.visit_end_datetime,
+      e.visit_concept_id,
+      ROW_NUMBER() OVER (ORDER BY e.encounter_resource_id)
+        + COALESCE((SELECT MAX(visit_occurrence_id) FROM @cdm_schema.visit_occurrence), 0) AS visit_occurrence_id
+  FROM encounter_with_person e
+  WHERE e.visit_start_datetime IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM @cdm_schema.visit_occurrence x
+      WHERE x.visit_source_value = CONCAT('fhir:', e.encounter_resource_id)
+    )
 )
 INSERT INTO @cdm_schema.visit_occurrence (
     visit_occurrence_id,
@@ -157,18 +235,146 @@ SELECT
     0,
     NULL,
     NULL
-FROM encounter_typed e
-WHERE e.visit_start_datetime IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM @cdm_schema.visit_occurrence x WHERE x.visit_occurrence_id = e.visit_occurrence_id
-  );
+FROM encounter_new e;
 
+-- [BLOCK: procedure]
+-- -------------------------
+-- Procedure -> PROCEDURE_OCCURRENCE
+-- -------------------------
+WITH procedure_src AS (
+  SELECT
+      fr.resource_id AS procedure_resource_id,
+      JSON_VALUE(fr.payload_json, '$.subject.reference') AS subject_reference,
+      JSON_VALUE(fr.payload_json, '$.encounter.reference') AS encounter_reference,
+      COALESCE(
+        JSON_VALUE(fr.payload_json, '$.performedPeriod.start'),
+        JSON_VALUE(fr.payload_json, '$.performedDateTime')
+      ) AS procedure_start_ts,
+      COALESCE(
+        JSON_VALUE(fr.payload_json, '$.performedPeriod.end'),
+        JSON_VALUE(fr.payload_json, '$.performedDateTime')
+      ) AS procedure_end_ts,
+      JSON_VALUE(fr.payload_json, '$.code.coding[0].code') AS source_code,
+      JSON_VALUE(fr.payload_json, '$.code.coding[0].display') AS source_display
+  FROM @staging_schema.fhir_raw_resource fr
+  WHERE fr.run_name = '@run_name'
+    AND fr.resource_type = 'Procedure'
+),
+procedure_dedup AS (
+  SELECT
+      procedure_resource_id,
+      subject_reference,
+      encounter_reference,
+      procedure_start_ts,
+      procedure_end_ts,
+      source_code,
+      source_display,
+      ROW_NUMBER() OVER (PARTITION BY procedure_resource_id ORDER BY procedure_start_ts, procedure_resource_id) AS rn
+  FROM procedure_src
+),
+procedure_typed AS (
+  SELECT
+      procedure_resource_id,
+      CASE
+        WHEN subject_reference LIKE 'Patient/%' THEN REPLACE(subject_reference, 'Patient/', '')
+        WHEN subject_reference LIKE 'urn:uuid:%' THEN REPLACE(subject_reference, 'urn:uuid:', '')
+        ELSE subject_reference
+      END AS patient_resource_id,
+      CASE
+        WHEN encounter_reference LIKE 'Encounter/%' THEN REPLACE(encounter_reference, 'Encounter/', '')
+        WHEN encounter_reference LIKE 'urn:uuid:%' THEN REPLACE(encounter_reference, 'urn:uuid:', '')
+        ELSE encounter_reference
+      END AS encounter_resource_id,
+      TRY_CONVERT(datetime2, procedure_start_ts) AS procedure_start_datetime,
+      TRY_CONVERT(datetime2, procedure_end_ts) AS procedure_end_datetime,
+      source_code,
+      source_display
+  FROM procedure_dedup
+  WHERE rn = 1
+),
+procedure_with_refs AS (
+  SELECT
+      t.procedure_resource_id,
+      p.person_id,
+      v.visit_occurrence_id,
+      t.procedure_start_datetime,
+      t.procedure_end_datetime,
+      t.source_code,
+      t.source_display
+  FROM procedure_typed t
+  INNER JOIN @cdm_schema.person p
+    ON p.person_source_value = CONCAT('fhir:', t.patient_resource_id)
+  LEFT JOIN @cdm_schema.visit_occurrence v
+    ON v.visit_source_value = CONCAT('fhir:', t.encounter_resource_id)
+),
+procedure_with_omop_mapping AS (
+  SELECT
+      ROW_NUMBER() OVER (ORDER BY p.procedure_resource_id)
+        + COALESCE((SELECT MAX(procedure_occurrence_id) FROM @cdm_schema.procedure_occurrence), 0) AS procedure_occurrence_id,
+      p.person_id,
+      COALESCE(c2.concept_id, 0) AS procedure_concept_id,
+      CAST(COALESCE(p.procedure_start_datetime, p.procedure_end_datetime) AS date) AS procedure_date,
+      p.procedure_start_datetime,
+      p.procedure_end_datetime,
+      32817 AS procedure_type_concept_id,
+      NULL AS modifier_concept_id,
+      1 AS quantity,
+      NULL AS provider_id,
+      p.visit_occurrence_id,
+      NULL AS visit_detail_id,
+      p.source_code AS procedure_source_value,
+      0 AS procedure_source_concept_id,
+      NULL AS modifier_source_value
+  FROM procedure_with_refs p
+  LEFT JOIN @cdm_schema.concept c2
+    ON c2.concept_code = p.source_code
+   AND c2.vocabulary_id = 'SNOMED'
+   AND c2.standard_concept = 'S'
+)
+INSERT INTO @cdm_schema.procedure_occurrence (
+    procedure_occurrence_id,
+    person_id,
+    procedure_concept_id,
+    procedure_date,
+    procedure_datetime,
+    procedure_end_date,
+    procedure_end_datetime,
+    procedure_type_concept_id,
+    modifier_concept_id,
+    quantity,
+    provider_id,
+    visit_occurrence_id,
+    visit_detail_id,
+    procedure_source_value,
+    procedure_source_concept_id,
+    modifier_source_value
+)
+SELECT
+    p.procedure_occurrence_id,
+    p.person_id,
+    p.procedure_concept_id,
+    p.procedure_date,
+    p.procedure_start_datetime,
+    CAST(COALESCE(p.procedure_end_datetime, p.procedure_start_datetime) AS date),
+    COALESCE(p.procedure_end_datetime, p.procedure_start_datetime),
+    p.procedure_type_concept_id,
+    p.modifier_concept_id,
+    p.quantity,
+    p.provider_id,
+    p.visit_occurrence_id,
+    p.visit_detail_id,
+    p.procedure_source_value,
+    p.procedure_source_concept_id,
+    p.modifier_source_value
+FROM procedure_with_omop_mapping p
+WHERE p.procedure_date IS NOT NULL;
+
+-- [BLOCK: condition]
 -- -------------------------
 -- Condition -> CONDITION_OCCURRENCE
 -- -------------------------
 WITH condition_src AS (
   SELECT
-      fr.run_name,
       fr.resource_id AS condition_resource_id,
       JSON_VALUE(fr.payload_json, '$.subject.reference') AS subject_reference,
       JSON_VALUE(fr.payload_json, '$.encounter.reference') AS encounter_reference,
@@ -180,20 +386,85 @@ WITH condition_src AS (
   WHERE fr.run_name = '@run_name'
     AND fr.resource_type = 'Condition'
 ),
-condition_typed AS (
+condition_dedup AS (
   SELECT
-      run_name,
       condition_resource_id,
-      REPLACE(subject_reference, 'Patient/', '') AS patient_resource_id,
-      REPLACE(encounter_reference, 'Encounter/', '') AS encounter_resource_id,
-      TRY_CONVERT(datetime2, onset_datetime) AS condition_start_datetime,
+      subject_reference,
+      encounter_reference,
+      onset_datetime,
       source_code,
       source_system,
       source_display,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':condition:', condition_resource_id))) AS BIGINT) AS condition_occurrence_id,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':patient:', REPLACE(subject_reference, 'Patient/', '')))) AS BIGINT) AS person_id,
-      CAST(ABS(CHECKSUM(CONCAT(run_name, ':encounter:', REPLACE(encounter_reference, 'Encounter/', '')))) AS BIGINT) AS visit_occurrence_id
+      ROW_NUMBER() OVER (PARTITION BY condition_resource_id ORDER BY onset_datetime, condition_resource_id) AS rn
   FROM condition_src
+),
+condition_typed AS (
+  SELECT
+      condition_resource_id,
+      CASE
+        WHEN subject_reference LIKE 'Patient/%' THEN REPLACE(subject_reference, 'Patient/', '')
+        WHEN subject_reference LIKE 'urn:uuid:%' THEN REPLACE(subject_reference, 'urn:uuid:', '')
+        ELSE subject_reference
+      END AS patient_resource_id,
+      CASE
+        WHEN encounter_reference LIKE 'Encounter/%' THEN REPLACE(encounter_reference, 'Encounter/', '')
+        WHEN encounter_reference LIKE 'urn:uuid:%' THEN REPLACE(encounter_reference, 'urn:uuid:', '')
+        ELSE encounter_reference
+      END AS encounter_resource_id,
+      TRY_CONVERT(datetime2, onset_datetime) AS condition_start_datetime,
+      source_code,
+      source_system,
+      source_display
+  FROM condition_dedup
+  WHERE rn = 1
+),
+condition_with_refs AS (
+  SELECT
+      t.condition_resource_id,
+      p.person_id,
+      v.visit_occurrence_id,
+      t.condition_start_datetime,
+      t.source_code,
+      t.source_system,
+      t.source_display
+  FROM condition_typed t
+  INNER JOIN @cdm_schema.person p
+    ON p.person_source_value = CONCAT('fhir:', t.patient_resource_id)
+  LEFT JOIN @cdm_schema.visit_occurrence v
+    ON v.visit_source_value = CONCAT('fhir:', t.encounter_resource_id)
+),
+condition_with_omop_mapping AS (
+  SELECT
+      ROW_NUMBER() OVER (ORDER BY c.condition_resource_id)
+        + COALESCE((SELECT MAX(condition_occurrence_id) FROM @cdm_schema.condition_occurrence), 0) AS condition_occurrence_id,
+      c.person_id,
+      COALESCE(
+        c2.concept_id,
+        CASE
+          WHEN c.source_code = '76844004' THEN 4201004
+          WHEN c.source_code = '433202001' THEN 4318887
+          WHEN c.source_code = '444948002' THEN 40480632
+          ELSE 0
+        END
+      ) AS condition_concept_id,
+      CAST(c.condition_start_datetime AS date) AS condition_start_date,
+      c.condition_start_datetime,
+      CAST(c.condition_start_datetime AS date) AS condition_end_date,
+      c.condition_start_datetime AS condition_end_datetime,
+      32817 AS condition_type_concept_id,
+      0 AS condition_status_concept_id,
+      NULL AS stop_reason,
+      NULL AS provider_id,
+      c.visit_occurrence_id,
+      NULL AS visit_detail_id,
+      c.source_code AS condition_source_value,
+      0 AS condition_source_concept_id,
+      c.source_display AS condition_status_source_value
+  FROM condition_with_refs c
+  LEFT JOIN @cdm_schema.concept c2
+    ON c2.concept_code = c.source_code
+   AND c2.vocabulary_id = 'SNOMED'
+   AND c2.standard_concept = 'S'
 )
 INSERT INTO @cdm_schema.condition_occurrence (
     condition_occurrence_id,
@@ -216,32 +487,20 @@ INSERT INTO @cdm_schema.condition_occurrence (
 SELECT
     c.condition_occurrence_id,
     c.person_id,
-    0, -- TODO: map source_code/source_system to standard OMOP concept_id
-    CAST(c.condition_start_datetime AS date),
+    c.condition_concept_id,
+    c.condition_start_date,
     c.condition_start_datetime,
-    CAST(c.condition_start_datetime AS date),
-    c.condition_start_datetime,
-    32817,
-    0,
-    NULL,
-    NULL,
-    v.visit_occurrence_id,
-    NULL,
-    c.source_code,
-    0,
-    c.source_display
-FROM condition_typed c
-LEFT JOIN @cdm_schema.visit_occurrence v
-  ON v.visit_occurrence_id = c.visit_occurrence_id
+    c.condition_end_date,
+    c.condition_end_datetime,
+    c.condition_type_concept_id,
+    c.condition_status_concept_id,
+    c.stop_reason,
+    c.provider_id,
+    c.visit_occurrence_id,
+    c.visit_detail_id,
+    c.condition_source_value,
+    c.condition_source_concept_id,
+    c.condition_status_source_value
+FROM condition_with_omop_mapping c
 WHERE c.condition_start_datetime IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM @cdm_schema.condition_occurrence x WHERE x.condition_occurrence_id = c.condition_occurrence_id
-  );
-
--- Optional run-level audit query
-SELECT
-    '@run_name' AS run_name,
-    (SELECT COUNT(*) FROM @staging_schema.fhir_raw_resource WHERE run_name = '@run_name') AS staged_resource_count,
-    (SELECT COUNT(*) FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%') AS person_rows_total_fhir,
-    (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence v WHERE v.visit_source_value LIKE 'fhir:%') AS visit_rows_total_fhir,
-    (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence c WHERE c.condition_source_value IS NOT NULL) AS condition_rows_total;
+  AND c.condition_concept_id > 0;

@@ -1,11 +1,12 @@
 -- =============================================================================
 -- cohorts/target_surgery.sql
--- Target cohort: patients who underwent an inpatient surgical procedure.
+-- Target cohort: patients who underwent inpatient open lower extremity
+-- revascularization.
 --
 -- Index date  : visit start date (first qualifying inpatient visit per person)
 -- Cohort end  : visit end date
--- Inclusion   : age >= 18 at index; at least one procedure recorded during
---               the inpatient visit (proxy for surgical activity in Synthea)
+-- Inclusion   : age >= 18 at index; open lower extremity revascularization
+--               recorded during the inpatient visit
 -- Exclusion   : any wound / SSI diagnosis in the 365 days BEFORE index date
 --               (prior-event washout so we do not capture prevalent cases)
 -- Study window: @study_start_date – @study_end_date
@@ -78,14 +79,23 @@ FROM (
           vo.visit_start_date
         ) >= 18
 
-    -- At least one procedure recorded during the visit
-    -- (Synthea maps surgical operations to procedure_occurrence)
+    -- Open lower extremity revascularization during the qualifying inpatient visit
     AND EXISTS (
       SELECT 1
       FROM @cdm_database_schema.procedure_occurrence po
       WHERE po.person_id    = vo.person_id
         AND po.procedure_date BETWEEN vo.visit_start_date
                                   AND ISNULL(vo.visit_end_date, vo.visit_start_date)
+        AND (
+          po.procedure_source_value = '232723009'
+          OR po.procedure_concept_id IN (
+            SELECT c.concept_id
+            FROM @cdm_database_schema.concept c
+            WHERE c.concept_code = '232723009'
+              AND c.vocabulary_id = 'SNOMED'
+              AND c.standard_concept = 'S'
+          )
+        )
     )
 
     -- Washout: no wound / SSI diagnosis in the 365 days before index

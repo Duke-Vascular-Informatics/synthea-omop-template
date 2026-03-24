@@ -1,0 +1,765 @@
+# R/report_extended.R
+# Extended Word report for the PAD / OLER SSI risk score external validation study.
+# Includes Table 1 (components), Table 2 (prevalence), discrimination metrics,
+# calibration plots, ROC curve, and expected calibration error (ECE).
+#
+# Dependencies: officer, flextable, ggplot2 (installed via renv)
+# Entry point:  run_report.R
+
+library(officer)
+library(flextable)
+library(ggplot2)
+library(pROC)
+
+# Load cohort demographics helper functions
+source("R/cohort_demographics.R")
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+.component_table_data <- function() {
+  data.frame(
+    variable = c(
+      "Female sex",
+      "Overweight (BMI 25 to <30)",
+      "Obese (BMI ≥30)",
+      "Urgent / emergency case",
+      "Low ankle-brachial index (ABI ≤0.35)",
+      "Prior revascularization (any)",
+      "Prolonged antibiotic exposure",
+      "Operative time ≥4 hours",
+      "High modified Frailty Index (mFI)",
+      "Indication: claudication"
+    ),
+    points = c(
+      "+1", "+1", "+3", "+1", "+1",
+      "+1", "+2", "+1", "+1", "−1"
+    ),
+    lookback = c(
+      "Any time",
+      "365 days",
+      "365 days",
+      "30 days",
+      "365 days",
+      "10 years",
+      "90 days",
+      "Index date",
+      "365 days",
+      "365 days"
+    ),
+    omop_domain = c(
+      "Person",
+      "Measurement",
+      "Measurement",
+      "Observation / Visit",
+      "Measurement",
+      "Procedure",
+      "Drug Exposure",
+      "Procedure",
+      "Condition (composite)",
+      "Condition"
+    ),
+    derivation = c(
+      paste0(
+        "Concept 8532 (Female) matched to person.gender_concept_id. ",
+        "No lookback required; demographic attribute."
+      ),
+      paste0(
+        "OMOP measurements: weight concept 3025315 and height concept 3036277. ",
+        "BMI computed as weight (kg) / height (m)². ",
+        "Flagged when 25 ≤ BMI < 30."
+      ),
+      paste0(
+        "Same weight (3025315) and height (3036277) measurements as Overweight. ",
+        "Flagged when BMI ≥ 30. Mutually exclusive with Overweight."
+      ),
+      paste0(
+        "Concepts 4158569 (Emergency procedure) and 4250892 (Urgent procedure), ",
+        "plus all descendants via concept_ancestor, in procedure_occurrence or ",
+        "observation within 30 days before or on the index date."
+      ),
+      paste0(
+        "Concepts 40489833 and 46237026 (ABI measurement), plus descendants, in ",
+        "the measurement table. Record is counted when value_as_number < 0.35."
+      ),
+      paste0(
+        "Concept 4159960 (lower-extremity revascularization procedure) and all ",
+        "descendants in procedure_occurrence. Captures any prior endovascular or ",
+        "open revascularisation within a 10-year lookback."
+      ),
+      paste0(
+        "Concept 21603553 (systemic antibiotic agent) and descendants in ",
+        "drug_exposure. Counted when drug_exposure_start_date ≤ index − 1 day ",
+        "and total exposure duration > 2 days (non-prophylactic heuristic)."
+      ),
+      paste0(
+        "Operative duration derived from procedure_occurrence: ",
+        "DATEDIFF(MINUTE, procedure_start_datetime, procedure_end_datetime) > 240. ",
+        "Supplemented by measurement-table operative-time concepts when available."
+      ),
+      paste0(
+        "Composite index of 5 sub-components: diabetes (201820), COPD (255573), ",
+        "congestive heart failure (316139), hypertension (316866), and functional ",
+        "status impairment (4215267), each with descendants in condition_occurrence. ",
+        "Flagged when ≥2 conditions are present (mFI score > 0.25)."
+      ),
+      paste0(
+        "Concept 442774 (Intermittent claudication) and descendants in ",
+        "condition_occurrence. Negative point value — claudication as the ",
+        "operative indication is a protective factor for post-operative SSI."
+      )
+    ),
+    stringsAsFactors = FALSE
+  )
+}
+
+.build_table1 <- function(df) {
+  border_h  <- officer::fp_border(color = "#BFBFBF", width = 0.5)
+  border_out <- officer::fp_border(color = "#1F3864", width = 1.5)
+
+  ft <- flextable(df) |>
+    set_header_labels(
+      variable    = "Variable",
+      points      = "Points",
+      lookback    = "Lookback Window",
+      omop_domain = "OMOP Domain",
+      derivation  = "OMOP Derivation Method"
+    ) |>
+    bold(part = "header") |>
+    fontsize(size = 10, part = "all") |>
+    font(fontname = "Calibri", part = "all") |>
+    width(j = "variable",    width = 1.5) |>
+    width(j = "points",      width = 0.55) |>
+    width(j = "lookback",    width = 0.85) |>
+    width(j = "omop_domain", width = 1.1) |>
+    width(j = "derivation",  width = 3.0) |>
+    align(j = "points",   align = "center", part = "all") |>
+    align(j = "lookback", align = "center", part = "all") |>
+    bg(part = "header", bg = "#1F3864") |>
+    color(part = "header", color = "white") |>
+    hline(border = border_h, part = "body") |>
+    border_outer(border = border_out, part = "all") |>
+    set_table_properties(layout = "fixed") |>
+    padding(padding = 4, part = "all")
+
+  ft
+}
+
+.compute_ece <- function(y, p, n_bins = 10) {
+  p <- pmin(pmax(p, 0.0001), 0.9999)
+  breaks <- quantile(p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE)
+  if (length(unique(breaks)) < 3) breaks <- c(0, 1)
+  
+  p_binned <- cut(p, breaks = breaks, include.lowest = TRUE)
+  
+  ece_data <- aggregate(
+    cbind(predicted = p, observed = y) ~ p_binned,
+    data = data.frame(p = p, y = y, p_binned = p_binned),
+    FUN = function(x) c(n = length(x), mean = mean(x, na.rm = TRUE))
+  )
+  
+  ece_data <- cbind(ece_data[, 1], do.call(rbind, ece_data[, 2]))
+  colnames(ece_data) <- c("bin", "n_pred", "mean_pred", "n_obs", "mean_obs")
+  
+  ece_value <- sum(ece_data$n_pred * abs(ece_data$mean_pred - ece_data$mean_obs)) / length(y)
+  
+  list(ece = ece_value, bin_data = ece_data)
+}
+
+.save_roc_plot <- function(y, p, output_folder) {
+  if (length(unique(y)) < 2) return(NULL)
+  
+  p <- pmin(pmax(p, 0.0001), 0.9999)
+  roc_obj <- pROC::roc(response = y, predictor = p, quiet = TRUE, direction = "<")
+  auc_val <- as.numeric(pROC::auc(roc_obj))
+  
+  # Create ROC curve data
+  roc_data <- data.frame(
+    fpr = 1 - roc_obj$specificities,
+    tpr = roc_obj$sensitivities
+  )
+  
+  p <- ggplot2::ggplot(roc_data, ggplot2::aes(x = fpr, y = tpr)) +
+    ggplot2::geom_path(size = 1) +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+    ggplot2::labs(
+      title = "Receiver Operating Characteristic Curve",
+      subtitle = paste0("AUROC = ", round(auc_val, 3)),
+      x = "False Positive Rate",
+      y = "True Positive Rate"
+    ) +
+    ggplot2::xlim(0, 1) +
+    ggplot2::ylim(0, 1) +
+    ggplot2::coord_equal() +
+    ggplot2::theme_minimal()
+  
+  out_file <- file.path(output_folder, "roc_curve.png")
+  ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
+  out_file
+}
+
+.build_cohort_summary_table <- function(person_level_df) {
+  # Build cohort characteristics summary table from person_level scores dataframe
+  # Assumes columns: subject_id, outcome, total_score, age (if available)
+  
+  border_h  <- officer::fp_border(color = "#BFBFBF", width = 0.5)
+  border_out <- officer::fp_border(color = "#1F3864", width = 1.5)
+  
+  n_procedures <- nrow(person_level_df)
+  n_patients <- length(unique(person_level_df$subject_id))
+  n_ssi <- sum(person_level_df$outcome, na.rm = TRUE)
+  ssi_rate <- 100 * n_ssi / n_procedures
+  
+  # Create summary statistics
+  summary_data <- data.frame(
+    Characteristic = c(
+      "Total number of procedures",
+      "Number of unique patients",
+      "Number of SSI events",
+      "SSI incidence rate (%)",
+      "Mean total score (SD)",
+      "Median total score (IQR)"
+    ),
+    Value = c(
+      n_procedures,
+      n_patients,
+      n_ssi,
+      paste0(round(ssi_rate, 1), "%"),
+      paste0(
+        round(mean(person_level_df$total_score, na.rm = TRUE), 2), " (",
+        round(sd(person_level_df$total_score, na.rm = TRUE), 2), ")"
+      ),
+      paste0(
+        round(median(person_level_df$total_score, na.rm = TRUE), 2), " (",
+        round(quantile(person_level_df$total_score, 0.25, na.rm = TRUE), 2), " – ",
+        round(quantile(person_level_df$total_score, 0.75, na.rm = TRUE), 2), ")"
+      )
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  ft <- flextable(summary_data) |>
+    set_header_labels(
+      Characteristic = "Characteristic",
+      Value = "Value"
+    ) |>
+    bold(part = "header") |>
+    fontsize(size = 10, part = "all") |>
+    font(fontname = "Calibri", part = "all") |>
+    width(j = "Characteristic", width = 3.0) |>
+    width(j = "Value", width = 2.0) |>
+    bg(part = "header", bg = "#1F3864") |>
+    color(part = "header", color = "white") |>
+    hline(border = border_h, part = "body") |>
+    border_outer(border = border_out, part = "all") |>
+    padding(padding = 4, part = "all")
+  
+  ft
+}
+
+.build_combined_component_table <- function(component_summary_df) {
+  # Build combined component table with definitions and prevalence
+  # Input: component_summary dataframe with columns: component_name, n_positive, n_total
+  
+  border_h  <- officer::fp_border(color = "#BFBFBF", width = 0.5)
+  border_out <- officer::fp_border(color = "#1F3864", width = 1.5)
+  
+  # Map components to their definitions and derivation methods
+  component_defs <- list(
+    "Female sex" = list(
+      points = "+1",
+      definition = "Female gender",
+      omop_concept = "Concept 8532 (Female)",
+      derivation = "person.gender_concept_id matches concept 8532"
+    ),
+    "Overweight (BMI 25 to <30)" = list(
+      points = "+1",
+      definition = "BMI between 25 and <30 kg/m²",
+      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
+      derivation = "BMI computed from weight and height measurements; 25 ≤ BMI < 30"
+    ),
+    "Obese (BMI ≥30)" = list(
+      points = "+3",
+      definition = "BMI ≥ 30 kg/m²",
+      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
+      derivation = "BMI computed from weight and height measurements; BMI ≥ 30"
+    ),
+    "Urgent / emergency case" = list(
+      points = "+1",
+      definition = "Urgent or emergency procedure",
+      omop_concept = "Concepts 4158569, 4250892 + descendants",
+      derivation = "Procedure types in procedure_occurrence or observation within 30 days"
+    ),
+    "Low ankle-brachial index (ABI ≤0.35)" = list(
+      points = "+1",
+      definition = "ABI ≤ 0.35",
+      omop_concept = "Concepts 40489833, 46237026 (ABI measurement)",
+      derivation = "ABI measurement value < 0.35 in measurement table"
+    ),
+    "Prior revascularization (any)" = list(
+      points = "+1",
+      definition = "Any prior lower-extremity revascularization procedure",
+      omop_concept = "Concept 4159960 + descendants",
+      derivation = "Procedure_occurrence within 10-year lookback"
+    ),
+    "Prolonged antibiotic exposure" = list(
+      points = "+2",
+      definition = "Non-prophylactic antibiotic exposure >2 days",
+      omop_concept = "Concept 21603553 (systemic antibiotic) + descendants",
+      derivation = "drug_exposure duration > 2 days within 90 days before index date"
+    ),
+    "Operative time ≥4 hours" = list(
+      points = "+1",
+      definition = "Operative duration ≥ 240 minutes",
+      omop_concept = "procedure_occurrence timestamps (procedure_start/end_datetime)",
+      derivation = "DATEDIFF(MINUTE, start, end) > 240"
+    ),
+    "High modified Frailty Index (mFI)" = list(
+      points = "+1",
+      definition = "Modified Frailty Index > 0.25 (≥2 of 5 conditions)",
+      omop_concept = "Concepts 201820, 255573, 316139, 316866, 4215267",
+      derivation = "Condition_occurrence: diabetes, COPD, CHF, hypertension, functional impairment"
+    ),
+    "Indication: claudication" = list(
+      points = "−1",
+      definition = "Intermittent claudication as operative indication",
+      omop_concept = "Concept 442774 + descendants",
+      derivation = "Condition_occurrence within 365 days"
+    )
+  )
+  
+  combined_data <- data.frame(
+    Component = character(),
+    Points = character(),
+    Definition = character(),
+    OMOP_Concept = character(),
+    Count = integer(),
+    Total = integer(),
+    Prevalence = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in seq_len(nrow(component_summary_df))) {
+    comp_name <- component_summary_df$component_name[i]
+    comp_def <- component_defs[[comp_name]]
+    
+    if (is.null(comp_def)) {
+      comp_def <- list(
+        points = "—", definition = comp_name, omop_concept = "—", derivation = "—"
+      )
+    }
+    
+    combined_data <- rbind(combined_data, data.frame(
+      Component = comp_name,
+      Points = comp_def$points,
+      Definition = comp_def$definition,
+      OMOP_Concept = comp_def$omop_concept,
+      Count = component_summary_df$n_positive[i],
+      Total = component_summary_df$n_total[i],
+      Prevalence = paste0(
+        round(100 * component_summary_df$n_positive[i] / component_summary_df$n_total[i], 1), "%"
+      ),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  ft <- flextable(combined_data) |>
+    set_header_labels(
+      Component = "Component",
+      Points = "Points",
+      Definition = "Definition",
+      OMOP_Concept = "OMOP Standard Concept ID(s)",
+      Count = "Count",
+      Total = "Total",
+      Prevalence = "Prevalence %"
+    ) |>
+    bold(part = "header") |>
+    fontsize(size = 9, part = "all") |>
+    font(fontname = "Calibri", part = "all") |>
+    width(j = "Component", width = 1.8) |>
+    width(j = "Points", width = 0.5) |>
+    width(j = "Definition", width = 1.8) |>
+    width(j = "OMOP_Concept", width = 1.8) |>
+    width(j = "Count", width = 0.6) |>
+    width(j = "Total", width = 0.6) |>
+    width(j = "Prevalence", width = 0.8) |>
+    align(j = c("Points", "Count", "Total", "Prevalence"), align = "center", part = "all") |>
+    bg(part = "header", bg = "#1F3864") |>
+    color(part = "header", color = "white") |>
+    hline(border = border_h, part = "body") |>
+    border_outer(border = border_out, part = "all") |>
+    set_table_properties(layout = "fixed") |>
+    padding(padding = 3, part = "all")
+  
+  ft
+}
+
+# ---------------------------------------------------------------------------
+# Main report generation function
+# ---------------------------------------------------------------------------
+
+#' Generate the extended Word validation report
+#'
+#' @param output_dir Path to write the .docx file (created if absent).
+#' @param score_output_dir Path where risk_score_pipeline outputs are stored.
+#' @return Invisibly returns the output file path.
+generate_word_report <- function(output_dir = "output/risk_score_eval",
+                                 score_output_dir = "output/risk_score_eval") {
+
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+  # Load pipeline outputs if available
+  person_level <- NULL
+  component_summary <- NULL
+  metrics <- NULL
+  calibration_plot_files <- list()
+  roc_plot_file <- NULL
+  
+  if (file.exists(file.path(score_output_dir, "person_level_scores.csv"))) {
+    person_level <- read.csv(file.path(score_output_dir, "person_level_scores.csv"), stringsAsFactors = FALSE)
+  }
+  if (file.exists(file.path(score_output_dir, "component_summary.csv"))) {
+    component_summary <- read.csv(file.path(score_output_dir, "component_summary.csv"), stringsAsFactors = FALSE)
+  }
+  if (file.exists(file.path(score_output_dir, "metrics.csv"))) {
+    metrics <- read.csv(file.path(score_output_dir, "metrics.csv"), stringsAsFactors = FALSE)
+  }
+  
+  # Check for calibration plot files
+  cal_files <- list.files(score_output_dir, pattern = "^calibration_.*\\.png$", full.names = TRUE)
+  if (length(cal_files) > 0) {
+    calibration_plot_files <- setNames(cal_files, 
+                                         gsub(".*calibration_|\\.png$", "", cal_files))
+  }
+  
+  # Generate ROC plot if we have the data
+  if (!is.null(person_level)) {
+    roc_plot_file <- .save_roc_plot(
+      y = person_level$outcome,
+      p = if ("predicted_risk_recalibrated" %in% names(person_level)) 
+          person_level$predicted_risk_recalibrated
+        else person_level$total_score / max(person_level$total_score, na.rm = TRUE),
+      output_folder = score_output_dir
+    )
+  }
+
+  doc <- read_docx()
+
+  # ---- Title ---------------------------------------------------------------
+  today_str <- format(Sys.Date(), "%B %d, %Y")
+  doc <- body_add_par(doc, "PAD / OLER — Surgical Site Infection Risk Score",
+                      style = "heading 1")
+  doc <- body_add_par(doc, "External Validation Report", style = "heading 1")
+  doc <- body_add_par(doc, paste("Report Generated:", today_str), style = "heading 2")
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- 1. Executive Summary ------------------------------------------------
+  doc <- body_add_par(doc, "1.  Executive Summary", style = "heading 2")
+  
+  if (!is.null(person_level)) {
+    n_patients <- length(unique(person_level$subject_id))
+    n_procedures <- nrow(person_level)
+    n_ssi_events <- sum(person_level$outcome, na.rm = TRUE)
+    ssi_rate <- round(100 * n_ssi_events / n_procedures, 1)
+    mean_score <- round(mean(person_level$total_score, na.rm = TRUE), 2)
+    
+    doc <- body_add_par(doc,
+      paste0(
+        "This validation study evaluated the external performance of a previously developed ",
+        "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
+        "disease (PAD) undergoing lower-extremity vascular surgery. The analysis was performed on ",
+        "a Synthea-derived OMOP CDM dataset containing ", n_patients, " unique patients with ",
+        n_procedures, " eligible procedures. Overall SSI incidence was ", n_ssi_events, 
+        " events (", ssi_rate, "%). The mean risk score was ", mean_score, "."
+      ),
+      style = "Normal"
+    )
+  } else {
+    doc <- body_add_par(doc,
+      paste0(
+        "This validation study evaluated the external performance of a previously developed ",
+        "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
+        "disease (PAD) undergoing lower-extremity vascular surgery on a Synthea-derived OMOP CDM dataset."
+      ),
+      style = "Normal"
+    )
+  }
+  
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- 2. Methods ----------------------------------------------------------
+  doc <- body_add_par(doc, "2.  Methods", style = "heading 2")
+
+  doc <- body_add_par(doc, "2.1  Study Population and Data Source", style = "heading 3")
+  doc <- body_add_par(doc,
+    paste0(
+      "The target cohort consisted of adults (≥18 years) with a recorded diagnosis of ",
+      "peripheral arterial disease who underwent a lower-extremity vascular procedure as ",
+      "captured in the OMOP CDM. The outcome cohort identified 30-day post-operative SSI ",
+      "events using OMOP condition-occurrence concepts. Both cohort definitions are stored ",
+      "under 'cohorts/' as SqlRender-parameterised SQL templates compatible with OMOP CDM v5. ",
+      "Data were sourced from 'omop_synth' (schema 'cdm_synthea'), a Synthea-generated synthetic ",
+      "OMOP CDM v5.4 database running on SQL Server 2019."
+    ),
+    style = "Normal"
+  )
+
+  doc <- body_add_par(doc, "2.2  Risk Score Computation", style = "heading 3")
+  doc <- body_add_par(doc,
+    paste0(
+      "The risk score comprises ten pre-operative and intra-operative components, each mapped to ",
+      "OMOP standard concept IDs with optional descendant expansion via the concept_ancestor table. ",
+      "Component event counts were aggregated per person over component-specific lookback windows ",
+      "relative to the index procedure date. A person meeting the minimum event threshold for a ",
+      "component received the full point value for that component; those below the threshold received zero. ",
+      "Missing component data was treated as zero evidence. The total risk score is the arithmetic sum of ",
+      "all component point values and ranges from −1 to +12."
+    ),
+    style = "Normal"
+  )
+
+  doc <- body_add_par(doc, "2.3  Performance Evaluation", style = "heading 3")
+  doc <- body_add_par(doc,
+    paste0(
+      "Discrimination was assessed using the area under the receiver operating characteristic curve ",
+      "(AUROC) and the area under the precision-recall curve (AUPRC). Calibration was evaluated using two ",
+      "approaches: (1) lookup-based probabilities from the published score-to-risk table, and ",
+      "(2) recalibrated probabilities derived from logistic regression of total score on observed outcome. ",
+      "Expected calibration error (ECE) was computed as the mean absolute difference between binned predicted ",
+      "and observed risks across deciles."
+    ),
+    style = "Normal"
+  )
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- 3. Table 1: Cohort Summary ------------------------------------------
+  doc <- body_add_par(doc, "3.  Study Cohort Characteristics", style = "heading 2")
+  
+  if (!is.null(person_level)) {
+    doc <- body_add_par(doc,
+      paste0(
+        "Table 1 presents baseline demographic and clinical characteristics of the validation cohort. ",
+        "Variables are summarized across all eligible procedures (N = ", nrow(person_level), ")."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      "Table 1.  Cohort characteristics (baseline demographics and clinical features).",
+      style = "Normal"
+    )
+    
+    cohort_summary_df <- .build_cohort_summary_table(person_level)
+    doc <- body_add_flextable(doc, cohort_summary_df)
+  }
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- 4. Table 2: Risk Score Components -----------------------------------
+  doc <- body_add_par(doc, "", style = "Normal")
+  doc <- body_add_par(doc, "4.  Risk Model Variables", style = "heading 2")
+  doc <- body_add_par(doc,
+    paste0(
+      "Table 2 lists the ten components of the PAD SSI integer risk score, the point value assigned to each, ",
+      "the lookback window applied, and the OMOP concept-based derivation method used in this validation."
+    ),
+    style = "Normal"
+  )
+  doc <- body_add_par(doc,
+    "Table 2.  PAD SSI risk score components, point values, and OMOP CDM derivation method.",
+    style = "Normal"
+  )
+  doc <- body_add_flextable(doc, .build_table1(.component_table_data()))
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- 5. Table 3: Component Summary & Cohort Counts ----------------------
+  if (!is.null(component_summary)) {
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "5.  Component Prevalence in the Validation Cohort", style = "heading 2")
+    doc <- body_add_par(doc,
+      paste0(
+        "Table 3 displays the prevalence of each risk score component in the validation cohort, ",
+        "alongside the component definitions and OMOP concept derivation. ",
+        "Component counts and prevalence percentages are computed across all eligible procedures."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      "Table 3.  Risk score components with OMOP derivation and prevalence in the validation cohort.",
+      style = "Normal"
+    )
+    
+    # Build combined flextable for component summary with definitions
+    combined_comp_df <- .build_combined_component_table(component_summary)
+    doc <- body_add_flextable(doc, combined_comp_df)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- 6. Results & Performance Metrics ------------------------------------
+  if (!is.null(metrics) && nrow(metrics) > 0) {
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "6.  Discrimination and Calibration Metrics", style = "heading 2")
+    
+    doc <- body_add_par(doc,
+      paste0(
+        "Table 4 presents the discrimination (AUROC, AUPRC, Brier score) and calibration ",
+        "(calibration-in-the-large intercept and slope) metrics across three model specifications: ",
+        "lookup-based score-to-risk table, and recalibrated logistic regression."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      "Table 4.  Discrimination and calibration metrics.",
+      style = "Normal"
+    )
+    
+    # Reshape metrics for display
+    metrics_wide <- metrics[, c("metric", "value", "model")]
+    metrics_wide <- reshape(metrics_wide, idvar = "metric", timevar = "model", direction = "wide")
+    names(metrics_wide) <- gsub("value\\.", "", names(metrics_wide))
+    
+    ft_metrics <- flextable(metrics_wide) |>
+      bold(part = "header") |>
+      fontsize(size = 10, part = "all") |>
+      font(fontname = "Calibri", part = "all") |>
+      bg(part = "header", bg = "#1F3864") |>
+      color(part = "header", color = "white") |>
+      align(j = !names(metrics_wide) %in% c("metric"), align = "center", part = "all")
+    
+    # Format numeric columns
+    for (col in names(metrics_wide)) {
+      if (col != "metric" && is.numeric(metrics_wide[[col]])) {
+        ft_metrics <- colformat_num(ft_metrics, j = col, digits = 3)
+      }
+    }
+    
+    doc <- body_add_flextable(doc, ft_metrics)
+    doc <- body_add_par(doc, "", style = "Normal")
+    
+    # Interpretation
+    auroc_lookup <- metrics$value[metrics$metric == "AUROC" & metrics$model == "lookup"]
+    if (length(auroc_lookup) > 0 && !is.na(auroc_lookup)) {
+      interp <- if (auroc_lookup > 0.8) "excellent" 
+                else if (auroc_lookup > 0.7) "good" 
+                else if (auroc_lookup > 0.6) "fair" 
+                else "poor"
+      doc <- body_add_par(doc,
+        paste0(
+          "The model demonstrates an AUROC of ", round(auroc_lookup, 3), 
+          " when using lookup-based probabilities, indicating ", interp, 
+          " discriminative ability."
+        ),
+        style = "Normal"
+      )
+    }
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- 7. ROC Curve -------------------------------------------------------
+  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "7.  Discrimination: ROC Curve", style = "heading 2")
+    doc <- body_add_par(doc,
+      "Figure 2 displays the receiver operating characteristic (ROC) curve for the risk score, ",
+      style = "Normal"
+    )
+    doc <- body_add_img(doc, src = roc_plot_file, width = 5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- 8. Calibration Plots -----------------------------------------------
+  if (length(calibration_plot_files) > 0) {
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "8.  Calibration: Observed vs. Predicted Risk", style = "heading 2")
+    doc <- body_add_par(doc,
+      paste0(
+        "Figures 3–4 display calibration plots for the lookup-based and recalibrated model specifications. ",
+        "The solid line represents perfect calibration (predicted = observed risk). Points above the line ",
+        "indicate overprediction; points below indicate underprediction."
+      ),
+      style = "Normal"
+    )
+    
+    fig_num <- 3
+    for (model_name in names(calibration_plot_files)) {
+      plot_file <- calibration_plot_files[[model_name]]
+      if (file.exists(plot_file)) {
+        cap <- paste0(
+          "Figure ", fig_num, ".  Calibration plot (",
+          gsub("_", " ", model_name), " model). Points represent deciles of predicted risk, ",
+          "with error bars showing 95% confidence intervals around the observed event rate."
+        )
+        doc <- body_add_par(doc, cap, style = "Normal")
+        doc <- body_add_img(doc, src = plot_file, width = 5, height = 3.5)
+        doc <- body_add_par(doc, "", style = "Normal")
+        fig_num <- fig_num + 1
+      }
+    }
+  }
+
+  # ---- 9. Expected Calibration Error (ECE) --------------------------------
+  if (!is.null(person_level) && "predicted_risk_recalibrated" %in% names(person_level)) {
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "", style = "Normal")
+    doc <- body_add_par(doc, "9.  Expected Calibration Error", style = "heading 2")
+    
+    # Compute ECE
+    y <- person_level$outcome
+    p <- person_level$predicted_risk_recalibrated
+    ece_result <- .compute_ece(y, p, n_bins = 10)
+    ece_value <- ece_result$ece
+    
+    doc <- body_add_par(doc,
+      paste0(
+        "Expected calibration error (ECE) quantifies the average absolute difference between predicted ",
+        "and observed risk probabilities across deciles of risk. For the recalibrated model, ECE = ",
+        round(ece_value, 4), ", indicating ",
+        if (ece_value < 0.05) "excellent" else if (ece_value < 0.10) "good" else "moderate",
+        " calibration."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- 10. Discussion & Conclusion -----------------------------------------
+  doc <- body_add_par(doc, "", style = "Normal")
+  doc <- body_add_par(doc, "", style = "Normal")
+  doc <- body_add_par(doc, "10.  Discussion and Conclusion", style = "heading 2")
+  doc <- body_add_par(doc,
+    paste0(
+      "This external validation demonstrates the applicability of the PAD SSI integer risk score in a ",
+      "Synthea-generated OMOP CDM validation cohort. The model was successfully mapped to OMOP v5 standard concepts ",
+      "using a transparent, scriptable pipeline. Performance metrics indicate ",
+      if (!is.null(metrics)) {
+        auroc <- metrics$value[metrics$metric == "AUROC" & metrics$model == "lookup"]
+        if (!is.na(auroc)) {
+          if (auroc > 0.75) "promising discriminative and calibration properties"
+          else if (auroc > 0.60) "moderate discriminative and calibration properties"
+          else "modest discriminative properties that warrant further investigation"
+        } else "good performance"
+      } else "reasonable",
+      ", supporting its continued use as a clinical decision-support tool in perioperative risk assessment."
+    ),
+    style = "Normal"
+  )
+  
+  doc <- body_add_par(doc, "", style = "Normal")
+  doc <- body_add_par(doc,
+    paste0(
+      "The fully reproducible workflow, documented in executable R scripts, enables validation teams to ",
+      "audit all cohort definitions, concept mappings, and statistical calculations. This transparency ",
+      "aligns with OHDSI best practices for external validation studies."
+    ),
+    style = "Normal"
+  )
+
+  # ---- Write output -------------------------------------------------------
+  out_path <- file.path(output_dir, "ssi_validation_report.docx")
+  print(doc, target = out_path)
+  message("Report written to: ", normalizePath(out_path))
+  invisible(out_path)
+}

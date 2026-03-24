@@ -364,7 +364,7 @@ Key clinical parameters modeled:
 
 | Parameter | Value |
 |-----------|-------|
-| PAD prevalence (age 40+) | 6% |
+| PAD pathway assignment | 100% of generated patients age 40+ |
 | SSI — baseline | 6% |
 | SSI — with Type 2 diabetes | 12% |
 | SSI — with obesity (BMI ≥ 30) | 10% |

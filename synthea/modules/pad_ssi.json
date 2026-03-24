@@ -74,13 +74,10 @@
     "PAD_Onset_Chance": {
       "type": "Simple",
       "remarks": [
-        "Tuned prevalence for validation dataset yield.",
-        "20% of adults age 40+ progress to PAD pathway; remaining exit module."
+        "PAD-only generation mode.",
+        "All generated adults meeting the age guard are routed into the PAD pathway."
       ],
-      "distributed_transition": [
-        { "distribution": 0.20, "transition": "PAD_Onset" },
-        { "distribution": 0.80, "transition": "Terminal" }
-      ]
+      "direct_transition": "PAD_Onset"
     },
 
     "PAD_Onset": {
