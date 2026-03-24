@@ -122,6 +122,18 @@ for (p in github_packages) {
   remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
 }
 
+# --- ETLSyntheaBuilder (Synthea CSV -> OMOP ETL) -----------------------------
+if (!"ETLSyntheaBuilder" %in% rownames(installed.packages())) {
+  message("Installing ETLSyntheaBuilder from OHDSI/ETL-Synthea ...")
+  # ETLSyntheaBuilder is distributed from the ETL-Synthea repository.
+  # Use renv::install for reproducible project-local installation.
+  renv::install("OHDSI/ETL-Synthea")
+}
+
+if (!requireNamespace("ETLSyntheaBuilder", quietly = TRUE)) {
+  stop("ETLSyntheaBuilder installation failed or package unavailable after install.")
+}
+
 # --- Snapshot environment ----------------------------------------------------
 if (requireNamespace("renv", quietly = TRUE)) {
   renv::snapshot(prompt = FALSE)
@@ -137,4 +149,6 @@ ensure_jdbc_bundle(get_validation_config())
 message("JDBC driver provisioned.")
 
 message("\nAll packages installed and JDBC driver ready.")
+message("IMPORTANT: The Synthea->OMOP ETL path now uses EtlSyntheaBuilder.")
+message("If missing, install via renv::install(<EtlSyntheaBuilder package source>) and run renv::snapshot().")
 message("Next step: source('run_validation.R') to run the pipeline.")
