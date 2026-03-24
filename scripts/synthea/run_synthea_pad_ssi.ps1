@@ -3,7 +3,7 @@ param(
   [string]$SyntheaHome = $(if ([string]::IsNullOrWhiteSpace($env:SYNTHEA_HOME)) { "C:\Users\rapiduser\source\repos\synthea" } else { $env:SYNTHEA_HOME }),
 
   [Parameter(Mandatory = $false)]
-  [int]$Population = 5000,
+  [int]$Population = 1000,
 
   [Parameter(Mandatory = $false)]
   [string]$ModuleFile = "c:\Users\rapiduser\pad-oler-ssi-val\synthea\modules\pad_ssi.json",
@@ -17,11 +17,6 @@ param(
 
   [Parameter(Mandatory = $false)]
   [string]$AgeRange = "40-100"
-,
-
-  [Parameter(Mandatory = $false)]
-  [ValidateSet("csv", "fhir", "both")]
-  [string]$ExportFormat = "csv"
 ,
 
   [Parameter(Mandatory = $false)]
@@ -66,11 +61,7 @@ Push-Location $SyntheaHome
 try {
   Write-Host "Running Synthea with module '$ModuleName' for $Population patients ($ExportFormat output)..." -ForegroundColor Cyan
 
-  switch ($ExportFormat) {
-    "csv"  { $exporterArgs = @("--exporter.csv.export=true",  "--exporter.fhir.export=false") }
-    "fhir" { $exporterArgs = @("--exporter.csv.export=false", "--exporter.fhir.export=true") }
-    "both" { $exporterArgs = @("--exporter.csv.export=true",  "--exporter.fhir.export=true") }
-  }
+  $exporterArgs = @("--exporter.csv.export=true", "--exporter.fhir.export=false", "--exporter.json.export=false")
 
   # This Synthea checkout supports -m for module filtering.
   # Do not use --modules here: App.java treats unknown --args as config keys,
@@ -99,15 +90,9 @@ try {
   }
 
   $csvOutputDir = Join-Path $SyntheaHome "output\csv"
-  $fhirOutputDir = Join-Path $SyntheaHome "output\fhir"
 
   Write-Host "Synthea completed successfully." -ForegroundColor Green
-  if ($ExportFormat -eq "csv" -or $ExportFormat -eq "both") {
-    Write-Host "CSV output folder : $csvOutputDir" -ForegroundColor Green
-  }
-  if ($ExportFormat -eq "fhir" -or $ExportFormat -eq "both") {
-    Write-Host "FHIR output folder: $fhirOutputDir" -ForegroundColor Green
-  }
+  Write-Host "CSV output folder: $csvOutputDir" -ForegroundColor Green
 }
 finally {
   Pop-Location

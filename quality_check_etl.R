@@ -1,7 +1,7 @@
 # =============================================================================
 # quality_check_etl.R
 #
-# Run post-load quality checks for a FHIR -> OMOP ETL run.
+# Run post-load quality checks after the Synthea CSV -> OMOP ETL.
 # =============================================================================
 
 local({

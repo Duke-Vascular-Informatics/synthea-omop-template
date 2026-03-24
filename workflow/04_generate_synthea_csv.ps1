@@ -1,6 +1,6 @@
 param(
   [string]$SyntheaHome = $(if ([string]::IsNullOrWhiteSpace($env:SYNTHEA_HOME)) { "C:\Users\rapiduser\source\repos\synthea" } else { $env:SYNTHEA_HOME }),
-  [int]$Population = 5000,
+  [int]$Population = 1000,
   [string]$AgeRange = "40-100",
   [string]$State = "Massachusetts"
 )
@@ -17,7 +17,6 @@ try {
     -Population $Population `
     -AgeRange $AgeRange `
     -State $State `
-    -ExportFormat "csv" `
     -RequireModuleOnly $true
 }
 finally {
