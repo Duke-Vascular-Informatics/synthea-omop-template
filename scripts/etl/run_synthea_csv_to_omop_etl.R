@@ -1,5 +1,5 @@
 # =============================================================================
-# scripts/run_synthea_csv_to_omop_etl.R
+# scripts/etl/run_synthea_csv_to_omop_etl.R
 # Synthea CSV -> OMOP ETL runner for SQL Server.
 # =============================================================================
 

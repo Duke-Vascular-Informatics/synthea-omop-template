@@ -18,7 +18,7 @@ intentionally self-contained and offline-capable.
   - Never modify `renv.lock` manually; use `renv::snapshot()` after adding packages.
 - CRAN packages must be installed from the mirror `https://archive.linux.duke.edu/cran/`.
   Do not suggest the default `https://cloud.r-project.org` or any other mirror.
-- See `install_packages.R` for the canonical install workflow.
+- See `setup/install_packages.R` for the canonical install workflow.
 
 ## Offline GitHub Packages
 
@@ -31,7 +31,7 @@ installing them from GitHub with `remotes::install_github()` or `pak`:
 | `CohortGenerator` | 0.9.0 | `internal_repo/bin/windows/contrib/4.5/CohortGenerator_0.9.0.zip` |
 | `PatientLevelPrediction` | 6.4.0 | `internal_repo/bin/windows/contrib/4.5/PatientLevelPrediction_6.4.0.zip` |
 
-Use the `install_from_internal_binary()` helper in `install_packages.R` for these packages.
+Use the `install_from_internal_binary()` helper in `setup/install_packages.R` for these packages.
 
 ## Architecture
 

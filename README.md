@@ -12,19 +12,45 @@ This project performs external validation of a previously developed SSI predicti
 
 The project now follows a consistent numbered workflow matching the full study lifecycle.
 
-Use the scripts in `scripts/workflow/` in this order:
+Use the scripts in `workflow/` in this order:
 
-1. `scripts/workflow/01_setup_synthea_etl_qc_env.R`
-2. `scripts/workflow/02_define_omop_cohort_outcome_covariates.R`
-3. `scripts/workflow/03_generate_synthea_module_artifacts.R`
-4. `scripts/workflow/04_generate_synthea_csv.ps1`
-5. `scripts/workflow/05_etl_csv_to_omop.R`
-6. `scripts/workflow/06_quality_check_defined_phenotypes.R`
-7. `scripts/workflow/07_setup_analysis_env.R`
-8. `scripts/workflow/08_run_analysis_and_manuscript_report.R`
-9. `scripts/workflow/09_build_portable_analysis_bundle.ps1`
+1. `workflow/01_setup_synthea_etl_qc_env.R`
+2. `workflow/02_define_omop_cohort_outcome_covariates.R`
+3. `workflow/03_generate_synthea_module_artifacts.R`
+4. `workflow/04_generate_synthea_csv.ps1`
+5. `workflow/05_etl_csv_to_omop.R`
+6. `workflow/06_quality_check_defined_phenotypes.R`
+7. `workflow/07_setup_analysis_env.R`
+8. `workflow/08_run_analysis_and_manuscript_report.R`
+9. `workflow/09_build_portable_analysis_bundle.ps1`
 
-For command examples and details, see `scripts/workflow/README.md`.
+For command examples and details, see `workflow/README.md`.
+
+Run steps directly as standalone scripts.
+
+Each script in `workflow/` can be run independently and auto-resolves repo root.
+
+Examples:
+
+```powershell
+Rscript workflow/00_preflight_checks.R
+Rscript workflow/01_setup_synthea_etl_qc_env.R
+Rscript workflow/02_define_omop_cohort_outcome_covariates.R
+Rscript workflow/03_generate_synthea_module_artifacts.R
+powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
+Rscript workflow/05_etl_csv_to_omop.R
+Rscript workflow/05_etl_csv_to_omop.R --reset_before_etl=true
+Rscript workflow/06_quality_check_defined_phenotypes.R --run_name=padssi-csv-20260324-120000 --enforce_thresholds=true --min_person_rows=100
+Rscript workflow/07_setup_analysis_env.R
+Rscript workflow/08_run_analysis_and_manuscript_report.R
+powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
+```
+
+The canonical Step 8 keeps report output as a shareable Word document (`.docx`) in `output/risk_score_eval/`.
+
+Legacy one-off entrypoint scripts were archived to:
+
+- `scripts/archive/legacy_entrypoints/`
 
 ## Prerequisites
 
@@ -40,12 +66,14 @@ CRAN packages are installed from:
 
 ```text
 pad-oler-ssi-val/
-  run_validation.R
   config.R
   install_packages.R
   setup_renv.R
   .Rprofile
   renv.lock
+  setup/
+    install_packages.R
+    setup_renv.R
   cohorts/
     target_surgery.sql
     outcome_ssi.sql
@@ -55,17 +83,27 @@ pad-oler-ssi-val/
     cohorts.R
     validation.R
     risk_score_pipeline.R
-  run_risk_score_pipeline.R
   risk_score/
     components.csv
     component_concepts.csv
     risk_lookup.csv
+  workflow/
+    00_preflight_checks.R
+    01_setup_synthea_etl_qc_env.R
+    ...
+    09_build_portable_analysis_bundle.ps1
   scripts/
+    archive/
+      legacy_entrypoints/
+    bundle/
+      build_portable_risk_score_bundle.ps1
+    etl/
+      reset_omop_and_staging.R
+      run_synthea_csv_to_omop_etl.R
+    synthea/
+      generate_synthea_mermaid.R
+      run_synthea_pad_ssi.ps1
     prebuild_github_binaries.R
-    generate_synthea_mermaid.R
-    run_synthea_pad_ssi.ps1
-    run_fhir_to_omop_etl.R
-    build_portable_risk_score_bundle.ps1
     sql/
       fhir_to_omop_transform_draft.sql
   internal_repo/
@@ -119,7 +157,7 @@ The following GitHub packages are pinned and supported through prebuilt local bi
 - `OHDSI/CohortGenerator` @ `v0.9.0`
 - `OHDSI/PatientLevelPrediction` @ `v6.4.0`
 
-`install_packages.R` installs these in this order:
+`setup/install_packages.R` installs these in this order:
 1. From local internal binaries in `internal_repo/bin/windows/contrib/<R-version>/`
 2. Fallback to GitHub only if a local binary is missing
 
@@ -131,9 +169,11 @@ From project root in a fresh R session:
 
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("setup_renv.R")
-source("install_packages.R")
+source("setup/setup_renv.R")
+source("setup/install_packages.R")
 ```
+
+Root-level `setup_renv.R` and `install_packages.R` remain as compatibility wrappers.
 
 What this does:
 - Activates `renv`
@@ -156,21 +196,29 @@ This generates Windows binaries under:
 
 Commit those binaries so restricted environments can install without GitHub.
 
-## Run Validation
+## Run Analysis and Report
 
-In a fresh R session:
+Use the canonical workflow (recommended):
+
+```powershell
+Rscript workflow/07_setup_analysis_env.R
+Rscript workflow/08_run_analysis_and_manuscript_report.R
+```
+
+Or run the analysis step directly in a fresh R session:
 
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("run_validation.R")
+source("workflow/08_run_analysis_and_manuscript_report.R")
 ```
 
-Pipeline stages:
-1. Load config
-2. Build DB connection details and verify connection
-3. Prepare target and outcome cohorts (ATLAS copy mode or local SQL mode)
-4. Run `externalValidateDbPlp()`
-5. Save outputs and launch PLP result viewer
+This step executes the canonical Step 8 workflow script, which:
+
+1. Loads project configuration and connections
+2. Builds target/outcome cohorts
+3. Runs integer risk score analysis
+4. Writes score outputs to `output/risk_score_eval/`
+5. Generates the manuscript-style report
 
 ## ATLAS Cohorts
 
@@ -207,11 +255,11 @@ If your ATLAS cohort table lives in another schema or table, update
 This repository also includes a configurable pipeline for evaluating a simple
 integer-based risk score in the same target/outcome cohorts.
 
-Entry point:
+Canonical entry point:
 
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("run_risk_score_pipeline.R")
+source("workflow/08_run_analysis_and_manuscript_report.R")
 ```
 
 Configuration files:
@@ -324,7 +372,7 @@ To use it:
 Use the project runner script:
 
 ```powershell
-.\scripts\run_synthea_pad_ssi.ps1 -SyntheaHome "C:\path\to\synthea" -Population 5000
+.\scripts\synthea\run_synthea_pad_ssi.ps1 -SyntheaHome "C:\path\to\synthea" -Population 5000
 ```
 
 This script:
@@ -338,7 +386,7 @@ This script:
 This repository includes a draft ETL scaffold to load Synthea FHIR NDJSON into an
 OMOP CDM schema on SQL Server:
 
-- `scripts/run_fhir_to_omop_etl.R` (R orchestrator)
+- `scripts/archive/legacy_entrypoints/run_fhir_to_omop_etl.R` (legacy draft runner)
 - `scripts/sql/fhir_to_omop_transform_draft.sql` (draft SQL transform)
 
 What it does:
@@ -357,7 +405,7 @@ Run it in R:
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
 source("renv/activate.R")
-source("scripts/run_fhir_to_omop_etl.R")
+source("scripts/archive/legacy_entrypoints/run_fhir_to_omop_etl.R")
 
 run_fhir_to_omop_etl(
   fhir_input_dir = "C:/path/to/synthea/output/fhir",
@@ -407,14 +455,14 @@ Primary concept codes (OMOP-mappable):
 
 This repository includes a local generator script and a rendered Mermaid file:
 
-- `scripts/generate_synthea_mermaid.R`
+- `scripts/synthea/generate_synthea_mermaid.R`
 - `synthea/modules/pad_ssi.mmd`
 - `synthea/modules/pad_ssi.diagram.md`
 
 Regenerate the diagram after editing the JSON module:
 
 ```powershell
-& "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.mmd
+& "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/synthea/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.mmd
 ```
 
 The generator also refreshes `synthea/modules/pad_ssi.diagram.md` automatically

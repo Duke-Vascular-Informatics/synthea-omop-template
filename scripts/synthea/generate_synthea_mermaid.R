@@ -2,11 +2,11 @@
 
 # Generate a Mermaid flowchart from a Synthea GMF module JSON.
 # Usage:
-#   Rscript scripts/generate_synthea_mermaid.R <input_json> <output_mmd>
+#   Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_mmd>
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2) {
-  stop("Usage: Rscript scripts/generate_synthea_mermaid.R <input_json> <output_mmd>")
+  stop("Usage: Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_mmd>")
 }
 
 input_json <- args[[1]]

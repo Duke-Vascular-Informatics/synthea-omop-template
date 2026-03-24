@@ -36,7 +36,7 @@ Three OHDSI packages are pre-built as local Windows binaries. **Never** suggest
 Use the project helper:
 
 ```r
-# Defined in install_packages.R
+# Defined in setup/install_packages.R
 install_from_internal_binary("FeatureExtraction")
 install_from_internal_binary("CohortGenerator")
 install_from_internal_binary("PatientLevelPrediction")

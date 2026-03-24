@@ -28,12 +28,48 @@ source("config.R")
 source("R/drivers.R")
 source("R/connection.R")
 
-args <- commandArgs(trailingOnly = TRUE)
-run_name <- if (length(args) >= 1 && nzchar(args[[1]])) {
-  args[[1]]
-} else {
-  paste0("padssi-csv-", format(Sys.Date(), "%Y%m%d"))
+parse_args <- function(args) {
+  opts <- list(
+    run_name = "",
+    enforce_thresholds = FALSE,
+    min_person_rows = 1,
+    min_open_revascularization_rows = 1,
+    min_ssi_condition_rows = 1,
+    min_mapped_condition_pct = 0
+  )
+
+  parse_bool <- function(x) {
+    tolower(trimws(as.character(x))) %in% c("1", "true", "t", "yes", "y")
+  }
+
+  for (arg in args) {
+    if (grepl("^--", arg)) {
+      m <- regmatches(arg, regexec("^--([^=]+)=(.*)$", arg))[[1]]
+      if (length(m) == 3) {
+        key <- m[2]
+        val <- m[3]
+        if (identical(key, "run_name")) opts$run_name <- val
+        if (identical(key, "enforce_thresholds")) opts$enforce_thresholds <- parse_bool(val)
+        if (identical(key, "min_person_rows")) opts$min_person_rows <- as.numeric(val)
+        if (identical(key, "min_open_revascularization_rows")) opts$min_open_revascularization_rows <- as.numeric(val)
+        if (identical(key, "min_ssi_condition_rows")) opts$min_ssi_condition_rows <- as.numeric(val)
+        if (identical(key, "min_mapped_condition_pct")) opts$min_mapped_condition_pct <- as.numeric(val)
+      }
+    } else if (!nzchar(opts$run_name)) {
+      opts$run_name <- arg
+    }
+  }
+
+  if (!nzchar(opts$run_name)) {
+    opts$run_name <- paste0("padssi-csv-", format(Sys.Date(), "%Y%m%d"))
+  }
+
+  opts
 }
+
+args <- commandArgs(trailingOnly = TRUE)
+opts <- parse_args(args)
+run_name <- opts$run_name
 
 config <- get_validation_config()
 conn <- DatabaseConnector::connect(build_connection_details(config))
@@ -73,8 +109,24 @@ cat("\n")
 summary_sql <- SqlRender::translate(SqlRender::render(
   "
   SELECT
-    (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') AS staged_rows,
-    (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') AS staged_files,
+    (
+      (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') +
+      (SELECT COUNT(*) FROM @staging_schema.encounters_stage WHERE run_name = '@run_name') +
+      (SELECT COUNT(*) FROM @staging_schema.procedures_stage WHERE run_name = '@run_name') +
+      (SELECT COUNT(*) FROM @staging_schema.conditions_stage WHERE run_name = '@run_name')
+    ) AS staged_rows,
+    (
+      SELECT SUM(CASE WHEN row_count > 0 THEN 1 ELSE 0 END)
+      FROM (
+        SELECT COUNT(*) AS row_count FROM @staging_schema.patients_stage   WHERE run_name = '@run_name'
+        UNION ALL
+        SELECT COUNT(*) AS row_count FROM @staging_schema.encounters_stage WHERE run_name = '@run_name'
+        UNION ALL
+        SELECT COUNT(*) AS row_count FROM @staging_schema.procedures_stage WHERE run_name = '@run_name'
+        UNION ALL
+        SELECT COUNT(*) AS row_count FROM @staging_schema.conditions_stage WHERE run_name = '@run_name'
+      ) stage_counts
+    ) AS staged_tables_with_rows,
     (SELECT COUNT(*) FROM @cdm_schema.person WHERE person_source_value LIKE 'synthea_csv:%') AS person_rows,
     (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence WHERE visit_source_value LIKE 'synthea_csv:%') AS visit_rows,
     (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (
@@ -105,6 +157,28 @@ summary_df <- run_query(summary_sql)
 cat("OMOP summary\n")
 print(summary_df)
 cat("\n")
+
+value_from_summary <- function(df, candidates) {
+  nm <- names(df)
+  hit <- candidates[candidates %in% nm]
+  if (length(hit) == 0) return(NA_real_)
+  as.numeric(df[[hit[1]]][1])
+}
+
+person_rows <- value_from_summary(summary_df, c("personRows", "person_rows"))
+open_revasc_rows <- value_from_summary(summary_df, c("openRevascularizationRows", "open_revascularization_rows"))
+ssi_rows <- value_from_summary(summary_df, c("ssiConditionRows", "ssi_condition_rows"))
+condition_rows <- value_from_summary(summary_df, c("conditionRows", "condition_rows"))
+mapped_condition_rows <- value_from_summary(summary_df, c("mappedConditionRows", "mapped_condition_rows"))
+
+mapped_pct <- if (!is.na(condition_rows) && condition_rows > 0) {
+  100 * mapped_condition_rows / condition_rows
+} else {
+  NA_real_
+}
+
+cat("Mapping quality\n")
+cat("Mapped condition percentage: ", round(mapped_pct, 2), "%\n\n", sep = "")
 
 age_sql <- SqlRender::translate(SqlRender::render(
   "
@@ -148,5 +222,29 @@ signal_df <- run_query(ssi_person_sql)
 cat("Clinical signal check\n")
 print(signal_df)
 cat("\n")
+
+if (isTRUE(opts$enforce_thresholds)) {
+  failures <- character()
+
+  if (is.na(person_rows) || person_rows < opts$min_person_rows) {
+    failures <- c(failures, paste0("person_rows < min_person_rows (", person_rows, " < ", opts$min_person_rows, ")"))
+  }
+  if (is.na(open_revasc_rows) || open_revasc_rows < opts$min_open_revascularization_rows) {
+    failures <- c(failures, paste0("open_revascularization_rows < min_open_revascularization_rows (", open_revasc_rows, " < ", opts$min_open_revascularization_rows, ")"))
+  }
+  if (is.na(ssi_rows) || ssi_rows < opts$min_ssi_condition_rows) {
+    failures <- c(failures, paste0("ssi_condition_rows < min_ssi_condition_rows (", ssi_rows, " < ", opts$min_ssi_condition_rows, ")"))
+  }
+  if (is.na(mapped_pct) || mapped_pct < opts$min_mapped_condition_pct) {
+    failures <- c(failures, paste0("mapped_condition_pct < min_mapped_condition_pct (", round(mapped_pct, 2), " < ", opts$min_mapped_condition_pct, ")"))
+  }
+
+  if (length(failures) > 0) {
+    stop("Quality check threshold failures: ", paste(failures, collapse = "; "))
+  }
+
+  cat("Threshold gate\n")
+  cat("All enforced thresholds passed.\n\n")
+}
 
 cat("=== QUALITY CHECK COMPLETE ===\n")

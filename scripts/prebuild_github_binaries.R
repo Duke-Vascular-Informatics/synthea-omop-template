@@ -1,7 +1,7 @@
 # =============================================================================
 # scripts/prebuild_github_binaries.R
 # Build internal Windows binary packages (.zip) for GitHub-only OHDSI packages
-# so install_packages.R can run without GitHub access.
+# so setup/install_packages.R can run without GitHub access.
 #
 # Usage (from project root):
 #   Rscript scripts/prebuild_github_binaries.R
