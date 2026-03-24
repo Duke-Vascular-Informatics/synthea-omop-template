@@ -20,6 +20,18 @@ source("R/cohort_demographics.R")
 
 .component_table_data <- function() {
   data.frame(
+    component_id = c(
+      "female",
+      "overweight",
+      "obese",
+      "urgnt",
+      "abi_35",
+      "prrevasc_any",
+      "prolong_abx",
+      "optime4h",
+      "mFI_high",
+      "indicationClaudication"
+    ),
     variable = c(
       "Female sex",
       "Overweight (BMI 25 to <30)",
@@ -167,12 +179,30 @@ source("R/cohort_demographics.R")
   list(ece = ece_value, bin_data = ece_data)
 }
 
-.save_roc_plot <- function(y, p, output_folder) {
+.save_roc_plot <- function(y, p, output_folder, auc_override = NA_real_) {
   if (length(unique(y)) < 2) return(NULL)
   
   p <- pmin(pmax(p, 0.0001), 0.9999)
-  roc_obj <- pROC::roc(response = y, predictor = p, quiet = TRUE, direction = "<")
-  auc_val <- as.numeric(pROC::auc(roc_obj))
+
+  if (!is.na(auc_override)) {
+    roc_lt <- pROC::roc(response = y, predictor = p, quiet = TRUE, direction = "<")
+    roc_gt <- pROC::roc(response = y, predictor = p, quiet = TRUE, direction = ">")
+    auc_lt <- as.numeric(pROC::auc(roc_lt))
+    auc_gt <- as.numeric(pROC::auc(roc_gt))
+
+    if (abs(auc_lt - as.numeric(auc_override)) <= abs(auc_gt - as.numeric(auc_override))) {
+      roc_obj <- roc_lt
+      auc_val <- auc_lt
+    } else {
+      roc_obj <- roc_gt
+      auc_val <- auc_gt
+    }
+    auc_label <- as.numeric(auc_override)
+  } else {
+    roc_obj <- pROC::roc(response = y, predictor = p, quiet = TRUE)
+    auc_val <- as.numeric(pROC::auc(roc_obj))
+    auc_label <- auc_val
+  }
   
   # Create ROC curve data
   roc_data <- data.frame(
@@ -185,7 +215,7 @@ source("R/cohort_demographics.R")
     ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
       title = "Receiver Operating Characteristic Curve",
-      subtitle = paste0("AUROC = ", round(auc_val, 3)),
+      subtitle = paste0("AUROC = ", round(auc_label, 3)),
       x = "False Positive Rate",
       y = "True Positive Rate"
     ) +
@@ -195,6 +225,32 @@ source("R/cohort_demographics.R")
     ggplot2::theme_minimal()
   
   out_file <- file.path(output_folder, "roc_curve.png")
+  ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
+  out_file
+}
+
+.save_calibration_plot_from_table <- function(calibration_table_path, output_folder, file_name = "calibration_lookup.png") {
+  if (!file.exists(calibration_table_path)) {
+    return(NULL)
+  }
+
+  cal <- read.csv(calibration_table_path, stringsAsFactors = FALSE)
+  if (!all(c("predicted", "observed") %in% names(cal))) {
+    return(NULL)
+  }
+
+  p <- ggplot2::ggplot(cal, ggplot2::aes(x = predicted, y = observed)) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::geom_line() +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+    ggplot2::labs(
+      title = "Calibration Plot: Lookup Model",
+      x = "Mean predicted risk",
+      y = "Observed event rate"
+    ) +
+    ggplot2::theme_minimal()
+
+  out_file <- file.path(output_folder, file_name)
   ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
   out_file
 }
@@ -762,4 +818,369 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   print(doc, target = out_path)
   message("Report written to: ", normalizePath(out_path))
   invisible(out_path)
+}
+
+generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
+                                       score_output_dir = "output/risk_score_eval",
+                                       cleanup_old_outputs = FALSE) {
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+  temp_figure_dir <- tempfile("report_figures_")
+  dir.create(temp_figure_dir, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(temp_figure_dir, recursive = TRUE, force = TRUE), add = TRUE)
+
+  person_level_path <- file.path(score_output_dir, "person_level_scores.csv")
+  component_summary_path <- file.path(score_output_dir, "component_summary.csv")
+  metrics_path <- file.path(score_output_dir, "metrics.csv")
+  lookup_calibration_plot <- file.path(score_output_dir, "calibration_lookup.png")
+  calibration_table_lookup_path <- file.path(score_output_dir, "calibration_table_lookup.csv")
+  lookup_calibration_plot_temp <- file.path(temp_figure_dir, "calibration_lookup.png")
+
+  if (!file.exists(person_level_path) || !file.exists(component_summary_path) || !file.exists(metrics_path)) {
+    stop("Missing one or more required pipeline outputs in ", score_output_dir)
+  }
+
+  person_level <- read.csv(person_level_path, stringsAsFactors = FALSE)
+  component_summary <- read.csv(component_summary_path, stringsAsFactors = FALSE)
+  metrics <- read.csv(metrics_path, stringsAsFactors = FALSE)
+
+  # Backfill ECE if it is not present in the metrics file.
+  compute_ece <- function(y, p, n_bins = 10) {
+    ok <- !(is.na(y) | is.na(p))
+    y <- as.numeric(y[ok])
+    p <- as.numeric(p[ok])
+    if (length(y) == 0) {
+      return(NA_real_)
+    }
+
+    eps <- 1e-6
+    p[p < eps] <- eps
+    p[p > (1 - eps)] <- 1 - eps
+
+    probs <- unique(stats::quantile(p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE))
+    if (length(probs) < 3) {
+      probs <- c(0, 1)
+    }
+    bins <- cut(p, breaks = probs, include.lowest = TRUE)
+    bin_n <- as.numeric(table(bins))
+    if (length(bin_n) == 0) {
+      return(NA_real_)
+    }
+
+    pred_mean <- tapply(p, bins, mean)
+    obs_mean <- tapply(y, bins, mean)
+    as.numeric(sum(abs(pred_mean - obs_mean) * bin_n) / sum(bin_n))
+  }
+
+  if (!any(metrics$metric == "ECE")) {
+    ece_rows <- data.frame(metric = character(), value = numeric(), model = character(), stringsAsFactors = FALSE)
+
+    if ("predicted_risk_lookup" %in% names(person_level)) {
+      keep_lookup <- !is.na(person_level$predicted_risk_lookup)
+      if (any(keep_lookup)) {
+        ece_rows <- rbind(
+          ece_rows,
+          data.frame(
+            metric = "ECE",
+            value = compute_ece(person_level$outcome[keep_lookup], person_level$predicted_risk_lookup[keep_lookup]),
+            model = "lookup",
+            stringsAsFactors = FALSE
+          )
+        )
+      }
+    }
+
+    if ("predicted_risk_recalibrated" %in% names(person_level)) {
+      ece_rows <- rbind(
+        ece_rows,
+        data.frame(
+          metric = "ECE",
+          value = compute_ece(person_level$outcome, person_level$predicted_risk_recalibrated),
+          model = "recalibrated",
+          stringsAsFactors = FALSE
+        )
+      )
+    }
+
+    if (nrow(ece_rows) > 0) {
+      metrics <- rbind(metrics, ece_rows)
+    }
+  }
+
+  fmt <- function(x, digits = 3) {
+    format(round(as.numeric(x), digits), nsmall = digits)
+  }
+
+  metric_value <- function(metric_name, model_name) {
+    row <- metrics[metrics$metric == metric_name & metrics$model == model_name, , drop = FALSE]
+    if (nrow(row) == 0) {
+      return(NA_real_)
+    }
+    as.numeric(row$value[1])
+  }
+
+  n_target <- nrow(person_level)
+  n_outcome <- sum(person_level$outcome, na.rm = TRUE)
+  outcome_prev <- if (n_target > 0) 100 * n_outcome / n_target else NA_real_
+
+  results_tbl <- data.frame(
+    Metric = c(
+      "AUROC",
+      "AUPRC",
+      "Brier score",
+      "Estimated calibration error",
+      "Calibration intercept",
+      "Calibration slope"
+    ),
+    Value = c(
+      fmt(metric_value("AUROC", "lookup")),
+      fmt(metric_value("AUPRC", "lookup")),
+      fmt(metric_value("Brier", "lookup")),
+      fmt(metric_value("ECE", "lookup")),
+      fmt(metric_value("CalibrationIntercept", "lookup")),
+      fmt(metric_value("CalibrationSlope", "lookup"))
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  normalize_label <- function(x) {
+    x <- tolower(trimws(as.character(x)))
+    x <- gsub("[()\\[\\]\\{\\}]", " ", x)
+    x <- gsub("[^a-z0-9]+", " ", x)
+    x <- gsub("\\s+", " ", x)
+    trimws(x)
+  }
+
+  predictor_ref <- .component_table_data()[, c("component_id", "variable", "points", "lookback", "derivation")]
+  names(predictor_ref) <- c("component_id", "Predictor", "Points", "Lookback", "Definition")
+
+  if ("component_id" %in% names(component_summary)) {
+    component_act <- component_summary[, c("component_id", "n_positive", "mean_points"), drop = FALSE]
+    predictor_tbl <- merge(predictor_ref, component_act, by = "component_id", all.x = TRUE, sort = FALSE)
+  } else {
+    predictor_ref$key <- normalize_label(predictor_ref$Predictor)
+    component_act <- component_summary[, c("component_name", "n_positive", "mean_points"), drop = FALSE]
+    component_act$key <- normalize_label(component_act$component_name)
+    component_act <- component_act[, c("key", "n_positive", "mean_points"), drop = FALSE]
+    predictor_tbl <- merge(predictor_ref, component_act, by = "key", all.x = TRUE, sort = FALSE)
+  }
+
+  predictor_tbl$n_positive[is.na(predictor_tbl$n_positive)] <- 0
+  predictor_tbl$mean_points[is.na(predictor_tbl$mean_points)] <- 0
+  predictor_tbl <- predictor_tbl[, c("Predictor", "Points", "Lookback", "Definition", "n_positive", "mean_points")]
+  names(predictor_tbl) <- c("Predictor", "Points", "Lookback", "Definition", "PositiveCount", "MeanPoints")
+  predictor_tbl$PositiveCount <- as.integer(predictor_tbl$PositiveCount)
+  predictor_tbl$MeanPoints <- round(as.numeric(predictor_tbl$MeanPoints), 4)
+
+  cohort_tbl <- data.frame(
+    Item = c(
+      "Target cohort",
+      "Outcome cohort",
+      "Outcome prevalence (%)"
+    ),
+    Value = c(n_target, n_outcome, fmt(outcome_prev, 2)),
+    Definition = c(
+      "Adults aged >=18 years with open lower extremity revascularization (procedure_source_value 232723009) during a qualifying visit; earliest qualifying event per person retained; excluded prior wound/SSI diagnosis in the 365 days before index.",
+      "First surgical site infection during follow-up identified using OMOP concept-ancestor logic for wound infection concepts with source-code fallback condition_source_value 76844004.",
+      "Computed as (outcome events / target cohort size) x 100."
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  simple_ft <- function(df) {
+    flextable(df) |>
+      bold(part = "header") |>
+      fontsize(size = 10, part = "all") |>
+      font(fontname = "Calibri", part = "all") |>
+      bg(part = "header", bg = "#1F3864") |>
+      color(part = "header", color = "white") |>
+      padding(padding = 4, part = "all") |>
+      autofit()
+  }
+
+  wrapped_definition_ft <- function(df) {
+    ft <- flextable(df) |>
+      bold(part = "header") |>
+      fontsize(size = 10, part = "all") |>
+      font(fontname = "Calibri", part = "all") |>
+      bg(part = "header", bg = "#1F3864") |>
+      color(part = "header", color = "white") |>
+      padding(padding = 4, part = "all") |>
+      align(align = "left", part = "all") |>
+      valign(valign = "top", part = "all") |>
+      width(j = "Item", width = 1.4) |>
+      width(j = "Value", width = 0.9) |>
+      width(j = "Definition", width = 4.7) |>
+      set_table_properties(layout = "fixed")
+
+    ft
+  }
+
+  wrapped_predictor_ft <- function(df) {
+    ft <- flextable(df) |>
+      bold(part = "header") |>
+      fontsize(size = 9, part = "all") |>
+      font(fontname = "Calibri", part = "all") |>
+      bg(part = "header", bg = "#1F3864") |>
+      color(part = "header", color = "white") |>
+      padding(padding = 3, part = "all") |>
+      align(align = "left", part = "all") |>
+      valign(valign = "top", part = "all") |>
+      width(j = "Predictor", width = 1.4) |>
+      width(j = "Points", width = 0.5) |>
+      width(j = "Lookback", width = 0.8) |>
+      width(j = "Definition", width = 3.5) |>
+      width(j = "PositiveCount", width = 0.8) |>
+      width(j = "MeanPoints", width = 0.8) |>
+      set_table_properties(layout = "fixed")
+
+    ft
+  }
+
+  next_report_file <- function(output_dir, base_name) {
+    primary <- file.path(output_dir, paste0(base_name, ".docx"))
+    if (!file.exists(primary)) {
+      return(primary)
+    }
+
+    i <- 2L
+    repeat {
+      candidate <- file.path(output_dir, paste0(base_name, "_", i, ".docx"))
+      if (!file.exists(candidate)) {
+        return(candidate)
+      }
+      i <- i + 1L
+    }
+  }
+
+  roc_y <- person_level$outcome
+  if ("predicted_risk_lookup" %in% names(person_level)) {
+    keep_lookup <- !is.na(person_level$predicted_risk_lookup)
+    roc_y <- person_level$outcome[keep_lookup]
+    roc_p <- person_level$predicted_risk_lookup[keep_lookup]
+  } else if ("predicted_risk_recalibrated" %in% names(person_level)) {
+    roc_p <- person_level$predicted_risk_recalibrated
+  } else {
+    roc_p <- person_level$total_score / max(person_level$total_score, na.rm = TRUE)
+  }
+
+  roc_plot_file <- .save_roc_plot(
+    y = roc_y,
+    p = roc_p,
+    output_folder = temp_figure_dir,
+    auc_override = metric_value("AUROC", "lookup")
+  )
+
+  if (file.exists(lookup_calibration_plot)) {
+    file.copy(lookup_calibration_plot, lookup_calibration_plot_temp, overwrite = TRUE)
+  } else if (file.exists(calibration_table_lookup_path)) {
+    lookup_generated <- .save_calibration_plot_from_table(
+      calibration_table_path = calibration_table_lookup_path,
+      output_folder = temp_figure_dir,
+      file_name = "calibration_lookup.png"
+    )
+    if (!is.null(lookup_generated) && file.exists(lookup_generated)) {
+      lookup_calibration_plot_temp <- lookup_generated
+    }
+  }
+
+  cleanup_report_outputs <- function(output_dir, project_name) {
+    report_pattern <- paste0("^", project_name, "_report_[0-9]{8}(_[0-9]+)?\\.docx$")
+    files <- list.files(output_dir, full.names = TRUE, all.files = FALSE)
+    if (length(files) == 0) {
+      return(invisible(NULL))
+    }
+
+    for (f in files) {
+      nm <- basename(f)
+
+      # Keep iterative reports that match the naming convention.
+      if (grepl(report_pattern, nm)) {
+        next
+      }
+
+      # Keep core pipeline tabular outputs.
+      if (nm %in% c(
+        "person_level_scores.csv",
+        "component_summary.csv",
+        "metrics.csv",
+        "calibration_table_lookup.csv",
+        "calibration_table_recalibrated.csv"
+      )) {
+        next
+      }
+
+      # Remove legacy reports and standalone artifacts.
+      if (tolower(tools::file_ext(nm)) == "docx" ||
+          nm %in% c("roc_curve.png", "calibration_lookup.png", "calibration_recalibrated.png", "pipeline_rerun.log")) {
+        unlink(f, force = TRUE)
+      }
+    }
+
+    invisible(NULL)
+  }
+
+  project_name <- basename(normalizePath(getwd(), winslash = "/", mustWork = FALSE))
+  project_name <- gsub("[^A-Za-z0-9_-]", "_", project_name)
+  report_base_name <- paste(project_name, "report", format(Sys.Date(), "%Y%m%d"), sep = "_")
+
+  if (isTRUE(cleanup_old_outputs)) {
+    cleanup_report_outputs(output_dir, project_name)
+  }
+
+  report_file <- next_report_file(output_dir, report_base_name)
+
+  doc <- read_docx()
+  doc <- body_add_par(doc, "Manuscript Draft: Methods and Results", style = "heading 1")
+  doc <- body_add_par(doc, "PAD Open Lower Extremity Revascularization and 30-Day Surgical Site Infection Risk Score Evaluation", style = "Normal")
+  doc <- body_add_par(doc, paste("Date:", format(Sys.Date(), "%Y-%m-%d")), style = "Normal")
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  doc <- body_add_par(doc, "Methods", style = "heading 2")
+  doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
+  doc <- body_add_par(doc, "Synthetic patient-level data were generated with a custom Synthea module representing peripheral arterial disease, open lower extremity revascularization, and 30-day surgical site infection outcomes. CSV outputs were loaded into an OMOP CDM v5 SQL Server database using the project CSV-to-OMOP ETL workflow.", style = "Normal")
+  doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
+  doc <- body_add_par(doc, "The target cohort was defined as adults aged 18 years or older with an open lower extremity revascularization procedure recorded during a qualifying visit within the study window. The procedure was identified using procedure_source_value 232723009, and only the earliest qualifying event per person was retained. Patients with wound or surgical site infection diagnoses during the 365 days before index were excluded.", style = "Normal")
+  doc <- body_add_par(doc, "The outcome cohort was defined as the first surgical site infection diagnosis during follow-up using either OMOP concept-ancestor logic for wound infection concepts or a direct source-code fallback of condition_source_value 76844004.", style = "Normal")
+  doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
+  doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
+  doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
+
+  doc <- body_add_par(doc, "Results", style = "heading 2")
+  doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
+  doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 30 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
+  doc <- body_add_par(doc, "Table 1. Cohort summary for the external validation sample.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: The table reports cohort and outcome counts together with explicit cohort and outcome definitions and outcome prevalence.", style = "Normal")
+  doc <- body_add_flextable(doc, wrapped_definition_ft(cohort_tbl))
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
+  doc <- body_add_par(doc, "Table 2. Predictor definitions and activation summary.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, and observed activation in the validation cohort.", style = "Normal")
+  doc <- body_add_flextable(doc, wrapped_predictor_ft(predictor_tbl))
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  doc <- body_add_par(doc, "Summary metrics", style = "heading 3")
+  doc <- body_add_par(doc, "Table 3. Lookup-model discrimination and calibration metrics.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Metrics are read directly from metrics.csv for model = lookup, including AUROC, AUPRC, Brier score, estimated calibration error, calibration intercept, and calibration slope.", style = "Normal")
+  doc <- body_add_flextable(doc, simple_ft(results_tbl))
+  doc <- body_add_par(doc, "", style = "Normal")
+
+  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
+    doc <- body_add_par(doc, "Figure 1. Receiver operating characteristic curve for the lookup model.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: ROC curve generated from lookup predicted probabilities and binary outcomes in person_level_scores.csv. The subtitle AUROC value is sourced from metrics.csv (lookup model).", style = "Normal")
+    doc <- body_add_img(doc, src = roc_plot_file, width = 5.5, height = 4.0)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  if (file.exists(lookup_calibration_plot_temp)) {
+    doc <- body_add_par(doc, "Figure 2. Calibration plot for the published lookup mapping.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: Calibration plot generated from calibration_table_lookup.csv with x = mean predicted risk and y = observed event rate by bin.", style = "Normal")
+    doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 5.5, height = 4.0)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  print(doc, target = report_file)
+  message("Manuscript report written to: ", normalizePath(report_file))
+  invisible(report_file)
 }

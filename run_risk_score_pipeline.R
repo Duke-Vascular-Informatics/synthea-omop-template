@@ -34,6 +34,7 @@ library(ggplot2)
 library(pROC)
 library(PRROC)
 library(readr)
+library(PatientLevelPrediction)
 
 message("\n[RiskScore] Loading config ...")
 config <- get_validation_config()

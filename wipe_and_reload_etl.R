@@ -35,11 +35,11 @@ local({
 })
 
 # ---------------------------------------------------------------------------
-# 2. Activate renv and load ETL helpers (defines run_etlsyntheabuilder_etl,
+# 2. Activate renv and load ETL helpers (defines run_synthea_csv_to_omop_etl,
 #    get_validation_config, build_connection_details, etc.)
 # ---------------------------------------------------------------------------
 source("renv/activate.R")
-source("scripts/run_etlsyntheabuilder_etl.R")
+source("scripts/run_synthea_csv_to_omop_etl.R")
 
 # ---------------------------------------------------------------------------
 # 3. Connect to SQL Server
@@ -121,8 +121,8 @@ on.exit(NULL)
 #    if needed.
 # ---------------------------------------------------------------------------
 message("=== Starting fresh ETL load ===")
-run_etlsyntheabuilder_etl(
-  csv_input_dir = "C:/Users/rapiduser/synthea-data/output/csv",
+run_synthea_csv_to_omop_etl(
+  csv_input_dir = "C:/Users/rapiduser/source/repos/synthea/output/csv",
   run_name = paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
 )
 

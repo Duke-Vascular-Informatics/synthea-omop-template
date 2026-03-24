@@ -82,7 +82,6 @@
 
     "PAD_Onset": {
       "type": "ConditionOnset",
-      "target_encounter": "PAD_Diagnosis_Encounter",
       "codes": [
         {
           "system": "SNOMED-CT",
@@ -90,7 +89,21 @@
           "display": "Peripheral arterial occlusive disease"
         }
       ],
-      "direct_transition": "PAD_Diagnosis_Encounter"
+      "direct_transition": "Guaranteed_Index_Revascularization"
+    },
+
+    "Guaranteed_Surgical_Admission": {
+      "type": "Encounter",
+      "encounter_class": "inpatient",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "32485007",
+          "display": "Hospital admission"
+        }
+      ],
+      "direct_transition": "Guaranteed_Index_Revascularization"
     },
 
     "PAD_Diagnosis_Encounter": {
@@ -127,6 +140,29 @@
     },
 
     "End_PAD_Diagnosis_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "Claudication_Chance"
+    },
+
+    "Guaranteed_Index_Revascularization": {
+      "type": "Procedure",
+      "target_encounter": "PAD_Diagnosis_Encounter",
+      "reason": "PAD_Onset",
+      "remarks": [
+        "Mandatory index open lower extremity revascularization for every PAD pathway patient."
+      ],
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "232723009",
+          "display": "Bypass of femoral artery to popliteal artery"
+        }
+      ],
+      "duration": { "low": 2, "high": 5, "unit": "hours" },
+      "direct_transition": "Claudication_Chance"
+    },
+
+    "End_Guaranteed_Surgical_Admission": {
       "type": "EncounterEnd",
       "direct_transition": "Claudication_Chance"
     },
@@ -415,7 +451,7 @@
 
     "Prior_Revascularization_Delay": {
       "type": "Delay",
-      "range": { "low": 30, "high": 365, "unit": "days" },
+      "range": { "low": 0, "high": 0, "unit": "days" },
       "direct_transition": "Prior_Revascularization_Procedure"
     },
 
@@ -435,7 +471,7 @@
 
     "Prior_Revascularization_Recovery": {
       "type": "Delay",
-      "range": { "low": 14, "high": 60, "unit": "days" },
+      "range": { "low": 0, "high": 0, "unit": "days" },
       "direct_transition": "Pre_Surgical_Workup_Delay"
     },
 
@@ -463,7 +499,7 @@
 
     "Pre_Index_Antibiotic_Delay": {
       "type": "Delay",
-      "range": { "low": 3, "high": 10, "unit": "days" },
+      "range": { "low": 0, "high": 0, "unit": "days" },
       "direct_transition": "Pre_Index_Antibiotic_End"
     },
 
@@ -479,7 +515,7 @@
         "Time from PAD diagnosis to open revascularization surgery.",
         "Includes pre-operative imaging, cardiac risk stratification, and scheduling."
       ],
-      "range": { "low": 1, "high": 6, "unit": "months" },
+      "range": { "low": 0, "high": 0, "unit": "days" },
       "direct_transition": "Pre_Index_Antibiotic_Chance"
     },
 
@@ -490,7 +526,7 @@
       ],
       "distributed_transition": [
         { "distribution": 0.25, "transition": "Urgent_Case_Observation" },
-        { "distribution": 0.75, "transition": "Surgical_Admission" }
+        { "distribution": 0.75, "transition": "Pre_Op_Antibiotic" }
       ]
     },
 
@@ -504,20 +540,11 @@
           "display": "Emergency operation"
         }
       ],
-      "direct_transition": "Surgical_Admission"
+      "direct_transition": "Pre_Op_Antibiotic"
     },
 
     "Surgical_Admission": {
-      "type": "Encounter",
-      "encounter_class": "inpatient",
-      "reason": "PAD_Onset",
-      "codes": [
-        {
-          "system": "SNOMED-CT",
-          "code": "32485007",
-          "display": "Hospital admission"
-        }
-      ],
+      "type": "Simple",
       "direct_transition": "Pre_Op_Antibiotic"
     },
 
@@ -571,7 +598,7 @@
         "Standard inpatient stay after open lower extremity bypass: 3-7 days."
       ],
       "range": { "low": 3, "high": 7, "unit": "days" },
-      "direct_transition": "End_Surgical_Admission"
+      "direct_transition": "Post_Discharge_Delay"
     },
 
     "End_Surgical_Admission": {
@@ -624,24 +651,6 @@
             "value": 30
           },
           "transition": "SSI_Moderate_Risk"
-        },
-        {
-          "condition": {
-            "condition_type": "Observation",
-            "codes": [
-              {
-                "system": "LOINC",
-                "code": "72166-2",
-                "display": "Tobacco smoking status"
-              }
-            ],
-            "value_code": {
-              "system": "SNOMED-CT",
-              "code": "449868002",
-              "display": "Current every day smoker"
-            }
-          },
-          "transition": "SSI_Smoking_Risk"
         },
         {
           "transition": "SSI_Baseline_Risk"

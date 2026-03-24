@@ -67,11 +67,14 @@ FROM (
     ON ca.descendant_concept_id = co.condition_concept_id
 
   WHERE
-    ca.ancestor_concept_id IN (
-      4201004,   -- Infection of wound
-      4318887,   -- Surgical wound infection
-      40480632,  -- Infected wound
-      4110523    -- Complication of procedure (broader; catches T81.4 mappings)
+    (
+      ca.ancestor_concept_id IN (
+        4201004,   -- Infection of wound
+        4318887,   -- Surgical wound infection
+        40480632,  -- Infected wound
+        4110523    -- Complication of procedure (broader; catches T81.4 mappings)
+      )
+      OR co.condition_source_value = '76844004'
     )
     AND co.condition_start_date >= CAST('@study_start_date' AS DATE)
     AND co.condition_start_date <= CAST('@study_end_date'   AS DATE)

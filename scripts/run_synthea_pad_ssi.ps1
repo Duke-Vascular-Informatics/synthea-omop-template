@@ -16,6 +16,10 @@ param(
 ,
 
   [Parameter(Mandatory = $false)]
+  [string]$AgeRange = "40-100"
+,
+
+  [Parameter(Mandatory = $false)]
   [ValidateSet("csv", "fhir", "both")]
   [string]$ExportFormat = "csv"
 ,
@@ -71,7 +75,7 @@ try {
   # This Synthea checkout supports -m for module filtering.
   # Do not use --modules here: App.java treats unknown --args as config keys,
   # which silently disables module restriction.
-  $attempts = ,(@("-p", "$Population", "-m", "$ModuleName", "$State") + $exporterArgs)
+  $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "-m", "$ModuleName", "$State") + $exporterArgs)
 
   $success = $false
   $usedModuleRestriction = $false
@@ -96,6 +100,7 @@ try {
 
   $csvOutputDir = Join-Path $SyntheaHome "output\csv"
   $fhirOutputDir = Join-Path $SyntheaHome "output\fhir"
+
   Write-Host "Synthea completed successfully." -ForegroundColor Green
   if ($ExportFormat -eq "csv" -or $ExportFormat -eq "both") {
     Write-Host "CSV output folder : $csvOutputDir" -ForegroundColor Green

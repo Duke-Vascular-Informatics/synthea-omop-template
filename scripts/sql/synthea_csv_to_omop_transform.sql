@@ -303,7 +303,7 @@ SELECT
     NULL,
     c.source_code,
     0,
-    c.source_display
+    NULL
 FROM condition_with_refs c
 LEFT JOIN @cdm_schema.concept cc
   ON cc.concept_code = c.source_code

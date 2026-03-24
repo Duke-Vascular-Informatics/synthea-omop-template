@@ -624,14 +624,15 @@ query_component_counts <- function(connection, config, component, component_conc
 
 calculate_scores <- function(connection, config, specs) {
   outcomes <- get_outcomes(connection, config)
-  names(outcomes)[names(outcomes) == "SUBJECT_ID"] <- "subject_id"
-  names(outcomes)[names(outcomes) == "INDEX_DATE"] <- "index_date"
-  names(outcomes)[names(outcomes) == "OUTCOME"] <- "outcome"
+  outcome_names <- tolower(names(outcomes))
+  outcome_names[outcome_names == "subjectid"] <- "subject_id"
+  outcome_names[outcome_names == "indexdate"] <- "index_date"
+  names(outcomes) <- outcome_names
 
   components <- specs$components
   concepts <- specs$concepts
 
-  component_matrix <- outcomes[, c("subject_id")]
+  component_matrix <- outcomes[, c("subject_id"), drop = FALSE]
   component_summary <- data.frame(
     component_id = character(),
     component_name = character(),
@@ -647,12 +648,16 @@ calculate_scores <- function(connection, config, specs) {
 
     counts <- query_component_counts(connection, config, comp, comp_concepts)
     if (nrow(counts) > 0) {
-      names(counts)[names(counts) == "SUBJECT_ID"] <- "subject_id"
-      names(counts)[names(counts) == "EVENT_COUNT"] <- "event_count"
+      count_names <- tolower(names(counts))
+      count_names[count_names == "subjectid"] <- "subject_id"
+      count_names[count_names == "eventcount"] <- "event_count"
+      names(counts) <- count_names
+    } else {
+      counts <- data.frame(subject_id = numeric(), event_count = numeric())
     }
 
     df <- merge(
-      outcomes[, c("subject_id")],
+      outcomes[, c("subject_id"), drop = FALSE],
       counts[, c("subject_id", "event_count"), drop = FALSE],
       by = "subject_id",
       all.x = TRUE
@@ -691,23 +696,62 @@ clamp_probability <- function(p, eps = 1e-6) {
   p
 }
 
+compute_ece <- function(y, p, n_bins = 10) {
+  p <- clamp_probability(p)
+  d <- data.frame(y = y, p = p)
+
+  probs <- unique(stats::quantile(d$p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE))
+  if (length(probs) < 3) {
+    probs <- c(0, 1)
+  }
+  d$bin <- cut(d$p, breaks = probs, include.lowest = TRUE)
+
+  cal_table <- aggregate(
+    cbind(predicted = d$p, observed = d$y) ~ bin,
+    data = d,
+    FUN = function(x) list(mean = mean(x), n = length(x))
+  )
+
+  cal_table$predicted_mean <- sapply(cal_table$predicted, function(x) x$mean)
+  cal_table$observed_mean <- sapply(cal_table$observed, function(x) x$mean)
+  cal_table$bin_size <- sapply(cal_table$predicted, function(x) x$n)
+  
+  cal_table$abs_diff <- abs(cal_table$predicted_mean - cal_table$observed_mean)
+  
+  ece <- sum(cal_table$abs_diff * cal_table$bin_size) / sum(cal_table$bin_size)
+  as.numeric(ece)
+}
+
+compute_binary_metrics <- function(y, estimate) {
+  if (!requireNamespace("PatientLevelPrediction", quietly = TRUE)) {
+    stop("Package 'PatientLevelPrediction' is required for model metrics.")
+  }
+
+  prediction <- data.frame(
+    value = as.numeric(estimate),
+    outcomeCount = as.integer(y),
+    stringsAsFactors = FALSE
+  )
+
+  brier_result <- PatientLevelPrediction::brierScore(prediction)
+
+  list(
+    auroc = PatientLevelPrediction::computeAuc(prediction),
+    auprc = PatientLevelPrediction::computeAuprc(prediction),
+    brier = as.numeric(brier_result$brier)
+  )
+}
+
 score_discrimination_metrics <- function(y, score) {
   if (length(unique(y)) < 2) {
     return(data.frame(metric = c("AUROC", "AUPRC"), value = NA_real_, model = "score_only"))
   }
 
-  roc_obj <- pROC::roc(response = y, predictor = score, quiet = TRUE, direction = "<")
-  auc_val <- as.numeric(pROC::auc(roc_obj))
-
-  pr <- PRROC::pr.curve(
-    scores.class0 = score[y == 1],
-    scores.class1 = score[y == 0],
-    curve = FALSE
-  )
+  discrim <- compute_binary_metrics(y, score)
 
   data.frame(
     metric = c("AUROC", "AUPRC"),
-    value = c(auc_val, as.numeric(pr$auc.integral)),
+    value = c(discrim$auroc, discrim$auprc),
     model = "score_only",
     stringsAsFactors = FALSE
   )
@@ -719,23 +763,15 @@ probability_metrics <- function(y, p, model_name) {
 
   if (length(unique(y)) < 2) {
     return(data.frame(
-      metric = c("AUROC", "AUPRC", "Brier", "CalibrationIntercept", "CalibrationSlope"),
+      metric = c("AUROC", "AUPRC", "Brier", "ECE", "CalibrationIntercept", "CalibrationSlope"),
       value = NA_real_,
       model = model_name,
       stringsAsFactors = FALSE
     ))
   }
 
-  roc_obj <- pROC::roc(response = y, predictor = p, quiet = TRUE, direction = "<")
-  auc_val <- as.numeric(pROC::auc(roc_obj))
-
-  pr <- PRROC::pr.curve(
-    scores.class0 = p[y == 1],
-    scores.class1 = p[y == 0],
-    curve = FALSE
-  )
-
-  brier <- mean((p - y)^2)
+  prob_metrics <- compute_binary_metrics(y, p)
+  ece <- compute_ece(y, p)
 
   intercept_fit <- glm(y ~ 1 + offset(lp), family = binomial())
   calib_intercept <- unname(coef(intercept_fit)[1])
@@ -744,8 +780,8 @@ probability_metrics <- function(y, p, model_name) {
   calib_slope <- unname(coef(slope_fit)[2])
 
   data.frame(
-    metric = c("AUROC", "AUPRC", "Brier", "CalibrationIntercept", "CalibrationSlope"),
-    value = c(auc_val, as.numeric(pr$auc.integral), brier, calib_intercept, calib_slope),
+    metric = c("AUROC", "AUPRC", "Brier", "ECE", "CalibrationIntercept", "CalibrationSlope"),
+    value = c(prob_metrics$auroc, prob_metrics$auprc, prob_metrics$brier, ece, calib_intercept, calib_slope),
     model = model_name,
     stringsAsFactors = FALSE
   )

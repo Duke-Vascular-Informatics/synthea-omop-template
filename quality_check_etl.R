@@ -32,7 +32,7 @@ args <- commandArgs(trailingOnly = TRUE)
 run_name <- if (length(args) >= 1 && nzchar(args[[1]])) {
   args[[1]]
 } else {
-  "padssi-n1000-modv04-20260322"
+  paste0("padssi-csv-", format(Sys.Date(), "%Y%m%d"))
 }
 
 config <- get_validation_config()
@@ -48,48 +48,55 @@ cat("Run name:", run_name, "\n\n")
 
 resource_sql <- SqlRender::translate(SqlRender::render(
   "
-  SELECT resource_type, COUNT(*) AS row_count
-  FROM @staging_schema.fhir_raw_resource
-  WHERE run_name = '@run_name'
-  GROUP BY resource_type
-  ORDER BY resource_type;
+  SELECT source_schema, COUNT(*) AS row_count
+  FROM (
+    SELECT 'patients_stage'   AS source_schema FROM @staging_schema.patients_stage   WHERE run_name = '@run_name'
+    UNION ALL
+    SELECT 'encounters_stage'  AS source_schema FROM @staging_schema.encounters_stage  WHERE run_name = '@run_name'
+    UNION ALL
+    SELECT 'procedures_stage'  AS source_schema FROM @staging_schema.procedures_stage  WHERE run_name = '@run_name'
+    UNION ALL
+    SELECT 'conditions_stage'  AS source_schema FROM @staging_schema.conditions_stage  WHERE run_name = '@run_name'
+  ) t
+  GROUP BY source_schema
+  ORDER BY source_schema;
   ",
-  staging_schema = "fhir_stage",
+  staging_schema = "synthea_csv_stage",
   run_name = run_name
 ), targetDialect = config$dbms)
 
 resource_counts <- run_query(resource_sql)
-cat("Staging resource counts\n")
+cat("Staging table counts\n")
 print(resource_counts)
 cat("\n")
 
 summary_sql <- SqlRender::translate(SqlRender::render(
   "
   SELECT
-    (SELECT COUNT(*) FROM @staging_schema.fhir_raw_resource WHERE run_name = '@run_name') AS staged_rows,
-    (SELECT COUNT(DISTINCT source_file) FROM @staging_schema.fhir_raw_resource WHERE run_name = '@run_name') AS staged_files,
-    (SELECT COUNT(*) FROM @cdm_schema.person WHERE person_source_value LIKE 'fhir:%') AS person_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence WHERE visit_source_value LIKE 'fhir:%') AS visit_rows,
+    (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') AS staged_rows,
+    (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') AS staged_files,
+    (SELECT COUNT(*) FROM @cdm_schema.person WHERE person_source_value LIKE 'synthea_csv:%') AS person_rows,
+    (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence WHERE visit_source_value LIKE 'synthea_csv:%') AS visit_rows,
     (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      )) AS procedure_rows,
     (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      ) AND po.procedure_source_value = '232723009') AS open_revascularization_rows,
     (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      )) AS condition_rows,
     (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      ) AND co.condition_concept_id > 0) AS mapped_condition_rows,
     (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      ) AND co.condition_source_value = '399957001') AS pad_condition_rows,
     (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'fhir:%'
+       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
      ) AND co.condition_source_value = '76844004') AS ssi_condition_rows;
   ",
-  staging_schema = "fhir_stage",
+  staging_schema = "synthea_csv_stage",
   cdm_schema = config$cdm_schema,
   run_name = run_name
 ), targetDialect = config$dbms)
@@ -107,7 +114,7 @@ age_sql <- SqlRender::translate(SqlRender::render(
     MIN(year_of_birth) AS min_year_of_birth,
     MAX(year_of_birth) AS max_year_of_birth
   FROM @cdm_schema.person
-  WHERE person_source_value LIKE 'fhir:%';
+  WHERE person_source_value LIKE 'synthea_csv:%';
   ",
   cdm_schema = config$cdm_schema
 ), targetDialect = config$dbms)
@@ -128,7 +135,7 @@ ssi_person_sql <- SqlRender::translate(SqlRender::render(
     ON po.person_id = p.person_id
   LEFT JOIN @cdm_schema.condition_occurrence co
     ON co.person_id = p.person_id
-  WHERE p.person_source_value LIKE 'fhir:%'
+  WHERE p.person_source_value LIKE 'synthea_csv:%'
     AND (
       po.procedure_source_value = '232723009'
       OR co.condition_source_value IN ('399957001', '76844004')

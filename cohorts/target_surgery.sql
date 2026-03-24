@@ -61,11 +61,8 @@ FROM (
     ON p.person_id = vo.person_id
 
   WHERE
-    -- Inpatient visit (9201) or combined ER+Inpatient (262)
-    vo.visit_concept_id IN (9201, 262)
-
     -- Study date window
-    AND vo.visit_start_date >= CAST('@study_start_date' AS DATE)
+    vo.visit_start_date >= CAST('@study_start_date' AS DATE)
     AND vo.visit_start_date <= CAST('@study_end_date'   AS DATE)
 
     -- Age >= 18 at visit start (use mid-year birthday when day unknown)
@@ -79,23 +76,15 @@ FROM (
           vo.visit_start_date
         ) >= 18
 
-    -- Open lower extremity revascularization during the qualifying inpatient visit
+    -- Open lower extremity revascularization during the qualifying visit.
+    -- In this synthetic ETL, procedure_source_value is the most stable identifier.
     AND EXISTS (
       SELECT 1
       FROM @cdm_database_schema.procedure_occurrence po
       WHERE po.person_id    = vo.person_id
         AND po.procedure_date BETWEEN vo.visit_start_date
                                   AND ISNULL(vo.visit_end_date, vo.visit_start_date)
-        AND (
-          po.procedure_source_value = '232723009'
-          OR po.procedure_concept_id IN (
-            SELECT c.concept_id
-            FROM @cdm_database_schema.concept c
-            WHERE c.concept_code = '232723009'
-              AND c.vocabulary_id = 'SNOMED'
-              AND c.standard_concept = 'S'
-          )
-        )
+        AND po.procedure_source_value = '232723009'
     )
 
     -- Washout: no wound / SSI diagnosis in the 365 days before index

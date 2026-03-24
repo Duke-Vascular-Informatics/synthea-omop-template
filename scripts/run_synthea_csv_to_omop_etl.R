@@ -162,41 +162,47 @@ run_synthea_csv_to_omop_etl <- function(
 
   message("Loading patients.csv ...")
   patients <- read_required_csv(csv_input_dir, "patients.csv", c("Id", "BIRTHDATE", "GENDER"))
-  setnames(patients, c("Id", "BIRTHDATE", "GENDER"), c("patient_id", "birth_date", "gender"))
+  data.table::setnames(patients, c("Id", "BIRTHDATE", "GENDER"), c("patient_id", "birth_date", "gender"))
+  patients[, birth_date := as.Date(as.character(birth_date))]
   patients[, run_name := run_name]
   patients <- as.data.frame(patients[, .(run_name, patient_id, birth_date, gender)])
-  DatabaseConnector::insertTable(conn, paste0(staging_schema, ".patients_stage"), patients,
-                                 dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
+  DatabaseConnector::insertTable(conn, databaseSchema = staging_schema, tableName = "patients_stage",
+                                 data = patients, dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
   message("patients.csv rows: ", nrow(patients))
 
   message("Loading encounters.csv ...")
   encounters <- read_required_csv(csv_input_dir, "encounters.csv", c("Id", "PATIENT", "START", "STOP", "ENCOUNTERCLASS"))
-  setnames(encounters, c("Id", "PATIENT", "START", "STOP", "ENCOUNTERCLASS"),
+  data.table::setnames(encounters, c("Id", "PATIENT", "START", "STOP", "ENCOUNTERCLASS"),
            c("encounter_id", "patient_id", "start_datetime", "end_datetime", "encounter_class"))
+  encounters[, start_datetime := as.POSIXct(as.character(start_datetime), tz = "UTC")]
+  encounters[, end_datetime   := as.POSIXct(as.character(end_datetime),   tz = "UTC")]
   encounters[, run_name := run_name]
   encounters <- as.data.frame(encounters[, .(run_name, encounter_id, patient_id, start_datetime, end_datetime, encounter_class)])
-  DatabaseConnector::insertTable(conn, paste0(staging_schema, ".encounters_stage"), encounters,
-                                 dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
+  DatabaseConnector::insertTable(conn, databaseSchema = staging_schema, tableName = "encounters_stage",
+                                 data = encounters, dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
   message("encounters.csv rows: ", nrow(encounters))
 
   message("Loading procedures.csv ...")
-  procedures <- read_required_csv(csv_input_dir, "procedures.csv", c("PATIENT", "ENCOUNTER", "DATE", "CODE", "DESCRIPTION"))
-  setnames(procedures, c("PATIENT", "ENCOUNTER", "DATE", "CODE", "DESCRIPTION"),
+  procedures <- read_required_csv(csv_input_dir, "procedures.csv", c("PATIENT", "ENCOUNTER", "START", "CODE", "DESCRIPTION"))
+  data.table::setnames(procedures, c("PATIENT", "ENCOUNTER", "START", "CODE", "DESCRIPTION"),
            c("patient_id", "encounter_id", "procedure_date", "source_code", "source_display"))
+  procedures[, procedure_date := as.POSIXct(as.character(procedure_date), tz = "UTC")]
   procedures[, run_name := run_name]
   procedures <- as.data.frame(procedures[, .(run_name, patient_id, encounter_id, procedure_date, source_code, source_display)])
-  DatabaseConnector::insertTable(conn, paste0(staging_schema, ".procedures_stage"), procedures,
-                                 dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
+  DatabaseConnector::insertTable(conn, databaseSchema = staging_schema, tableName = "procedures_stage",
+                                 data = procedures, dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
   message("procedures.csv rows: ", nrow(procedures))
 
   message("Loading conditions.csv ...")
   conditions <- read_required_csv(csv_input_dir, "conditions.csv", c("PATIENT", "ENCOUNTER", "START", "STOP", "CODE", "DESCRIPTION"))
-  setnames(conditions, c("PATIENT", "ENCOUNTER", "START", "STOP", "CODE", "DESCRIPTION"),
+  data.table::setnames(conditions, c("PATIENT", "ENCOUNTER", "START", "STOP", "CODE", "DESCRIPTION"),
            c("patient_id", "encounter_id", "condition_start", "condition_end", "source_code", "source_display"))
+  conditions[, condition_start := as.POSIXct(as.character(condition_start), tz = "UTC")]
+  conditions[, condition_end   := as.POSIXct(as.character(condition_end),   tz = "UTC")]
   conditions[, run_name := run_name]
   conditions <- as.data.frame(conditions[, .(run_name, patient_id, encounter_id, condition_start, condition_end, source_code, source_display)])
-  DatabaseConnector::insertTable(conn, paste0(staging_schema, ".conditions_stage"), conditions,
-                                 dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
+  DatabaseConnector::insertTable(conn, databaseSchema = staging_schema, tableName = "conditions_stage",
+                                 data = conditions, dropTableIfExists = FALSE, createTable = FALSE, tempTable = FALSE)
   message("conditions.csv rows: ", nrow(conditions))
 
   message("=== Staging complete in ", format_duration(as.numeric(difftime(Sys.time(), stage_start, units = "secs"))), " ===")

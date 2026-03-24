@@ -8,6 +8,24 @@ This project performs external validation of a previously developed SSI predicti
 - Run validation on `omop_synth` (`cdm_synthea`) with transparent, scriptable steps.
 - Support restricted-network environments by prebuilding GitHub-based package binaries.
 
+## Canonical 1-9 Workflow
+
+The project now follows a consistent numbered workflow matching the full study lifecycle.
+
+Use the scripts in `scripts/workflow/` in this order:
+
+1. `scripts/workflow/01_setup_synthea_etl_qc_env.R`
+2. `scripts/workflow/02_define_omop_cohort_outcome_covariates.R`
+3. `scripts/workflow/03_generate_synthea_module_artifacts.R`
+4. `scripts/workflow/04_generate_synthea_csv.ps1`
+5. `scripts/workflow/05_etl_csv_to_omop.R`
+6. `scripts/workflow/06_quality_check_defined_phenotypes.R`
+7. `scripts/workflow/07_setup_analysis_env.R`
+8. `scripts/workflow/08_run_analysis_and_manuscript_report.R`
+9. `scripts/workflow/09_build_portable_analysis_bundle.ps1`
+
+For command examples and details, see `scripts/workflow/README.md`.
+
 ## Prerequisites
 
 - R 4.5.2+
