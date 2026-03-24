@@ -1,16 +1,19 @@
 #!/usr/bin/env Rscript
 
-# Generate a Mermaid flowchart from a Synthea GMF module JSON.
+# Generate a self-contained HTML state-diagram viewer from a Synthea GMF module JSON.
+# Each node label includes the state name, state type, and all SNOMED/LOINC/RxNorm codes.
+# The output HTML file can be opened in any modern browser (requires internet for Mermaid CDN).
+#
 # Usage:
-#   Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_mmd>
+#   Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_html>
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2) {
-  stop("Usage: Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_mmd>")
+  stop("Usage: Rscript scripts/synthea/generate_synthea_mermaid.R <input_json> <output_html>")
 }
 
-input_json <- args[[1]]
-output_mmd <- args[[2]]
+input_json  <- args[[1]]
+output_html <- args[[2]]
 
 if (!file.exists(input_json)) {
   stop(sprintf("Input module not found: %s", input_json))
@@ -38,6 +41,37 @@ escape_mermaid <- function(x) {
   trimws(x)
 }
 
+# Build a rich node label including state type and all codes (for htmlLabels rendering).
+make_rich_label <- function(state_name, state) {
+  name_part <- escape_mermaid(gsub("_", " ", state_name, fixed = TRUE))
+  type_part  <- if (!is.null(state$type)) paste0("[", state$type, "]") else ""
+
+  code_parts <- character(0)
+  if (!is.null(state$codes) && length(state$codes) > 0) {
+    for (cd in state$codes) {
+      sys  <- if (!is.null(cd$system))  cd$system  else ""
+      code_val <- if (!is.null(cd$code))    cd$code    else ""
+      disp <- if (!is.null(cd$display)) escape_mermaid(cd$display) else ""
+      if (nzchar(sys) || nzchar(code_val)) {
+        code_parts <- c(code_parts, paste0(sys, " ", code_val, ": ", disp))
+      }
+    }
+  }
+  if (!is.null(state$value_code)) {
+    vc <- state$value_code
+    sys  <- if (!is.null(vc$system))  vc$system  else ""
+    code_val <- if (!is.null(vc$code))    vc$code    else ""
+    disp <- if (!is.null(vc$display)) escape_mermaid(vc$display) else ""
+    if (nzchar(sys) || nzchar(code_val)) {
+      code_parts <- c(code_parts, paste0("val: ", sys, " ", code_val, ": ", disp))
+    }
+  }
+
+  all_parts <- c(paste0("<b>", name_part, "</b>"), type_part)
+  if (length(code_parts) > 0) all_parts <- c(all_parts, code_parts)
+  paste(all_parts, collapse = "<br/>")
+}
+
 short_percent <- function(x) {
   pct <- 100 * as.numeric(x)
   txt <- sprintf("%.1f", pct)
@@ -45,8 +79,8 @@ short_percent <- function(x) {
   paste0(txt, "%")
 }
 
-node_lines <- character(0)
-edge_lines <- character(0)
+node_lines_rich <- character(0)
+edge_lines      <- character(0)
 
 format_condition_label <- function(cond) {
   if (is.null(cond) || length(cond) == 0) {
@@ -82,7 +116,7 @@ for (state_name in state_names) {
 
   label <- gsub("_", " ", state_name, fixed = TRUE)
   label <- escape_mermaid(label)
-  node_lines <- c(node_lines, sprintf("  %s[\"%s\"]", node_id, label))
+  node_lines_rich <- c(node_lines_rich, sprintf("  %s[\"%s\"]", node_id, make_rich_label(state_name, state)))
 
   if (!is.null(state$direct_transition)) {
     to_name <- state$direct_transition
@@ -119,35 +153,63 @@ for (state_name in state_names) {
   }
 }
 
-mermaid_lines <- c(
+mermaid_lines_rich <- c(
   "flowchart TD",
-  node_lines,
+  node_lines_rich,
   "",
   edge_lines
 )
 
-out_dir <- dirname(output_mmd)
+out_dir <- dirname(output_html)
 if (!dir.exists(out_dir)) {
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 }
 
-writeLines(mermaid_lines, con = output_mmd, useBytes = TRUE)
-cat(sprintf("Wrote Mermaid diagram: %s\n", output_mmd))
+# Generate a self-contained HTML viewer (browser-openable, no VS Code required).
+# Requires an internet connection to load Mermaid.js from CDN.
+  esc_html <- function(x) {
+    x <- gsub("&", "&amp;", x, fixed = TRUE)
+    x <- gsub("<", "&lt;", x, fixed = TRUE)
+    x <- gsub(">", "&gt;", x, fixed = TRUE)
+    x
+  }
 
-if (grepl("\\.mmd$", output_mmd, ignore.case = TRUE)) {
-  output_mermaid <- sub("\\.mmd$", ".mermaid", output_mmd, ignore.case = TRUE)
-  output_md <- sub("\\.mmd$", ".diagram.md", output_mmd, ignore.case = TRUE)
+  full_mermaid_text <- paste(c(
+    "%%{init: {'theme': 'default', 'flowchart': {'useMaxWidth': true, 'htmlLabels': true}} }%%",
+    mermaid_lines_rich
+  ), collapse = "\n")
 
-  writeLines(mermaid_lines, con = output_mermaid, useBytes = TRUE)
-  cat(sprintf("Wrote Mermaid source : %s\n", output_mermaid))
-
-  md_lines <- c(
-    "# Synthea Module Diagram",
+  html_lines <- c(
+    "<!DOCTYPE html>",
+    '<html lang="en">',
+    "<head>",
+    '  <meta charset="UTF-8">',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    "  <title>PAD/SSI Synthea Module Diagram</title>",
+    '  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>',
+    "  <style>",
+    "    body { font-family: sans-serif; margin: 2em; max-width: 1400px; background: #f5f5f5; color: #222; }",
+    "    h1 { color: #1a1a2e; }",
+    "    .diagram-box { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 1.5em; overflow-x: auto; margin-top: 1em; }",
+    "    footer { margin-top: 3em; font-size: 0.8em; color: #aaa; border-top: 1px solid #eee; padding-top: 1em; }",
+    "  </style>",
+    "</head>",
+    "<body>",
+    "  <h1>PAD/SSI Synthea Module &mdash; State Diagram</h1>",
+    "  <p>Generated from <code>pad_ssi.json</code>. Each node shows state name, type, and codes. Open in any modern browser.</p>",
+    '  <div class="diagram-box">',
+    '    <div class="mermaid">',
+    esc_html(full_mermaid_text),
+    "    </div>",
+    "  </div>",
     "",
-    "```mermaid",
-    mermaid_lines,
-    "```"
+    "  <footer>",
+    '    Rendered with <a href="https://mermaid.js.org">Mermaid.js</a> (CDN). Requires an internet connection.',
+    "  </footer>",
+    "  <script>mermaid.initialize({ startOnLoad: true });</script>",
+    "</body>",
+    "</html>"
   )
-  writeLines(md_lines, con = output_md, useBytes = TRUE)
-  cat(sprintf("Wrote Markdown wrapper: %s\n", output_md))
-}
+
+  writeLines(html_lines, con = output_html, useBytes = TRUE)
+  cat(sprintf("Wrote HTML viewer: %s\n", output_html))

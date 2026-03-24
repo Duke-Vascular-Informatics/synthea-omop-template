@@ -462,7 +462,7 @@ This repository includes a local generator script and a rendered Mermaid file:
 Regenerate the diagram after editing the JSON module:
 
 ```powershell
-& "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/synthea/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.mmd
+& "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/synthea/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.diagram.html
 ```
 
 The generator also refreshes `synthea/modules/pad_ssi.diagram.md` automatically
