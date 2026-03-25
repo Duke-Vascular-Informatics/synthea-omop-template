@@ -595,7 +595,46 @@ query_mfi_component_counts <- function(connection, config, component, component_
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+query_female_component_counts <- function(connection, config, component, component_concepts) {
+  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
+
+  if (length(concept_ids) == 0) {
+    stop("Component female requires at least one concept_id mapping in component_concepts.csv")
+  }
+
+  sql <- SqlRender::render(
+    sql = "WITH target_population AS (
+             SELECT c.subject_id
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ),
+           concept_ids AS (
+             SELECT CAST(id AS BIGINT) AS concept_id
+             FROM (SELECT value AS id FROM string_split('@concept_ids', ',')) s
+           )
+           SELECT t.subject_id,
+                  1 AS event_count
+           FROM target_population t
+           JOIN @cdm_schema.person p
+             ON p.person_id = t.subject_id
+           JOIN concept_ids ci
+             ON p.gender_concept_id = ci.concept_id",
+    results_schema = config$results_schema,
+    cohort_table = config$cohort_table,
+    target_id = config$target_cohort_id,
+    cdm_schema = config$cdm_schema,
+    concept_ids = paste(concept_ids, collapse = ",")
+  )
+
+  DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
 query_component_counts <- function(connection, config, component, component_concepts) {
+  if (component$component_id == "female") {
+    return(query_female_component_counts(connection, config, component, component_concepts))
+  }
+
   if (component$component_id %in% c("overweight", "obese")) {
     return(query_bmi_component_counts(connection, config, component, component_concepts))
   }
@@ -715,13 +754,15 @@ calculate_scores <- function(connection, config, specs) {
 
     component_matrix <- merge(component_matrix, df[, c("subject_id", score_col)], by = "subject_id", all.x = TRUE)
 
+    is_activated <- df$event_count >= comp$min_count
+
     component_summary <- rbind(
       component_summary,
       data.frame(
         component_id = comp$component_id,
         component_name = comp$component_name,
         domain = comp$domain,
-        n_positive = sum(df[[score_col]] > 0, na.rm = TRUE),
+        n_positive = sum(is_activated, na.rm = TRUE),
         mean_points = mean(df[[score_col]], na.rm = TRUE),
         stringsAsFactors = FALSE
       )
