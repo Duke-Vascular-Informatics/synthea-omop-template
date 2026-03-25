@@ -972,20 +972,272 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
   predictor_tbl$PositiveCount <- as.integer(predictor_tbl$PositiveCount)
   predictor_tbl$MeanPoints <- round(as.numeric(predictor_tbl$MeanPoints), 4)
 
-  cohort_tbl <- data.frame(
-    Item = c(
-      "Target cohort",
-      "Outcome cohort",
-      "Outcome prevalence (%)"
-    ),
-    Value = c(n_target, n_outcome, fmt(outcome_prev, 2)),
-    Definition = c(
-      "Adults aged >=18 years with open lower extremity revascularization (procedure_source_value 232723009) during a qualifying visit; earliest qualifying event per person retained; excluded prior wound/SSI diagnosis in the 365 days before index.",
-      "First surgical site infection during follow-up identified using OMOP concept-ancestor logic for wound infection concepts with source-code fallback condition_source_value 76844004.",
-      "Computed as (outcome events / target cohort size) x 100."
-    ),
-    stringsAsFactors = FALSE
-  )
+  fmt_n_pct <- function(n, denom, digits = 1) {
+    n <- suppressWarnings(as.numeric(n))
+    denom <- suppressWarnings(as.numeric(denom))
+    if (is.na(n) || is.na(denom) || denom <= 0) {
+      return("0 (0.0%)")
+    }
+    paste0(format(round(n, 0), scientific = FALSE, trim = TRUE),
+           " (", format(round(100 * n / denom, digits), nsmall = digits, trim = TRUE), "%)")
+  }
+
+  fetch_demographics_from_omop <- function(config, connection_details) {
+    if (is.null(config) || is.null(connection_details)) {
+      return(NULL)
+    }
+
+    conn <- NULL
+    out <- NULL
+    try({
+      conn <- DatabaseConnector::connect(connection_details)
+
+      sql_age <- SqlRender::render(
+        "SELECT
+            CAST(DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date) AS FLOAT) AS age_at_index
+         FROM @results_schema.@cohort_table t
+         INNER JOIN @cdm_schema.person p ON p.person_id = t.subject_id
+         WHERE t.cohort_definition_id = @target_id",
+        results_schema = config$results_schema,
+        cohort_table = config$cohort_table,
+        cdm_schema = config$cdm_schema,
+        target_id = config$target_cohort_id
+      )
+      age_df <- DatabaseConnector::querySql(
+        conn,
+        SqlRender::translate(sql_age, targetDialect = "sql server")
+      )
+
+      distribution_sql <- function(concept_col) {
+        SqlRender::render(
+          "SELECT
+              COALESCE(NULLIF(c.concept_name, ''), 'Unknown') AS category,
+              COUNT(DISTINCT t.subject_id) AS n
+           FROM @results_schema.@cohort_table t
+           INNER JOIN @cdm_schema.person p ON p.person_id = t.subject_id
+           LEFT JOIN @cdm_schema.concept c ON c.concept_id = p.@concept_col
+           WHERE t.cohort_definition_id = @target_id
+           GROUP BY COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
+           ORDER BY n DESC, category",
+          results_schema = config$results_schema,
+          cohort_table = config$cohort_table,
+          cdm_schema = config$cdm_schema,
+          concept_col = concept_col,
+          target_id = config$target_cohort_id
+        )
+      }
+
+      sex_df <- DatabaseConnector::querySql(
+        conn,
+        SqlRender::translate(distribution_sql("gender_concept_id"), targetDialect = "sql server")
+      )
+      race_df <- DatabaseConnector::querySql(
+        conn,
+        SqlRender::translate(distribution_sql("race_concept_id"), targetDialect = "sql server")
+      )
+      ethnicity_df <- DatabaseConnector::querySql(
+        conn,
+        SqlRender::translate(distribution_sql("ethnicity_concept_id"), targetDialect = "sql server")
+      )
+
+      out <- list(age = age_df, sex = sex_df, race = race_df, ethnicity = ethnicity_df)
+    }, silent = TRUE)
+
+    if (!is.null(conn)) {
+      try(DatabaseConnector::disconnect(conn), silent = TRUE)
+    }
+
+    out
+  }
+
+  append_distribution_rows <- function(tbl, dist_df, label_prefix, denom, max_rows = 6L) {
+    if (is.null(dist_df) || nrow(dist_df) == 0) {
+      return(tbl)
+    }
+
+    n_col <- names(dist_df)[tolower(names(dist_df)) == "n"][1]
+    cat_col <- names(dist_df)[tolower(names(dist_df)) == "category"][1]
+    if (is.na(n_col) || is.na(cat_col)) {
+      return(tbl)
+    }
+
+    dist_df$n_value <- as.numeric(dist_df[[n_col]])
+    dist_df$cat_value <- as.character(dist_df[[cat_col]])
+    keep_n <- min(nrow(dist_df), max_rows)
+    shown <- dist_df[seq_len(keep_n), , drop = FALSE]
+
+    for (i in seq_len(nrow(shown))) {
+      tbl <- rbind(
+        tbl,
+        data.frame(
+          Item = paste0(label_prefix, " - ", shown$cat_value[i]),
+          Value = fmt_n_pct(shown$n_value[i], denom),
+          Definition = paste0(
+            "Distribution among target-cohort patients based on OMOP person ",
+            if (label_prefix == "Race") "race_concept_id" else if (label_prefix == "Ethnicity") "ethnicity_concept_id" else "gender_concept_id",
+            "."
+          ),
+          stringsAsFactors = FALSE
+        )
+      )
+    }
+
+    if (nrow(dist_df) > keep_n) {
+      other_n <- sum(as.numeric(dist_df$n_value[(keep_n + 1):nrow(dist_df)]), na.rm = TRUE)
+      tbl <- rbind(
+        tbl,
+        data.frame(
+          Item = paste0(label_prefix, " - Other"),
+          Value = fmt_n_pct(other_n, denom),
+          Definition = "Combined frequency of remaining categories not shown individually.",
+          stringsAsFactors = FALSE
+        )
+      )
+    }
+
+    tbl
+  }
+
+  build_table1_cohort <- function(person_level, config, connection_details) {
+    n_target <- nrow(person_level)
+    n_outcome <- sum(as.numeric(person_level$outcome), na.rm = TRUE)
+
+    tbl <- data.frame(
+      Item = c(
+        "Target cohort (eligible procedures)",
+        "SSI outcome within 30 days"
+      ),
+      Value = c(
+        fmt_n_pct(n_target, n_target),
+        fmt_n_pct(n_outcome, n_target)
+      ),
+      Definition = c(
+        "Adults aged >=18 years with open lower extremity revascularization meeting cohort entry criteria.",
+        "First qualifying post-operative SSI event in follow-up."
+      ),
+      stringsAsFactors = FALSE
+    )
+
+    demog <- fetch_demographics_from_omop(config, connection_details)
+
+    if (!is.null(demog) && !is.null(demog$age) && nrow(demog$age) > 0) {
+      ages <- as.numeric(demog$age$AGE_AT_INDEX)
+      ages <- ages[!is.na(ages)]
+      if (length(ages) > 0) {
+        age_iqr <- stats::quantile(ages, probs = c(0.25, 0.75), na.rm = TRUE)
+        tbl <- rbind(
+          tbl,
+          data.frame(
+            Item = "Age, mean (SD), years",
+            Value = paste0(format(round(mean(ages), 1), nsmall = 1), " (", format(round(stats::sd(ages), 1), nsmall = 1), ")"),
+            Definition = "Age at target cohort index date.",
+            stringsAsFactors = FALSE
+          ),
+          data.frame(
+            Item = "Age, median (IQR), years",
+            Value = paste0(
+              format(round(stats::median(ages), 1), nsmall = 1),
+              " (",
+              format(round(age_iqr[[1]], 1), nsmall = 1),
+              "-",
+              format(round(age_iqr[[2]], 1), nsmall = 1),
+              ")"
+            ),
+            Definition = "Age distribution summarized with median and interquartile range.",
+            stringsAsFactors = FALSE
+          )
+        )
+
+        age_bands <- list(
+          "Age 18-44" = sum(ages >= 18 & ages <= 44, na.rm = TRUE),
+          "Age 45-64" = sum(ages >= 45 & ages <= 64, na.rm = TRUE),
+          "Age 65-74" = sum(ages >= 65 & ages <= 74, na.rm = TRUE),
+          "Age >=75" = sum(ages >= 75, na.rm = TRUE)
+        )
+        for (nm in names(age_bands)) {
+          tbl <- rbind(
+            tbl,
+            data.frame(
+              Item = paste0(nm, ", n (%)"),
+              Value = fmt_n_pct(age_bands[[nm]], n_target),
+              Definition = "Age-band frequency in the target cohort.",
+              stringsAsFactors = FALSE
+            )
+          )
+        }
+      }
+    }
+
+    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$sex else NULL, "Sex", n_target, max_rows = 4L)
+    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$race else NULL, "Race", n_target, max_rows = 6L)
+    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$ethnicity else NULL, "Ethnicity", n_target, max_rows = 4L)
+
+    score_flag <- function(col, positive = function(x) x > 0) {
+      if (!(col %in% names(person_level))) return(NA_real_)
+      x <- suppressWarnings(as.numeric(person_level[[col]]))
+      sum(positive(x), na.rm = TRUE)
+    }
+
+    claud_n <- score_flag("score_indicationClaudication", positive = function(x) x < 0)
+    urg_n <- score_flag("score_urgnt")
+    prrevasc_n <- score_flag("score_prrevasc_any")
+    optime_n <- score_flag("score_optime4h")
+    abx_n <- score_flag("score_prolong_abx")
+
+    tbl <- rbind(
+      tbl,
+      data.frame(
+        Item = "Presenting symptom - Claudication, n (%)",
+        Value = fmt_n_pct(claud_n, n_target),
+        Definition = "From score_indicationClaudication activation in person-level score output.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Presenting symptom - Non-claudication, n (%)",
+        Value = fmt_n_pct(n_target - claud_n, n_target),
+        Definition = "Complement of claudication indicator.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Procedure grouping - Urgent/emergency, n (%)",
+        Value = fmt_n_pct(urg_n, n_target),
+        Definition = "From score_urgnt component activation.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Procedure grouping - Prior revascularization, n (%)",
+        Value = fmt_n_pct(prrevasc_n, n_target),
+        Definition = "From score_prrevasc_any component activation.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Procedure grouping - Operative time >=4h, n (%)",
+        Value = fmt_n_pct(optime_n, n_target),
+        Definition = "From score_optime4h component activation.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Procedure grouping - Prolonged antibiotics, n (%)",
+        Value = fmt_n_pct(abx_n, n_target),
+        Definition = "From score_prolong_abx component activation.",
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        Item = "Unique patients represented",
+        Value = fmt_n_pct(length(unique(person_level$subject_id)), n_target),
+        Definition = "Unique patient count represented in procedure-level target cohort records.",
+        stringsAsFactors = FALSE
+      )
+    )
+
+    tbl
+  }
+
+  config <- NULL
+  if (exists("get_validation_config", mode = "function")) {
+    config <- tryCatch(get_validation_config(), error = function(e) NULL)
+  }
+  cohort_tbl <- build_table1_cohort(person_level, config, connection_details)
 
   simple_ft <- function(df) {
     flextable(df) |>
@@ -1150,7 +1402,7 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 30 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
   doc <- body_add_par(doc, "Table 1. Cohort summary for the external validation sample.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: The table reports cohort and outcome counts together with explicit cohort and outcome definitions and outcome prevalence.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: The second column reports frequency as n (%) for categorical variables and summary estimates for continuous variables; table includes demographics (age, sex, race, ethnicity), presenting symptom profile, and procedure groupings.", style = "Normal")
   doc <- body_add_flextable(doc, wrapped_definition_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
