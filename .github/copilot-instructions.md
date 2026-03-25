@@ -56,3 +56,17 @@ Use the `install_from_internal_binary()` helper in `setup/install_packages.R` fo
 - Never hardcode credentials; all connection parameters come from `get_validation_config()`.
 - Do not add calls to external URLs or APIs beyond the JDBC driver download in `R/drivers.R`.
 - Do not write PHI or PII to disk — output CSVs contain only aggregate statistics.
+
+## Version Control
+
+After completing any major code change (new features, bug fixes, refactors, documentation
+updates, or file additions/deletions), always stage, commit, and push the affected files to
+GitHub:
+
+1. Stage only the relevant changed files (do not blanket-stage unrelated untracked files).
+2. Write a concise conventional commit message: `<type>: <short description>`
+   — types: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`.
+3. Push to `origin main`.
+
+Use the GitKraken MCP git tools (`mcp_gitkraken_git_add_or_commit`, `mcp_gitkraken_git_push`)
+for staging, committing, and pushing unless the user explicitly asks to use the terminal.
