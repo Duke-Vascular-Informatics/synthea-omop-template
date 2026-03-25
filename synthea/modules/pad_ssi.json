@@ -1,19 +1,34 @@
 {
   "name": "PAD Open Lower Extremity Revascularization with SSI",
   "remarks": [
-    "Models open lower extremity revascularization surgery in patients with peripheral",
-    "arterial disease (PAD) and simulates surgical site infection (SSI) as a 30-day",
-    "outcome. Designed to generate synthetic OMOP CDM v5 data compatible with the",
-    "PAD/OLER SSI validation study cohort definitions:",
+    "Models the full clinical pathway for peripheral arterial disease (PAD) from initial",
+    "diagnosis through treatment strategy selection, and — for patients who receive open",
+    "lower extremity revascularization — through the 30-day surgical site infection (SSI)",
+    "outcome window.",
+    "",
+    "Clinical workflow:",
+    "  1. PAD diagnosis (ConditionOnset)",
+    "  2. Outpatient PAD diagnosis encounter",
+    "  3. Document presenting symptom (asymptomatic, claudication, rest pain, wound/tissue loss)",
+    "  4. Document comorbidities (smoking, diabetes, hypertension, COPD, CHF, functional",
+    "     impairment) and anthropometrics (BMI, height, weight)",
+    "  5. Ankle-brachial index (ABI) measurement",
+    "  6. End outpatient encounter",
+    "  7. Treatment strategy decision:",
+    "       - Medical management (40%) → Terminal",
+    "       - Endovascular revascularization (30%) → Terminal",
+    "       - Open surgical revascularization (30%) → SSI pathway",
+    "  8. Pre-surgical workup delay (1-6 months)",
+    "  9. Historical prior revascularization (25%)",
+    " 10. Pre-index non-prophylaxis antibiotic (30%)",
+    " 11. Urgency flag (25% urgent/emergent)",
+    " 12. Inpatient surgical admission → perioperative cefazolin → open revascularization",
+    " 13. Post-operative inpatient stay (3-7 days) → discharge",
+    " 14. SSI risk check (comorbidity-adjusted) → SSI pathway or Terminal",
+    "",
+    "Cohort definitions:",
     "  Target  : inpatient surgery for open lower extremity revascularization",
     "  Outcome : SSI diagnosis within 30 days of index surgery",
-    "",
-    "This module is self-contained. It generates a PAD diagnosis, schedules an inpatient",
-    "revascularization, and applies comorbidity-adjusted SSI risk. It also generates",
-    "risk-model variables used by the PAD/OLER validation pipeline: claudication",
-    "indication, ABI severity, urgency flag, prior revascularization, pre-index",
-    "prolonged antibiotic exposure, BMI/height/weight, and modified frailty",
-    "comorbidities (diabetes, COPD, CHF, hypertension, functional impairment).",
     "",
     "SSI incidence assumptions (per published literature):",
     "  With Type 2 diabetes                 : 12%",
@@ -26,10 +41,26 @@
     "  Current smoker                       : 35%",
     "  Type 2 diabetes mellitus             : 30%",
     "  Obesity (BMI >= 30)                  : 40%",
+    "  Hypertension                         : 60%",
+    "  COPD                                 : 20%",
+    "  CHF                                  : 15%",
+    "  Functional impairment                : 20%",
+    "",
+    "Presenting symptom distribution (Rutherford-aligned):",
+    "  Asymptomatic (Rutherford 0)          : 10%",
+    "  Claudication (Rutherford 1-3)        : 50%",
+    "  Rest pain (Rutherford 4)             : 25%",
+    "  Wound / tissue loss (Rutherford 5-6) : 15%",
+    "",
+    "Treatment strategy distribution:",
+    "  Medical management only              : 40%",
+    "  Endovascular revascularization       : 30%",
+    "  Open surgical revascularization      : 30%",
     "",
     "Primary concept codes (OMOP-mappable):",
     "  PAD condition          : SNOMED-CT 399957001",
     "  Femoro-popliteal bypass: SNOMED-CT 232723009",
+    "  Endovascular procedure : SNOMED-CT 233258006",
     "  SSI condition          : SNOMED-CT 76844004",
     "  Debridement (re-op)    : SNOMED-CT 118294005",
     "  Ankle-brachial index   : LOINC     59574-4",
@@ -68,15 +99,6 @@
         "quantity": 40,
         "unit": "years"
       },
-      "direct_transition": "PAD_Onset_Chance"
-    },
-
-    "PAD_Onset_Chance": {
-      "type": "Simple",
-      "remarks": [
-        "PAD-only generation mode.",
-        "All generated adults meeting the age guard are routed into the PAD pathway."
-      ],
       "direct_transition": "PAD_Onset"
     },
 
@@ -89,21 +111,7 @@
           "display": "Peripheral arterial occlusive disease"
         }
       ],
-      "direct_transition": "Guaranteed_Index_Revascularization"
-    },
-
-    "Guaranteed_Surgical_Admission": {
-      "type": "Encounter",
-      "encounter_class": "inpatient",
-      "reason": "PAD_Onset",
-      "codes": [
-        {
-          "system": "SNOMED-CT",
-          "code": "32485007",
-          "display": "Hospital admission"
-        }
-      ],
-      "direct_transition": "Guaranteed_Index_Revascularization"
+      "direct_transition": "PAD_Diagnosis_Encounter"
     },
 
     "PAD_Diagnosis_Encounter": {
@@ -117,68 +125,45 @@
           "display": "Encounter for check up"
         }
       ],
-      "direct_transition": "ABI_Observation"
-    },
-
-    "ABI_Observation": {
-      "type": "Observation",
-      "category": "vital-signs",
-      "unit": "ratio",
-      "codes": [
-        {
-          "system": "LOINC",
-          "code": "59574-4",
-          "display": "Ankle-brachial index"
-        }
-      ],
       "remarks": [
-        "ABI < 0.9 indicates PAD; < 0.5 indicates severe/critical limb ischemia.",
-        "Range reflects moderate-to-severe PAD requiring revascularization."
+        "Initial outpatient PAD evaluation encounter.",
+        "Presenting symptom, comorbidities, and ABI are all documented during this visit."
       ],
-      "range": { "low": 0.3, "high": 0.85 },
-      "direct_transition": "End_PAD_Diagnosis_Encounter"
+      "direct_transition": "Presenting_Symptom"
     },
 
-    "End_PAD_Diagnosis_Encounter": {
-      "type": "EncounterEnd",
-      "direct_transition": "Claudication_Chance"
-    },
-
-    "Guaranteed_Index_Revascularization": {
-      "type": "Procedure",
-      "target_encounter": "PAD_Diagnosis_Encounter",
-      "reason": "PAD_Onset",
-      "remarks": [
-        "Mandatory index open lower extremity revascularization for every PAD pathway patient."
-      ],
-      "codes": [
-        {
-          "system": "SNOMED-CT",
-          "code": "232723009",
-          "display": "Bypass of femoral artery to popliteal artery"
-        }
-      ],
-      "duration": { "low": 2, "high": 5, "unit": "hours" },
-      "direct_transition": "Claudication_Chance"
-    },
-
-    "End_Guaranteed_Surgical_Admission": {
-      "type": "EncounterEnd",
-      "direct_transition": "Claudication_Chance"
-    },
-
-    "Claudication_Chance": {
+    "Presenting_Symptom": {
       "type": "Simple",
       "remarks": [
-        "Most surgical PAD presentations in this module include intermittent claudication."
+        "Documents presenting symptom / Rutherford class at first evaluation.",
+        "Rutherford 0: asymptomatic (10%)",
+        "Rutherford 1-3: claudication (50%)",
+        "Rutherford 4: rest pain (25%)",
+        "Rutherford 5-6: wound / tissue loss (15%)"
       ],
       "distributed_transition": [
-        { "distribution": 0.70, "transition": "Claudication_Onset" },
-        { "distribution": 0.30, "transition": "Smoking_Status_Chance" }
+        { "distribution": 0.10, "transition": "Symptom_Asymptomatic" },
+        { "distribution": 0.50, "transition": "Symptom_Claudication" },
+        { "distribution": 0.25, "transition": "Symptom_Rest_Pain" },
+        { "distribution": 0.15, "transition": "Symptom_Wound" }
       ]
     },
 
-    "Claudication_Onset": {
+    "Symptom_Asymptomatic": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "84387000",
+          "display": "Asymptomatic"
+        }
+      ],
+      "remarks": ["Rutherford category 0 — no symptoms."],
+      "direct_transition": "Smoking_Status_Chance"
+    },
+
+    "Symptom_Claudication": {
       "type": "ConditionOnset",
       "codes": [
         {
@@ -187,13 +172,40 @@
           "display": "Intermittent claudication"
         }
       ],
+      "remarks": ["Rutherford categories 1-3 — claudication."],
+      "direct_transition": "Smoking_Status_Chance"
+    },
+
+    "Symptom_Rest_Pain": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "60389000",
+          "display": "Ischemic rest pain"
+        }
+      ],
+      "remarks": ["Rutherford category 4 — ischemic rest pain."],
+      "direct_transition": "Smoking_Status_Chance"
+    },
+
+    "Symptom_Wound": {
+      "type": "ConditionOnset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "400012003",
+          "display": "Ischemic ulcer of foot"
+        }
+      ],
+      "remarks": ["Rutherford categories 5-6 — tissue loss or non-healing wound."],
       "direct_transition": "Smoking_Status_Chance"
     },
 
     "Smoking_Status_Chance": {
       "type": "Simple",
       "remarks": [
-        "Current smoking prevalence in PAD revascularization candidates is modeled at 35%."
+        "Current smoking prevalence in PAD patients is modeled at 35%."
       ],
       "distributed_transition": [
         { "distribution": 0.35, "transition": "Current_Smoker_Observation" },
@@ -240,7 +252,7 @@
     "Diabetes_Chance": {
       "type": "Simple",
       "remarks": [
-        "Type 2 diabetes prevalence in PAD surgery patients is modeled at 30%."
+        "Type 2 diabetes prevalence in PAD patients is modeled at 30%."
       ],
       "distributed_transition": [
         { "distribution": 0.30, "transition": "Diabetes_Onset" },
@@ -343,11 +355,14 @@
     "BMI_Chance": {
       "type": "Simple",
       "remarks": [
-        "Obesity prevalence is modeled at 40% using a BMI observation."
+        "Obesity prevalence is modeled at 40%.",
+        "Overweight (BMI 25-29.9) is modeled at 30%.",
+        "Normal/underweight at 30%."
       ],
       "distributed_transition": [
         { "distribution": 0.40, "transition": "BMI_Obese_Observation" },
-        { "distribution": 0.60, "transition": "BMI_NonObese_Observation" }
+        { "distribution": 0.30, "transition": "BMI_Overweight_Observation" },
+        { "distribution": 0.30, "transition": "BMI_Normal_Observation" }
       ]
     },
 
@@ -393,10 +408,10 @@
         }
       ],
       "range": { "low": 90, "high": 130 },
-      "direct_transition": "Prior_Revascularization_Chance"
+      "direct_transition": "ABI_Observation"
     },
 
-    "BMI_NonObese_Observation": {
+    "BMI_Overweight_Observation": {
       "type": "Observation",
       "category": "vital-signs",
       "unit": "kg/m2",
@@ -407,7 +422,22 @@
           "display": "Body Mass Index"
         }
       ],
-      "range": { "low": 22, "high": 29.9 },
+      "range": { "low": 25, "high": 29.9 },
+      "direct_transition": "Height_NonObese_Observation"
+    },
+
+    "BMI_Normal_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "kg/m2",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "39156-5",
+          "display": "Body Mass Index"
+        }
+      ],
+      "range": { "low": 18.5, "high": 24.9 },
       "direct_transition": "Height_NonObese_Observation"
     },
 
@@ -437,22 +467,39 @@
           "display": "Body weight"
         }
       ],
-      "range": { "low": 60, "high": 90 },
+      "range": { "low": 55, "high": 90 },
+      "direct_transition": "ABI_Observation"
+    },
+
+    "ABI_Observation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "unit": "ratio",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "59574-4",
+          "display": "Ankle-brachial index"
+        }
+      ],
+      "remarks": [
+        "ABI < 0.9 confirms PAD; < 0.5 indicates severe/critical limb ischemia.",
+        "Range reflects the spectrum from moderate PAD to critical limb ischemia."
+      ],
+      "range": { "low": 0.3, "high": 0.85 },
       "direct_transition": "Prior_Revascularization_Chance"
     },
 
     "Prior_Revascularization_Chance": {
       "type": "Simple",
+      "remarks": [
+        "Documented during the initial PAD evaluation encounter.",
+        "25% of patients have a prior lower-extremity revascularization on record."
+      ],
       "distributed_transition": [
-        { "distribution": 0.25, "transition": "Prior_Revascularization_Delay" },
-        { "distribution": 0.75, "transition": "Pre_Surgical_Workup_Delay" }
+        { "distribution": 0.25, "transition": "Prior_Revascularization_Procedure" },
+        { "distribution": 0.75, "transition": "End_PAD_Diagnosis_Encounter" }
       ]
-    },
-
-    "Prior_Revascularization_Delay": {
-      "type": "Delay",
-      "range": { "low": 0, "high": 0, "unit": "days" },
-      "direct_transition": "Prior_Revascularization_Procedure"
     },
 
     "Prior_Revascularization_Procedure": {
@@ -466,20 +513,116 @@
         }
       ],
       "duration": { "low": 2, "high": 4, "unit": "hours" },
-      "direct_transition": "Prior_Revascularization_Recovery"
+      "direct_transition": "End_PAD_Diagnosis_Encounter"
     },
 
-    "Prior_Revascularization_Recovery": {
-      "type": "Delay",
-      "range": { "low": 0, "high": 0, "unit": "days" },
+    "End_PAD_Diagnosis_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "Treatment_Strategy"
+    },
+
+    "Treatment_Strategy": {
+      "type": "Simple",
+      "remarks": [
+        "Treatment decision following PAD evaluation.",
+        "Oversampled for open surgical procedures to maximize SSI outcome data.",
+        "Medical management (10%): antiplatelet, statin, exercise therapy — no procedure.",
+        "Endovascular (10%): balloon angioplasty / stenting — not an open surgery, exits pathway.",
+        "Open surgical (80%): open lower extremity revascularization — proceeds to SSI pathway."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.10, "transition": "Medical_Management" },
+        { "distribution": 0.10, "transition": "Endovascular_Procedure_Encounter" },
+        { "distribution": 0.80, "transition": "Urgent_Case_Chance" }
+      ]
+    },
+
+    "Medical_Management": {
+      "type": "Simple",
+      "remarks": [
+        "Patient managed with medical therapy only.",
+        "No revascularization — exits the module."
+      ],
+      "direct_transition": "Terminal"
+    },
+
+    "Endovascular_Procedure_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "outpatient",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "11429006",
+          "display": "Consultation"
+        }
+      ],
+      "direct_transition": "Endovascular_Procedure"
+    },
+
+    "Endovascular_Procedure": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "233258006",
+          "display": "Percutaneous transluminal angioplasty of peripheral artery"
+        }
+      ],
+      "remarks": [
+        "Endovascular revascularization (balloon angioplasty or stenting).",
+        "Not an open surgery — does not enter the SSI outcome pathway."
+      ],
+      "duration": { "low": 1, "high": 3, "unit": "hours" },
+      "direct_transition": "End_Endovascular_Encounter"
+    },
+
+    "End_Endovascular_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "Terminal"
+    },
+
+    "Urgent_Case_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Urgency is determined immediately after the treatment strategy decision.",
+        "25% of open surgical procedures are flagged urgent or emergent.",
+        "The urgency observation is recorded at the time of surgical admission."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.25, "transition": "Urgent_Case_Flag" },
+        { "distribution": 0.75, "transition": "Pre_Surgical_Workup_Delay" }
+      ]
+    },
+
+    "Urgent_Case_Flag": {
+      "type": "Simple",
+      "remarks": ["Urgent/emergent flag — recorded during the surgical admission encounter."],
       "direct_transition": "Pre_Surgical_Workup_Delay"
+    },
+
+    "Pre_Surgical_Workup_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Time from PAD evaluation to open revascularization surgery.",
+        "Includes pre-operative imaging, cardiac risk stratification, and scheduling.",
+        "Range: 1-6 months."
+      ],
+      "range": { "low": 30, "high": 180, "unit": "days" },
+      "direct_transition": "Pre_Index_Antibiotic_Chance"
     },
 
     "Pre_Index_Antibiotic_Chance": {
       "type": "Simple",
+      "remarks": [
+        "30% of patients receive a non-prophylactic antibiotic course before the index surgery",
+        "(e.g., for wound infection or pre-operative cellulitis).",
+        "This is the 'prolonged antibiotic' risk score variable: start <= index - 1 day, duration > 2 days."
+      ],
       "distributed_transition": [
         { "distribution": 0.30, "transition": "Pre_Index_Antibiotic_Order" },
-        { "distribution": 0.70, "transition": "Urgent_Case_Chance" }
+        { "distribution": 0.70, "transition": "Surgical_Admission_Encounter" }
       ]
     },
 
@@ -499,34 +642,47 @@
 
     "Pre_Index_Antibiotic_Delay": {
       "type": "Delay",
-      "range": { "low": 0, "high": 0, "unit": "days" },
+      "remarks": ["Duration of pre-index antibiotic course: 3-10 days."],
+      "range": { "low": 3, "high": 10, "unit": "days" },
       "direct_transition": "Pre_Index_Antibiotic_End"
     },
 
     "Pre_Index_Antibiotic_End": {
       "type": "MedicationEnd",
       "referenced_by_attribute": "preop_nonprophylaxis_antibiotic",
-      "direct_transition": "Urgent_Case_Chance"
+      "direct_transition": "Surgical_Admission_Encounter"
     },
 
-    "Pre_Surgical_Workup_Delay": {
-      "type": "Delay",
-      "remarks": [
-        "Time from PAD diagnosis to open revascularization surgery.",
-        "Includes pre-operative imaging, cardiac risk stratification, and scheduling."
+    "Surgical_Admission_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "inpatient",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "32485007",
+          "display": "Hospital admission"
+        }
       ],
-      "range": { "low": 0, "high": 0, "unit": "days" },
-      "direct_transition": "Pre_Index_Antibiotic_Chance"
+      "direct_transition": "Urgency_Observation_Check"
     },
 
-    "Urgent_Case_Chance": {
+    "Urgency_Observation_Check": {
       "type": "Simple",
       "remarks": [
-        "Subset of surgeries are flagged urgent/emergent for risk-score compatibility."
+        "Records the urgency observation inside the surgical encounter if the patient was flagged urgent."
       ],
-      "distributed_transition": [
-        { "distribution": 0.25, "transition": "Urgent_Case_Observation" },
-        { "distribution": 0.75, "transition": "Pre_Op_Antibiotic" }
+      "conditional_transition": [
+        {
+          "condition": {
+            "condition_type": "PriorState",
+            "name": "Urgent_Case_Flag"
+          },
+          "transition": "Urgent_Case_Observation"
+        },
+        {
+          "transition": "Pre_Op_Antibiotic"
+        }
       ]
     },
 
@@ -540,11 +696,6 @@
           "display": "Emergency operation"
         }
       ],
-      "direct_transition": "Pre_Op_Antibiotic"
-    },
-
-    "Surgical_Admission": {
-      "type": "Simple",
       "direct_transition": "Pre_Op_Antibiotic"
     },
 
@@ -598,7 +749,7 @@
         "Standard inpatient stay after open lower extremity bypass: 3-7 days."
       ],
       "range": { "low": 3, "high": 7, "unit": "days" },
-      "direct_transition": "Post_Discharge_Delay"
+      "direct_transition": "End_Surgical_Admission"
     },
 
     "End_Surgical_Admission": {
