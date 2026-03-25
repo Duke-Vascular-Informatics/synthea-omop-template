@@ -59,37 +59,35 @@ flowchart TD
   n038["&lt;b&gt;Endovascular Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 233258006: Percutaneous transluminal angioplasty of peripheral artery"]
   n039["&lt;b&gt;End Endovascular Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
   n040["&lt;b&gt;Urgent Case Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n041["&lt;b&gt;Urgent Case Flag&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n042["&lt;b&gt;Pre Surgical Workup Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n043["&lt;b&gt;Surgical Admission Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
-  n044["&lt;b&gt;Urgency Observation Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n045["&lt;b&gt;Urgent Case Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;SNOMED-CT 25876001: Emergency operation"]
-  n046["&lt;b&gt;Admission Antibiotic Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n047["&lt;b&gt;Admission Cephalexin Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
-  n048["&lt;b&gt;Admission Cephalexin Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n049["&lt;b&gt;Admission Cephalexin End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
-  n050["&lt;b&gt;Pre Op Antibiotic&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 20496: cefazolin"]
-  n051["&lt;b&gt;Revascularization Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 232723009: Bypass of femoral artery to popliteal artery"]
-  n052["&lt;b&gt;Pre Op Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
-  n053["&lt;b&gt;Post Op Inpatient Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n054["&lt;b&gt;End Surgical Admission&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n055["&lt;b&gt;Post Discharge Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n056["&lt;b&gt;SSI Fixed Risk&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n057["&lt;b&gt;SSI Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 76844004: Infection of surgical wound"]
-  n058["&lt;b&gt;SSI Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
-  n059["&lt;b&gt;Wound Culture&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
-  n060["&lt;b&gt;SSI Antibiotic Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
-  n061["&lt;b&gt;End SSI Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n062["&lt;b&gt;SSI Treatment Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n063["&lt;b&gt;SSI Resolution Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n064["&lt;b&gt;SSI Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
-  n065["&lt;b&gt;SSI Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
-  n066["&lt;b&gt;Reoperation Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 118294005: Debridement"]
-  n067["&lt;b&gt;End Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n068["&lt;b&gt;Post Reoperation Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n069["&lt;b&gt;SSI End From Reoperation&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
-  n070["&lt;b&gt;SSI Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
-  n071["&lt;b&gt;Terminal&lt;/b&gt;&lt;br/&gt;[Terminal]"]
+  n041["&lt;b&gt;Pre Surgical Workup Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n042["&lt;b&gt;Surgical Admission Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n043["&lt;b&gt;Urgent Case Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;SNOMED-CT 25876001: Emergency operation"]
+  n044["&lt;b&gt;Admission Antibiotic Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n045["&lt;b&gt;Admission Cephalexin Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n046["&lt;b&gt;Admission Cephalexin Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n047["&lt;b&gt;Admission Cephalexin End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n048["&lt;b&gt;Pre Op Antibiotic&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 20496: cefazolin"]
+  n049["&lt;b&gt;Revascularization Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 232723009: Bypass of femoral artery to popliteal artery"]
+  n050["&lt;b&gt;Pre Op Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n051["&lt;b&gt;Post Op Inpatient Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n052["&lt;b&gt;End Surgical Admission&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n053["&lt;b&gt;Post Discharge Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n054["&lt;b&gt;SSI Fixed Risk&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n055["&lt;b&gt;SSI Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 76844004: Infection of surgical wound"]
+  n056["&lt;b&gt;SSI Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n057["&lt;b&gt;Wound Culture&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n058["&lt;b&gt;SSI Antibiotic Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n059["&lt;b&gt;End SSI Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n060["&lt;b&gt;SSI Treatment Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n061["&lt;b&gt;SSI Resolution Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n062["&lt;b&gt;SSI Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n063["&lt;b&gt;SSI Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n064["&lt;b&gt;Reoperation Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 118294005: Debridement"]
+  n065["&lt;b&gt;End Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n066["&lt;b&gt;Post Reoperation Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n067["&lt;b&gt;SSI End From Reoperation&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n068["&lt;b&gt;SSI Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n069["&lt;b&gt;Terminal&lt;/b&gt;&lt;br/&gt;[Terminal]"]
 
   n001 --&gt; n002
   n002 --&gt; n003
@@ -127,33 +125,32 @@ flowchart TD
   n023 -- 30% --&gt; n028
   n024 --&gt; n025
   n025 --&gt; n026
-  n026 --&gt; n031
+  n026 --&gt; n032
   n027 --&gt; n029
   n028 --&gt; n029
   n029 --&gt; n030
-  n030 --&gt; n031
-  n031 --&gt; n032
+  n030 --&gt; n032
+  n031 --&gt; n034
   n032 -- 25% --&gt; n033
-  n032 -- 75% --&gt; n034
-  n033 --&gt; n034
+  n032 -- 75% --&gt; n031
+  n033 --&gt; n031
   n034 --&gt; n035
   n035 -- 10% --&gt; n036
   n035 -- 10% --&gt; n037
   n035 -- 80% --&gt; n040
-  n036 --&gt; n071
+  n036 --&gt; n069
   n037 --&gt; n038
   n038 --&gt; n039
-  n039 --&gt; n071
-  n040 -- 25% --&gt; n041
-  n040 -- 75% --&gt; n042
-  n041 --&gt; n043
-  n042 --&gt; n043
-  n043 --&gt; n044
-  n044 -- PriorState --&gt; n045
-  n044 -- else --&gt; n046
+  n039 --&gt; n069
+  n040 -- 25% --&gt; n043
+  n040 -- 75% --&gt; n041
+  n041 --&gt; n042
+  n042 --&gt; n044
+  n043 --&gt; n042
+  n044 -- 30% --&gt; n045
+  n044 -- 70% --&gt; n048
   n045 --&gt; n046
-  n046 -- 30% --&gt; n047
-  n046 -- 70% --&gt; n050
+  n046 --&gt; n047
   n047 --&gt; n048
   n048 --&gt; n049
   n049 --&gt; n050
@@ -161,25 +158,23 @@ flowchart TD
   n051 --&gt; n052
   n052 --&gt; n053
   n053 --&gt; n054
-  n054 --&gt; n055
+  n054 -- 20% --&gt; n055
+  n054 -- 80% --&gt; n069
   n055 --&gt; n056
-  n056 -- 20% --&gt; n057
-  n056 -- 80% --&gt; n071
+  n056 --&gt; n057
   n057 --&gt; n058
   n058 --&gt; n059
   n059 --&gt; n060
   n060 --&gt; n061
-  n061 --&gt; n062
-  n062 --&gt; n063
-  n063 -- 85% --&gt; n064
-  n063 -- 15% --&gt; n065
-  n064 --&gt; n070
+  n061 -- 85% --&gt; n062
+  n061 -- 15% --&gt; n063
+  n062 --&gt; n068
+  n063 --&gt; n064
+  n064 --&gt; n065
   n065 --&gt; n066
   n066 --&gt; n067
   n067 --&gt; n068
   n068 --&gt; n069
-  n069 --&gt; n070
-  n070 --&gt; n071
     </div>
   </div>
 

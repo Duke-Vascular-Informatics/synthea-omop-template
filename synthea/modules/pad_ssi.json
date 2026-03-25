@@ -405,7 +405,7 @@
         }
       ],
       "range": { "low": 90, "high": 130 },
-      "direct_transition": "ABI_Observation"
+      "direct_transition": "Prior_Revascularization_Chance"
     },
 
     "BMI_Overweight_Observation": {
@@ -465,7 +465,7 @@
         }
       ],
       "range": { "low": 55, "high": 90 },
-      "direct_transition": "ABI_Observation"
+      "direct_transition": "Prior_Revascularization_Chance"
     },
 
     "ABI_Observation": {
@@ -481,10 +481,11 @@
       ],
       "remarks": [
         "ABI < 0.9 confirms PAD; < 0.5 indicates severe/critical limb ischemia.",
-        "Range reflects the spectrum from moderate PAD to critical limb ischemia."
+        "Range reflects the spectrum from moderate PAD to critical limb ischemia.",
+        "Recorded as the final step of the PAD diagnostic encounter."
       ],
       "range": { "low": 0.3, "high": 0.85 },
-      "direct_transition": "Prior_Revascularization_Chance"
+      "direct_transition": "End_PAD_Diagnosis_Encounter"
     },
 
     "Prior_Revascularization_Chance": {
@@ -495,7 +496,7 @@
       ],
       "distributed_transition": [
         { "distribution": 0.25, "transition": "Prior_Revascularization_Procedure" },
-        { "distribution": 0.75, "transition": "End_PAD_Diagnosis_Encounter" }
+        { "distribution": 0.75, "transition": "ABI_Observation" }
       ]
     },
 
@@ -510,7 +511,7 @@
         }
       ],
       "duration": { "low": 2, "high": 4, "unit": "hours" },
-      "direct_transition": "End_PAD_Diagnosis_Encounter"
+      "direct_transition": "ABI_Observation"
     },
 
     "End_PAD_Diagnosis_Encounter": {
@@ -585,18 +586,12 @@
       "remarks": [
         "Urgency is determined immediately after the treatment strategy decision.",
         "25% of open surgical procedures are flagged urgent or emergent.",
-        "The urgency observation is recorded at the time of surgical admission."
+        "Urgent branch records an emergency-operation observation before surgical admission."
       ],
       "distributed_transition": [
-        { "distribution": 0.25, "transition": "Urgent_Case_Flag" },
+        { "distribution": 0.25, "transition": "Urgent_Case_Observation" },
         { "distribution": 0.75, "transition": "Pre_Surgical_Workup_Delay" }
       ]
-    },
-
-    "Urgent_Case_Flag": {
-      "type": "Simple",
-      "remarks": ["Urgent/emergent flag — recorded during the surgical admission encounter."],
-      "direct_transition": "Surgical_Admission_Encounter"
     },
 
     "Pre_Surgical_Workup_Delay": {
@@ -621,26 +616,7 @@
           "display": "Hospital admission"
         }
       ],
-      "direct_transition": "Urgency_Observation_Check"
-    },
-
-    "Urgency_Observation_Check": {
-      "type": "Simple",
-      "remarks": [
-        "Records the urgency observation inside the surgical encounter if the patient was flagged urgent."
-      ],
-      "conditional_transition": [
-        {
-          "condition": {
-            "condition_type": "PriorState",
-            "name": "Urgent_Case_Flag"
-          },
-          "transition": "Urgent_Case_Observation"
-        },
-        {
-          "transition": "Admission_Antibiotic_Chance"
-        }
-      ]
+      "direct_transition": "Admission_Antibiotic_Chance"
     },
 
     "Urgent_Case_Observation": {
@@ -653,7 +629,7 @@
           "display": "Emergency operation"
         }
       ],
-      "direct_transition": "Admission_Antibiotic_Chance"
+      "direct_transition": "Surgical_Admission_Encounter"
     },
 
     "Admission_Antibiotic_Chance": {
