@@ -1,5 +1,9 @@
 #!/usr/bin/env Rscript
-# Step 5: ETL Synthea CSV output to OMOP.
+# Step 5: ETL Synthea output to OMOP.
+#
+# Modes:
+# - csv_builder (default): full-domain CSV -> OMOP ETL via ETLSyntheaBuilder
+# - csv_legacy: legacy CSV -> OMOP ETL (patients/encounters/procedures/conditions)
 
 resolve_script_path <- function() {
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
@@ -25,9 +29,15 @@ parse_bool <- function(x) {
   tolower(trimws(as.character(x))) %in% c("1", "true", "t", "yes", "y")
 }
 
-csv_input_dir <- "C:/Users/rapiduser/source/repos/synthea/output/csv"
+csv_input_dir <- "C:/Users/rapiduser/synthea-data/output/csv"
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
-reset_before_etl <- FALSE
+reset_before_etl <- TRUE
+etl_mode <- "csv_builder"
+force_reload_vocab <- FALSE
+synthea_schema <- "synthea"
+synthea_version <- "3.3.0"
+cdm_version_builder <- "5.4"
+vocab_file_loc <- "C:/Users/rapiduser/omop-vocab"
 
 positional <- character()
 for (arg in args) {
@@ -39,6 +49,12 @@ for (arg in args) {
       if (identical(key, "csv_input_dir")) csv_input_dir <- val
       if (identical(key, "run_name")) run_name <- val
       if (identical(key, "reset_before_etl")) reset_before_etl <- parse_bool(val)
+      if (identical(key, "etl_mode")) etl_mode <- tolower(trimws(val))
+      if (identical(key, "force_reload_vocab")) force_reload_vocab <- parse_bool(val)
+      if (identical(key, "synthea_schema")) synthea_schema <- val
+      if (identical(key, "synthea_version")) synthea_version <- val
+      if (identical(key, "cdm_version_builder")) cdm_version_builder <- val
+      if (identical(key, "vocab_file_loc")) vocab_file_loc <- val
     }
   } else {
     positional <- c(positional, arg)
@@ -82,21 +98,50 @@ if (length(missing_pkgs_after_install) > 0) {
 }
 
 source("scripts/etl/run_synthea_csv_to_omop_etl.R")
+source("scripts/etl/run_synthea_full_csv_builder_etl.R")
 
-if (isTRUE(reset_before_etl)) {
-  source("scripts/etl/reset_omop_and_staging.R")
+if (!etl_mode %in% c("csv_builder", "csv_legacy")) {
+  stop("Unsupported --etl_mode. Expected 'csv_builder' or 'csv_legacy', got: ", etl_mode)
 }
+if (identical(etl_mode, "csv_builder")) {
+  run_synthea_full_csv_builder_etl(
+    csv_input_dir = csv_input_dir,
+    run_name = run_name,
+    synthea_schema = synthea_schema,
+    synthea_version = synthea_version,
+    cdm_version = cdm_version_builder,
+    vocab_file_loc = vocab_file_loc,
+    reset_before_etl = reset_before_etl,
+    force_reload_vocab = force_reload_vocab,
+    create_extra_indices = TRUE
+  )
 
-run_synthea_csv_to_omop_etl(
-  csv_input_dir = csv_input_dir,
-  run_name = run_name
-)
+  cat(
+    "Step 5 complete: full-domain CSV builder ETL loaded to OMOP. run_name=",
+    run_name,
+    ", reset_before_etl=",
+    ifelse(reset_before_etl, "true", "false"),
+    ", force_reload_vocab=",
+    ifelse(force_reload_vocab, "true", "false"),
+    "\n",
+    sep = ""
+  )
+} else {
+  if (isTRUE(reset_before_etl)) {
+    source("scripts/etl/reset_omop_and_staging.R")
+  }
 
-cat(
-  "Step 5 complete: CSV ETL loaded to OMOP. run_name=",
-  run_name,
-  ", reset_before_etl=",
-  ifelse(reset_before_etl, "true", "false"),
-  "\n",
-  sep = ""
-)
+  run_synthea_csv_to_omop_etl(
+    csv_input_dir = csv_input_dir,
+    run_name = run_name
+  )
+
+  cat(
+    "Step 5 complete: CSV ETL loaded to OMOP. run_name=",
+    run_name,
+    ", reset_before_etl=",
+    ifelse(reset_before_etl, "true", "false"),
+    "\n",
+    sep = ""
+  )
+}
