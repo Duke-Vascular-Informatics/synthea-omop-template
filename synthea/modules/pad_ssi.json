@@ -30,12 +30,9 @@
     "  Target  : inpatient surgery for open lower extremity revascularization",
     "  Outcome : SSI diagnosis within 30 days of index surgery",
     "",
-    "SSI incidence assumptions (per published literature):",
-    "  With Type 2 diabetes                 : 12%",
-    "  With obesity (BMI >= 30), no DM      : 10%",
-    "  With current smoking only            : 9%",
-    "  Baseline (no major risk factors)     : 6%",
-    "  Requiring rehospitalization/re-op    : 15% of SSI cases",
+    "SSI incidence assumptions:",
+    "  Fixed SSI incidence after open surgery: 20%",
+    "  Requiring rehospitalization/re-op     : 15% of SSI cases",
     "",
     "Comorbidity prevalence assumptions in this surgical PAD population:",
     "  Current smoker                       : 35%",
@@ -599,7 +596,7 @@
     "Urgent_Case_Flag": {
       "type": "Simple",
       "remarks": ["Urgent/emergent flag — recorded during the surgical admission encounter."],
-      "direct_transition": "Pre_Surgical_Workup_Delay"
+      "direct_transition": "Surgical_Admission_Encounter"
     },
 
     "Pre_Surgical_Workup_Delay": {
@@ -610,46 +607,6 @@
         "Range: 1-6 months."
       ],
       "range": { "low": 30, "high": 180, "unit": "days" },
-      "direct_transition": "Pre_Index_Antibiotic_Chance"
-    },
-
-    "Pre_Index_Antibiotic_Chance": {
-      "type": "Simple",
-      "remarks": [
-        "30% of patients receive a non-prophylactic antibiotic course before the index surgery",
-        "(e.g., for wound infection or pre-operative cellulitis).",
-        "This is the 'prolonged antibiotic' risk score variable: start <= index - 1 day, duration > 2 days."
-      ],
-      "distributed_transition": [
-        { "distribution": 0.30, "transition": "Pre_Index_Antibiotic_Order" },
-        { "distribution": 0.70, "transition": "Surgical_Admission_Encounter" }
-      ]
-    },
-
-    "Pre_Index_Antibiotic_Order": {
-      "type": "MedicationOrder",
-      "assign_to_attribute": "preop_nonprophylaxis_antibiotic",
-      "reason": "PAD_Onset",
-      "codes": [
-        {
-          "system": "RxNorm",
-          "code": "2673",
-          "display": "cephalexin"
-        }
-      ],
-      "direct_transition": "Pre_Index_Antibiotic_Delay"
-    },
-
-    "Pre_Index_Antibiotic_Delay": {
-      "type": "Delay",
-      "remarks": ["Duration of pre-index antibiotic course: 3-10 days."],
-      "range": { "low": 3, "high": 10, "unit": "days" },
-      "direct_transition": "Pre_Index_Antibiotic_End"
-    },
-
-    "Pre_Index_Antibiotic_End": {
-      "type": "MedicationEnd",
-      "referenced_by_attribute": "preop_nonprophylaxis_antibiotic",
       "direct_transition": "Surgical_Admission_Encounter"
     },
 
@@ -681,7 +638,7 @@
           "transition": "Urgent_Case_Observation"
         },
         {
-          "transition": "Pre_Op_Antibiotic"
+          "transition": "Admission_Antibiotic_Chance"
         }
       ]
     },
@@ -696,6 +653,45 @@
           "display": "Emergency operation"
         }
       ],
+      "direct_transition": "Admission_Antibiotic_Chance"
+    },
+
+    "Admission_Antibiotic_Chance": {
+      "type": "Simple",
+      "remarks": [
+        "Antibiotic orders occur during surgical admission.",
+        "30% receive an additional non-prophylactic cephalexin order before the index procedure."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.30, "transition": "Admission_Cephalexin_Order" },
+        { "distribution": 0.70, "transition": "Pre_Op_Antibiotic" }
+      ]
+    },
+
+    "Admission_Cephalexin_Order": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "admission_nonprophylaxis_antibiotic",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2673",
+          "display": "cephalexin"
+        }
+      ],
+      "direct_transition": "Admission_Cephalexin_Delay"
+    },
+
+    "Admission_Cephalexin_Delay": {
+      "type": "Delay",
+      "remarks": ["In-admission pre-procedure antibiotic duration: 1-2 days."],
+      "range": { "low": 1, "high": 2, "unit": "days" },
+      "direct_transition": "Admission_Cephalexin_End"
+    },
+
+    "Admission_Cephalexin_End": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "admission_nonprophylaxis_antibiotic",
       "direct_transition": "Pre_Op_Antibiotic"
     },
 
@@ -765,83 +761,18 @@
         "post-surgery — consistent with 30-day outcome definition in target study."
       ],
       "range": { "low": 5, "high": 25, "unit": "days" },
-      "direct_transition": "SSI_Risk_Check"
+      "direct_transition": "SSI_Fixed_Risk"
     },
 
-    "SSI_Risk_Check": {
+    "SSI_Fixed_Risk": {
       "type": "Simple",
       "remarks": [
-        "Adjusts SSI probability based on module-generated comorbidities.",
-        "Checks diabetes first, then obesity, then current smoking."
+        "Fixed SSI incidence after open revascularization.",
+        "20% develop SSI within the follow-up window."
       ],
-      "conditional_transition": [
-        {
-          "condition": {
-            "condition_type": "Active Condition",
-            "codes": [
-              {
-                "system": "SNOMED-CT",
-                "code": "44054006",
-                "display": "Diabetes mellitus type 2"
-              }
-            ]
-          },
-          "transition": "SSI_High_Risk"
-        },
-        {
-          "condition": {
-            "condition_type": "Observation",
-            "codes": [
-              {
-                "system": "LOINC",
-                "code": "39156-5",
-                "display": "Body Mass Index"
-              }
-            ],
-            "operator": ">=",
-            "value": 30
-          },
-          "transition": "SSI_Moderate_Risk"
-        },
-        {
-          "transition": "SSI_Baseline_Risk"
-        }
-      ]
-    },
-
-    "SSI_High_Risk": {
-      "type": "Simple",
-      "remarks": ["12% SSI incidence with diabetes."],
       "distributed_transition": [
-        { "distribution": 0.12, "transition": "SSI_Onset" },
-        { "distribution": 0.88, "transition": "Terminal" }
-      ]
-    },
-
-    "SSI_Moderate_Risk": {
-      "type": "Simple",
-      "remarks": ["10% SSI incidence with obesity (no diabetes)."],
-      "distributed_transition": [
-        { "distribution": 0.10, "transition": "SSI_Onset" },
-        { "distribution": 0.90, "transition": "Terminal" }
-      ]
-    },
-
-    "SSI_Smoking_Risk": {
-      "type": "Simple",
-      "remarks": ["9% SSI incidence with current smoking in the absence of diabetes or obesity."],
-      "distributed_transition": [
-        { "distribution": 0.09, "transition": "SSI_Onset" },
-        { "distribution": 0.91, "transition": "Terminal" }
-      ]
-    },
-
-    "SSI_Baseline_Risk": {
-      "type": "Simple",
-      "remarks": ["6% SSI incidence in absence of major risk factors."],
-      "distributed_transition": [
-        { "distribution": 0.06, "transition": "SSI_Onset" },
-        { "distribution": 0.94, "transition": "Terminal" }
+        { "distribution": 0.20, "transition": "SSI_Onset" },
+        { "distribution": 0.80, "transition": "Terminal" }
       ]
     },
 
