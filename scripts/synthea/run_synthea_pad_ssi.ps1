@@ -59,7 +59,7 @@ Copy-Item -Path $ModuleFile -Destination (Join-Path $modulesDir "$ModuleName.jso
 
 Push-Location $SyntheaHome
 try {
-  Write-Host "Running Synthea with module '$ModuleName' for $Population patients ($ExportFormat output)..." -ForegroundColor Cyan
+  Write-Host "Running Synthea with module '$ModuleName' for $Population patients (CSV output)..." -ForegroundColor Cyan
 
   $exporterArgs = @("--exporter.csv.export=true", "--exporter.fhir.export=false", "--exporter.json.export=false")
 
@@ -73,8 +73,27 @@ try {
 
   foreach ($args in $attempts) {
     Write-Host ("Attempt: .\\run_synthea.bat " + ($args -join " ")) -ForegroundColor Yellow
-    & $syntheaBat @args
-    if ($LASTEXITCODE -eq 0) {
+
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+    try {
+      $proc = Start-Process -FilePath $syntheaBat -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+
+      if (Test-Path $stdoutFile) {
+        Get-Content -Path $stdoutFile | ForEach-Object { Write-Host $_ }
+      }
+      if (Test-Path $stderrFile) {
+        # Treat stderr as informational log output unless process exit code is non-zero.
+        Get-Content -Path $stderrFile | ForEach-Object { Write-Host $_ }
+      }
+      $exitCode = $proc.ExitCode
+    }
+    finally {
+      if (Test-Path $stdoutFile) { Remove-Item -Path $stdoutFile -Force -ErrorAction SilentlyContinue }
+      if (Test-Path $stderrFile) { Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue }
+    }
+
+    if ($exitCode -eq 0) {
       $success = $true
       $usedModuleRestriction = $true
       break
