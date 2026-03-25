@@ -1,56 +1,8 @@
 # PAD / OLER - Surgical Site Infection (SSI) External Validation
 
-This project performs external validation of a previously developed SSI prediction model using the OHDSI PatientLevelPrediction framework on a Synthea-generated OMOP CDM v5.4 SQL Server database.
-
-## Purpose
-
-- Reproduce an external validation workflow for a pre-trained SSI model.
-- Run validation on `omop_synth` (`cdm_synthea`) with transparent, scriptable steps.
-- Support restricted-network environments by prebuilding GitHub-based package binaries.
-
-## Canonical 1-9 Workflow
-
-The project now follows a consistent numbered workflow matching the full study lifecycle.
-
-Use the scripts in `workflow/` in this order:
-
-1. `workflow/01_setup_synthea_etl_qc_env.R`
-2. `workflow/02_define_omop_cohort_outcome_covariates.R`
-3. `workflow/03_generate_synthea_module_artifacts.R`
-4. `workflow/04_generate_synthea_csv.ps1`
-5. `workflow/05_etl_csv_to_omop.R`
-6. `workflow/06_quality_check_defined_phenotypes.R`
-7. `workflow/07_setup_analysis_env.R`
-8. `workflow/08_run_analysis_and_manuscript_report.R`
-9. `workflow/09_build_portable_analysis_bundle.ps1`
-
-For command examples and details, see `workflow/README.md`.
-
-Run steps directly as standalone scripts.
-
-Each script in `workflow/` can be run independently and auto-resolves repo root.
-
-Examples:
-
-```powershell
-Rscript workflow/00_preflight_checks.R
-Rscript workflow/01_setup_synthea_etl_qc_env.R
-Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-Rscript workflow/03_generate_synthea_module_artifacts.R
-powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
-Rscript workflow/05_etl_csv_to_omop.R
-Rscript workflow/05_etl_csv_to_omop.R --reset_before_etl=true
-Rscript workflow/06_quality_check_defined_phenotypes.R --run_name=padssi-csv-20260324-120000 --enforce_thresholds=true --min_person_rows=100
-Rscript workflow/07_setup_analysis_env.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R
-powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
-```
-
-The canonical Step 8 keeps report output as a shareable Word document (`.docx`) in `output/risk_score_eval/`.
-
-Legacy one-off entrypoint scripts were archived to:
-
-- `scripts/archive/legacy_entrypoints/`
+External validation of a pre-trained SSI prediction model using OHDSI PatientLevelPrediction,
+run on a Synthea-generated OMOP CDM v5.4 SQL Server database. The workflow is intentionally
+self-contained and offline-capable.
 
 ## Prerequisites
 
@@ -58,87 +10,27 @@ Legacy one-off entrypoint scripts were archived to:
 - Java 17 (Eclipse Adoptium)
 - SQL Server instance with OMOP CDM loaded (`localhost:1434`, database `omop_synth`)
 - A pre-trained PLP result folder from the original SSI development study
+- Synthea (for steps 3–5 only)
 
-CRAN packages are installed from:
-- `https://archive.linux.duke.edu/cran/`
+CRAN packages are installed from `https://archive.linux.duke.edu/cran/`.
 
 ## Repository Structure
 
 ```text
 pad-oler-ssi-val/
-  config.R
-  install_packages.R
-  setup_renv.R
-  .Rprofile
-  renv.lock
-  setup/
-    install_packages.R
-    setup_renv.R
-  cohorts/
-    target_surgery.sql
-    outcome_ssi.sql
-  R/
-    connection.R
-    drivers.R
-    cohorts.R
-    validation.R
-    risk_score_pipeline.R
-  risk_score/
-    components.csv
-    component_concepts.csv
-    risk_lookup.csv
-  workflow/
-    00_preflight_checks.R
-    01_setup_synthea_etl_qc_env.R
-    ...
-    09_build_portable_analysis_bundle.ps1
-  scripts/
-    archive/
-      legacy_entrypoints/
-    bundle/
-      build_portable_risk_score_bundle.ps1
-    etl/
-      reset_omop_and_staging.R
-      run_synthea_csv_to_omop_etl.R
-    synthea/
-      generate_synthea_mermaid.R
-      run_synthea_pad_ssi.ps1
-    prebuild_github_binaries.R
-    sql/
-  internal_repo/
-    bin/windows/contrib/4.5/
-      FeatureExtraction_3.6.0.zip
-      CohortGenerator_0.9.0.zip
-      PatientLevelPrediction_6.4.0.zip
-  synthea/
-    modules/
-      pad_ssi.json
-      pad_ssi.diagram.html
-  portable/
-    risk_score_validation_bundle/
-      run_risk_score_pipeline.R
-      config.R
-      install_packages_risk_score.R
-      README.md
-      R/
-        connection.R
-        drivers.R
-        risk_score_pipeline.R
-      risk_score/
-        components.csv
-        component_concepts.csv
-        risk_lookup.csv
-      drivers/
-        mssql-jdbc-13.2.1.zip
-  .github/
-    copilot-instructions.md
-    instructions/
-      r-packages.instructions.md
-      omop-ohdsi.instructions.md
-    prompts/
-      concept-lookup.prompt.md
-  drivers/
-    mssql-jdbc-13.2.1.zip
+  config.R                                ← single source of truth for all settings
+  workflow/                               ← numbered step scripts (canonical path)
+  R/                                      ← reusable R functions
+  setup/                                  ← renv + package install helpers
+  scripts/                                ← utilities, ETL, Synthea runner
+  cohorts/                                ← SQL cohort definitions
+  risk_score/                             ← CSV spec files for integer risk score
+  synthea/modules/                        ← PAD/SSI Synthea GMF module + diagram
+  portable/risk_score_validation_bundle/  ← shareable bundle for external sites
+  internal_repo/bin/windows/contrib/4.5/  ← prebuilt OHDSI package binaries
+  drivers/                                ← JDBC driver archive
+  .github/                                ← Copilot customization files
+  output/                                 ← analysis outputs (gitignored)
 ```
 
 ## Package Strategy
@@ -151,19 +43,43 @@ Installed directly from the Duke CRAN mirror.
 
 The following GitHub packages are pinned and supported through prebuilt local binaries:
 
-- `OHDSI/FeatureExtraction` @ `v3.6.0`
-- `OHDSI/CohortGenerator` @ `v0.9.0`
-- `OHDSI/PatientLevelPrediction` @ `v6.4.0`
+| Package | Version |
+|---------|---------|
+| `OHDSI/FeatureExtraction` | v3.6.0 |
+| `OHDSI/CohortGenerator` | v0.9.0 |
+| `OHDSI/PatientLevelPrediction` | v6.4.0 |
 
-`setup/install_packages.R` installs these in this order:
-1. From local internal binaries in `internal_repo/bin/windows/contrib/<R-version>/`
-2. Fallback to GitHub only if a local binary is missing
-
+Local binaries live in `internal_repo/bin/windows/contrib/<R-version>/`. `setup/install_packages.R`
+installs from these binaries first, falling back to GitHub only if a binary is missing.
 This allows installs to run without GitHub access once binaries are prebuilt.
 
-## One-Time Setup
+---
 
-From project root in a fresh R session:
+## Step 0 — Preflight Checks
+
+`workflow/00_preflight_checks.R`
+
+Validates that R version, Java, JDBC driver, and SQL Server connectivity are all healthy
+before proceeding with any analysis steps.
+
+```powershell
+Rscript workflow/00_preflight_checks.R
+```
+
+---
+
+## Step 1 — Setup Environment
+
+`workflow/01_setup_synthea_etl_qc_env.R`
+
+Installs packages and initializes the environment for Synthea generation, ETL, and data quality
+checks. Run this once in a fresh R session before any other step.
+
+```powershell
+Rscript workflow/01_setup_synthea_etl_qc_env.R
+```
+
+Equivalent direct setup (from an R session):
 
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
@@ -171,54 +87,27 @@ source("setup/setup_renv.R")
 source("setup/install_packages.R")
 ```
 
+This step:
+- Activates `renv`
+- Installs CRAN dependencies from the Duke mirror
+- Installs GitHub-pinned OHDSI packages from local internal binaries when available
+- Provisions the JDBC driver bundle to `drivers/`
+
 Root-level `setup_renv.R` and `install_packages.R` remain as compatibility wrappers.
 
-What this does:
-- Activates `renv`
-- Installs CRAN dependencies from Duke mirror
-- Installs GitHub-pinned OHDSI packages from local internal binaries when available
-- Provisions JDBC driver bundle to `drivers/`
+---
 
-## Prebuild GitHub Package Binaries
+## Step 2 — Define OMOP Cohorts, Outcome, and Covariates
 
-Run this only on a machine with GitHub access:
+`workflow/02_define_omop_cohort_outcome_covariates.R`
 
-```r
-setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("renv/activate.R")
-source("scripts/prebuild_github_binaries.R")
-```
-
-This generates Windows binaries under:
-- `internal_repo/bin/windows/contrib/4.5/`
-
-Commit those binaries so restricted environments can install without GitHub.
-
-## Run Analysis and Report
-
-Use the canonical workflow (recommended):
+Validates SQL cohort and outcome definitions and OMOP concept-based covariate artifact files.
 
 ```powershell
-Rscript workflow/07_setup_analysis_env.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R
+Rscript workflow/02_define_omop_cohort_outcome_covariates.R
 ```
 
-Or run the analysis step directly in a fresh R session:
-
-```r
-setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("workflow/08_run_analysis_and_manuscript_report.R")
-```
-
-This step executes the canonical Step 8 workflow script, which:
-
-1. Loads project configuration and connections
-2. Builds target/outcome cohorts
-3. Runs integer risk score analysis
-4. Writes score outputs to `output/risk_score_eval/`
-5. Generates the manuscript-style report
-
-## ATLAS Cohorts
+### ATLAS Cohorts
 
 This project is configured to use pre-built cohorts from ATLAS/WebAPI.
 
@@ -239,148 +128,37 @@ target_cohort_id  = 1L
 outcome_cohort_id = 2L
 ```
 
-What happens at runtime:
+At runtime, Step 2 copies ATLAS cohort `1796269` into the project cohort table as target ID `1`
+and cohort `1796278` as outcome ID `2`. Date filtering is applied using `study_start_date` and
+`study_end_date` from `config.R`. If your ATLAS cohort table lives in a different schema or
+table, update `atlas_cohort_schema`/`atlas_cohort_table` in `config.R`.
 
-- Step 3 copies ATLAS cohort `1796269` into the project cohort table as target ID `1`.
-- Step 3 copies ATLAS cohort `1796278` into the project cohort table as outcome ID `2`.
-- Date filtering is applied using `study_start_date` and `study_end_date` from `config.R`.
+---
 
-If your ATLAS cohort table lives in another schema or table, update
-`atlas_cohort_schema` and `atlas_cohort_table` in `config.R`.
+## Step 3 — Generate Synthea Module Artifacts
 
-## Integer Risk Score Pipeline
+`workflow/03_generate_synthea_module_artifacts.R`
 
-This repository also includes a configurable pipeline for evaluating a simple
-integer-based risk score in the same target/outcome cohorts.
-
-Canonical entry point:
-
-```r
-setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-source("workflow/08_run_analysis_and_manuscript_report.R")
-```
-
-Configuration files:
-
-- `risk_score/components.csv`
-  - Defines each score component, lookback window, minimum event count, and points.
-- `risk_score/component_concepts.csv`
-  - Maps each component to OMOP standard concept IDs and descendant expansion.
-  - All components are fully mapped:
-
-  | Component | Concept(s) | Notes |
-  |---|---|---|
-  | `female` | 8532 | Biological sex = Female |
-  | `overweight` | 3025315 (weight), 3036277 (height) | BMI 25–30 derived from measurements |
-  | `obese` | 3025315 (weight), 3036277 (height) | BMI ≥ 30 derived from measurements |
-  | `urgnt` | 4158569, 4250892 + descendants | Emergency or urgent procedure flag |
-  | `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
-  | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
-  | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
-  | `optime4h` | procedure_end_datetime (primary) | Operative time > 240 minutes; measurement table used if concept present |
-  | `mFI_high` | 201820, 255573, 316139, 316866, 4215267 | Composite modified Frailty Index > 0.25 (≥2/5 conditions: diabetes, COPD, CHF, hypertension, functional status) |
-  | `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
-
-- `risk_score/risk_lookup.csv`
-  - Optional score-to-risk lookup table from the original score publication.
-
-Behavior:
-
-- Computes person-level component points and total score for the target cohort.
-- Defines 30-day outcome from the configured outcome cohort (`prediction_window_days`).
-- Evaluates discrimination (AUROC, AUPRC).
-- Evaluates calibration when probabilities are available:
-  - lookup-based probabilities (if `risk_lookup.csv` is populated)
-  - recalibrated probabilities using logistic mapping from score.
-
-Output files (written to `output/risk_score_eval/`):
-
-- `person_level_scores.csv`
-- `component_summary.csv`
-- `metrics.csv`
-- `calibration_table_lookup.csv` (if lookup is available)
-- `calibration_table_recalibrated.csv`
-- `calibration_lookup.png` (if lookup is available)
-- `calibration_recalibrated.png`
-
-### Missing Value Handling
-
-The risk score pipeline handles missing component data by **treating missing values as null/zero evidence**.
-
-**Approach:**
-- When a component's event count cannot be determined from the OMOP CDM (no matching records), 
-  the component's event count is set to 0.
-- The component score is then calculated normally: if `event_count < min_count`, the component 
-  scores 0 points; otherwise, it scores the full component points.
-- The total risk score is computed by summing all component scores, even if some components 
-  had no matching data.
-
-**Interpretation:**
-- A total score of 15 could mean: (1) patient has 15 points worth of evidence, OR 
-  (2) three of five components had no data, so those components contributed 0 points by default.
-- The output file `person_level_scores.csv` includes individual component scores 
-  (`score_<component_id>` columns), so you can review which components had evidence.
-
-**Clinical Context:**
-This approach assumes that **missing data from the EMR equals no documented evidence** of that 
-risk factor. It is suitable when:
-- Data completeness is expected to be high (well-curated OMOP CDM)
-- Missing values should not prevent risk score calculation
-- A missing risk factor is treated conservatively as "nil risk" rather than "unknown risk"
-
-If your use case requires **marking scores as incomplete when data is missing**, contact the 
-development team to discuss alternative imputation or missing-data handling strategies.
-
-### Portable Bundle For External OMOP Sites
-
-To make risk score validation easy to share and run at other OMOP sites, this repo
-includes a curated portable bundle under:
-
-- `portable/risk_score_validation_bundle/`
-
-Create a downloadable zip in one command:
+Validates the PAD/SSI Synthea Generic Module Framework (GMF) module JSON against the 16
+required OMOP concept codes and regenerates the HTML state-diagram for SME review.
 
 ```powershell
-.\scripts\build_portable_risk_score_bundle.ps1
+Rscript workflow/03_generate_synthea_module_artifacts.R
 ```
 
-This creates:
+This step:
+- Checks that all 16 required cohort/covariate concepts are present in the module JSON
+  (warns on missing codes; does not block diagram generation)
+- Re-runs `scripts/synthea/generate_synthea_mermaid.R` to produce the interactive HTML
+  diagram at `synthea/modules/pad_ssi.diagram.html`
 
-- `dist/risk_score_validation_bundle_<timestamp>.zip`
+### Synthea Module Overview
 
-The zip contains only the required risk score scripts, templates, and JDBC artifact,
-so collaborators can unzip, edit `config.R`, and run `run_risk_score_pipeline.R`
-directly against their OMOP database.
+`synthea/modules/pad_ssi.json` models PAD patients who undergo open lower extremity
+revascularization and may develop a surgical site infection — matching the target/outcome
+cohort logic of this study.
 
-## Synthea Module
-
-`synthea/modules/pad_ssi.json` is a Synthea Generic Module Framework (GMF) module that
-generates synthetic PAD patients who undergo open lower extremity revascularization and
-may develop a surgical site infection — exactly matching the target/outcome cohort logic
-of this study.
-
-To use it:
-1. Copy `synthea/modules/pad_ssi.json` into `<synthea_home>/src/main/resources/modules/`
-2. Run Synthea with CSV export to generate the OMOP ETL input files
-3. Run the ETL pipeline (Step 5) to load the CSV output into the OMOP CDM
-
-### Run Synthea (CSV, 1000 Patients)
-
-Use the project runner script:
-
-```powershell
-.\scripts\synthea\run_synthea_pad_ssi.ps1 -SyntheaHome "C:\path\to\synthea" -Population 1000
-```
-
-This script:
-- copies `synthea/modules/pad_ssi.json` into the Synthea modules folder
-- runs Synthea for the requested population with CSV export enabled
-- prints the output folder at `output/csv` under your Synthea installation
-
-Run batches of 1000 patients at a time; re-run Step 5 after each batch to load
-incremental CSV output into the OMOP CDM.
-
-Key clinical parameters modeled:
+Key clinical parameters:
 
 | Parameter | Value |
 |-----------|-------|
@@ -405,34 +183,206 @@ Primary concept codes (OMOP-mappable):
 | Cefazolin (perioperative prophylaxis) | RxNorm | 20496 |
 | Cephalexin (SSI treatment) | RxNorm | 2673 |
 
-### Visualize the Module (Mermaid)
+### Visualize the Module
 
-This repository includes a local generator script and a rendered Mermaid file:
+Open `synthea/modules/pad_ssi.diagram.html` in any browser to view the interactive
+state-diagram with state types and SNOMED/LOINC/RxNorm codes on each node.
 
-- `scripts/synthea/generate_synthea_mermaid.R`
-- `synthea/modules/pad_ssi.mmd`
-- `synthea/modules/pad_ssi.diagram.md`
-
-Regenerate the diagram after editing the JSON module:
+Regenerate after editing the module JSON:
 
 ```powershell
 & "C:/Program Files/R/R-4.5.2/bin/Rscript.exe" scripts/synthea/generate_synthea_mermaid.R synthea/modules/pad_ssi.json synthea/modules/pad_ssi.diagram.html
 ```
 
-The generator also refreshes `synthea/modules/pad_ssi.diagram.md` automatically
-for Markdown preview.
+---
 
-Open `synthea/modules/pad_ssi.mmd` in VS Code and use a Mermaid preview extension,
-or paste it into the built-in Mermaid renderer in Chat for quick visualization.
+## Step 4 — Generate Synthea CSV
 
-View the `.diagram.md` diagram in VS Code:
+`workflow/04_generate_synthea_csv.ps1`
 
-1. Open `synthea/modules/pad_ssi.diagram.md`.
-2. Install a Mermaid preview extension if needed (for example, **Markdown Preview Mermaid Support**).
-3. Preview the file:
-  - `Ctrl+Shift+V` (preview in current tab), or
-  - `Ctrl+K` then `V` (side-by-side preview).
-4. If preview still does not render, close and reopen the preview tab to clear extension cache.
+Generates Synthea synthetic patients in CSV format using the PAD/SSI module.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1 `
+  -SyntheaHome "C:\path\to\synthea" -Population 1000
+```
+
+Parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-SyntheaHome` | _(required)_ | Path to Synthea installation |
+| `-Population` | `1000` | Number of patients to generate |
+| `-AgeRange` | `40-85` | Age range for generated patients |
+| `-State` | `Massachusetts` | State for patient demographics |
+
+This calls `scripts/synthea/run_synthea_pad_ssi.ps1`, which:
+- Copies `synthea/modules/pad_ssi.json` into the Synthea modules folder
+- Runs Synthea with CSV export enabled (`--exporter.csv.export=true`)
+- Prints the CSV output folder path
+
+**Run batches of 1000 patients** at a time; re-run Step 5 after each batch to load
+CSV output incrementally into the OMOP CDM.
+
+---
+
+## Step 5 — ETL CSV to OMOP
+
+`workflow/05_etl_csv_to_omop.R`
+
+ETLs Synthea CSV output into the OMOP CDM.
+
+```powershell
+# Basic (uses csv_input_dir and run_name from config.R or prompts)
+Rscript workflow/05_etl_csv_to_omop.R
+
+# With explicit CSV path and run name
+Rscript workflow/05_etl_csv_to_omop.R "C:/path/to/synthea/output/csv" "padssi-csv-20260324-120000"
+
+# Named args; reset OMOP staging tables before ETL
+Rscript workflow/05_etl_csv_to_omop.R `
+  --csv_input_dir=C:/path/to/synthea/output/csv `
+  --run_name=padssi-csv-20260324-120000 `
+  --reset_before_etl=true
+```
+
+Parameters:
+
+| Arg | Description |
+|-----|-------------|
+| `arg1` / `--csv_input_dir` | Path to Synthea CSV output folder |
+| `arg2` / `--run_name` | Label for this ETL run (used in audit fields) |
+| `--reset_before_etl` | `true` clears OMOP staging tables before loading |
+
+---
+
+## Step 6 — Quality Check Defined Phenotypes
+
+`workflow/06_quality_check_defined_phenotypes.R`
+
+Runs data quality checks aligned to the defined cohort/outcome/covariate framework.
+
+```powershell
+# Basic
+Rscript workflow/06_quality_check_defined_phenotypes.R
+
+# With thresholds enforced
+Rscript workflow/06_quality_check_defined_phenotypes.R `
+  --run_name=padssi-csv-20260324-120000 `
+  --enforce_thresholds=true `
+  --min_person_rows=100 `
+  --min_open_revascularization_rows=50 `
+  --min_ssi_condition_rows=5 `
+  --min_mapped_condition_pct=50
+```
+
+Parameters accepted by `quality_check_etl.R` (passed through):
+
+| Arg | Description |
+|-----|-------------|
+| `--run_name` | ETL run label to filter quality results |
+| `--enforce_thresholds` | If `true`, fails the step on threshold violations |
+| `--min_person_rows` | Minimum required person count |
+| `--min_open_revascularization_rows` | Minimum procedure rows |
+| `--min_ssi_condition_rows` | Minimum SSI condition rows |
+| `--min_mapped_condition_pct` | Minimum condition code mapping % |
+
+---
+
+## Step 7 — Setup Analysis Environment
+
+`workflow/07_setup_analysis_env.R`
+
+Installs and verifies packages and environment required for integer risk score external
+validation analysis.
+
+```powershell
+Rscript workflow/07_setup_analysis_env.R
+```
+
+---
+
+## Step 8 — Run Analysis and Manuscript Report
+
+`workflow/08_run_analysis_and_manuscript_report.R`
+
+Runs the integer risk score analysis and generates a manuscript-format Word report.
+
+```powershell
+Rscript workflow/08_run_analysis_and_manuscript_report.R
+```
+
+This step:
+1. Loads project configuration and connections
+2. Builds target/outcome cohorts
+3. Runs integer risk score analysis
+4. Writes score outputs to `output/risk_score_eval/`
+5. Generates the manuscript-style report as a Word document (`.docx`)
+
+### Integer Risk Score Pipeline
+
+Configuration files:
+
+- `risk_score/components.csv` — score component definitions, lookback window, minimum event count, and points
+- `risk_score/component_concepts.csv` — maps each component to OMOP standard concept IDs and descendant expansion
+- `risk_score/risk_lookup.csv` — optional score-to-risk lookup table from the original publication
+
+All components are fully mapped:
+
+| Component | Concept(s) | Notes |
+|---|---|---|
+| `female` | 8532 | Biological sex = Female |
+| `overweight` | 3025315 (weight), 3036277 (height) | BMI 25–30 derived from measurements |
+| `obese` | 3025315 (weight), 3036277 (height) | BMI ≥ 30 derived from measurements |
+| `urgnt` | 4158569, 4250892 + descendants | Emergency or urgent procedure flag |
+| `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
+| `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
+| `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
+| `optime4h` | procedure_end_datetime (primary) | Operative time > 240 minutes; measurement table used if concept present |
+| `mFI_high` | 201820, 255573, 316139, 316866, 4215267 | Composite modified Frailty Index > 0.25 (≥2/5 conditions: diabetes, COPD, CHF, hypertension, functional status) |
+| `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
+
+Output files (written to `output/risk_score_eval/`):
+
+| File | Description |
+|------|-------------|
+| `person_level_scores.csv` | Per-person component points and total score |
+| `component_summary.csv` | Component-level aggregate summary |
+| `metrics.csv` | AUROC, AUPRC |
+| `calibration_table_lookup.csv` | Calibration by lookup probability (if lookup populated) |
+| `calibration_table_recalibrated.csv` | Calibration by logistic-mapped score |
+| `calibration_lookup.png` | Calibration plot (if lookup populated) |
+| `calibration_recalibrated.png` | Calibration plot (recalibrated) |
+
+### Missing Value Handling
+
+When a component has no matching records in the OMOP CDM, the event count is set to 0 and
+the component contributes 0 points. The total score is still computed. This treats missing
+data as "no documented evidence" of the risk factor — appropriate when CDM completeness is
+high and absent data should be interpreted conservatively.
+
+See `person_level_scores.csv` (`score_<component_id>` columns) to review which components
+had evidence per person.
+
+---
+
+## Step 9 — Build Portable Analysis Bundle
+
+`workflow/09_build_portable_analysis_bundle.ps1`
+
+Builds a curated portable bundle for external OMOP sites.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
+```
+
+Output: `dist/risk_score_validation_bundle_<timestamp>.zip`
+
+The bundle (`portable/risk_score_validation_bundle/`) contains only the required risk score
+scripts, config template, and JDBC artifact. Collaborators unzip, edit `config.R`, and run
+`run_risk_score_pipeline.R` directly against their OMOP database.
+
+---
 
 ## GitHub Copilot Customizations
 
@@ -442,7 +392,7 @@ follows project conventions — no need to repeat constraints in chat.
 ### Always-on Instructions
 
 | File | Scope | Purpose |
-|------|-------|------|
+|------|-------|---------|
 | `.github/copilot-instructions.md` | Every chat request | Language (R only), CRAN mirror, offline packages, DB config, security rules |
 | `.github/instructions/r-packages.instructions.md` | `*.R` files | CRAN mirror enforcement, `renv` workflow, local binary installs for OHDSI packages |
 | `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` files | `DatabaseConnector`/`SqlRender` patterns, OMOP CDM table reference, cohort conventions, PLP validation-only guard, concept lookup requirement |
@@ -472,6 +422,21 @@ The prompt connects to `omop_synth`, queries `cdm_synthea.concept` for standard 
 matches are found. It returns a ranked table and a single recommended `concept_id`.
 This ensures concept IDs are grounded in the actual vocabulary loaded by the Synthea ETL
 rather than assumed from training data.
+
+### Prebuild GitHub Package Binaries
+
+Run only on a machine with GitHub access:
+
+```r
+setwd("C:/Users/rapiduser/pad-oler-ssi-val")
+source("renv/activate.R")
+source("scripts/prebuild_github_binaries.R")
+```
+
+This generates Windows binaries under `internal_repo/bin/windows/contrib/4.5/`.
+Commit those binaries so restricted environments can install without GitHub access.
+
+---
 
 ## Notes
 
