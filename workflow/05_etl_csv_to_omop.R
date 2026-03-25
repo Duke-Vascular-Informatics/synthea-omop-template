@@ -49,6 +49,38 @@ if (length(positional) >= 1 && nzchar(positional[[1]])) csv_input_dir <- positio
 if (length(positional) >= 2 && nzchar(positional[[2]])) run_name <- positional[[2]]
 
 source("renv/activate.R")
+if (requireNamespace("renv", quietly = TRUE)) {
+  renv::load(project = getwd())
+}
+
+source("config.R")
+cfg <- get_validation_config()
+if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home)) {
+  java_bin <- file.path(cfg$java_home, "bin")
+  Sys.setenv(JAVA_HOME = cfg$java_home)
+  Sys.setenv(PATH = paste(normalizePath(java_bin, winslash = "/", mustWork = FALSE), Sys.getenv("PATH"), sep = .Platform$path.sep))
+  options(java.parameters = paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE)))
+}
+
+required_pkgs <- c("DatabaseConnector", "SqlRender", "data.table")
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+  message("Installing missing Step 5 packages via renv: ", paste(missing_pkgs, collapse = ", "))
+  for (pkg in missing_pkgs) {
+    renv::install(pkg)
+  }
+  if (requireNamespace("renv", quietly = TRUE)) {
+    renv::load(project = getwd())
+  }
+}
+
+missing_pkgs_after_install <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs_after_install) > 0) {
+  stop("Step 5 cannot continue; missing packages after install attempt: ",
+       paste(missing_pkgs_after_install, collapse = ", "))
+}
+
 source("scripts/etl/run_synthea_csv_to_omop_etl.R")
 
 if (isTRUE(reset_before_etl)) {

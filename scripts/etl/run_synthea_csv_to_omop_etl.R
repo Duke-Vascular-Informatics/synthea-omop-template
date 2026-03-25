@@ -3,6 +3,13 @@
 # Synthea CSV -> OMOP ETL runner for SQL Server.
 # =============================================================================
 
+source("config.R")
+source("R/drivers.R")
+source("R/connection.R")
+
+bootstrap_config <- get_validation_config()
+configure_java(bootstrap_config)
+
 if (!requireNamespace("DatabaseConnector", quietly = TRUE)) {
   stop("Package 'DatabaseConnector' is required. Install with renv::install('DatabaseConnector').")
 }
@@ -12,10 +19,6 @@ if (!requireNamespace("SqlRender", quietly = TRUE)) {
 if (!requireNamespace("data.table", quietly = TRUE)) {
   stop("Package 'data.table' is required. Install with renv::install('data.table').")
 }
-
-source("config.R")
-source("R/drivers.R")
-source("R/connection.R")
 
 format_duration <- function(seconds) {
   if (!is.finite(seconds) || is.na(seconds)) {

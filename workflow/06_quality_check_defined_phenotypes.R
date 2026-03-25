@@ -19,6 +19,15 @@ if (!is.na(script_path)) {
   setwd(normalizePath(file.path(dirname(script_path), ".."), winslash = "/", mustWork = FALSE))
 }
 
+source("config.R")
+cfg <- get_validation_config()
+if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home)) {
+  java_bin <- file.path(cfg$java_home, "bin")
+  Sys.setenv(JAVA_HOME = cfg$java_home)
+  Sys.setenv(PATH = paste(normalizePath(java_bin, winslash = "/", mustWork = FALSE), Sys.getenv("PATH"), sep = .Platform$path.sep))
+  options(java.parameters = paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE)))
+}
+
 args <- commandArgs(trailingOnly = TRUE)
 
 cmd <- c("quality_check_etl.R")

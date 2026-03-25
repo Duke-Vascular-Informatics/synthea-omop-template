@@ -14,9 +14,12 @@ resolve_script_path <- function() {
   NA_character_
 }
 
-script_path <- resolve_script_path()
-if (!is.na(script_path)) {
-  setwd(normalizePath(file.path(dirname(script_path), "..", ".."), winslash = "/", mustWork = FALSE))
+# Only auto-resolve/set working directory when executed directly.
+if (sys.nframe() == 0) {
+  script_path <- resolve_script_path()
+  if (!is.na(script_path)) {
+    setwd(normalizePath(file.path(dirname(script_path), "..", ".."), winslash = "/", mustWork = FALSE))
+  }
 }
 
 if (file.exists("renv/activate.R")) source("renv/activate.R")
