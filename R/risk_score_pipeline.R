@@ -698,7 +698,7 @@ clamp_probability <- function(p, eps = 1e-6) {
 
 compute_ece <- function(y, p, n_bins = 10) {
   p <- clamp_probability(p)
-  d <- data.frame(y = y, p = p)
+  d <- data.frame(y = as.numeric(y), p = as.numeric(p))
 
   probs <- unique(stats::quantile(d$p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE))
   if (length(probs) < 3) {
@@ -706,39 +706,51 @@ compute_ece <- function(y, p, n_bins = 10) {
   }
   d$bin <- cut(d$p, breaks = probs, include.lowest = TRUE)
 
-  cal_table <- aggregate(
-    cbind(predicted = d$p, observed = d$y) ~ bin,
-    data = d,
-    FUN = function(x) list(mean = mean(x), n = length(x))
-  )
+  predicted_mean <- tapply(d$p, d$bin, mean, na.rm = TRUE)
+  observed_mean  <- tapply(d$y, d$bin, mean, na.rm = TRUE)
+  bin_size       <- tapply(d$y, d$bin, length)
 
-  cal_table$predicted_mean <- sapply(cal_table$predicted, function(x) x$mean)
-  cal_table$observed_mean <- sapply(cal_table$observed, function(x) x$mean)
-  cal_table$bin_size <- sapply(cal_table$predicted, function(x) x$n)
-  
-  cal_table$abs_diff <- abs(cal_table$predicted_mean - cal_table$observed_mean)
-  
-  ece <- sum(cal_table$abs_diff * cal_table$bin_size) / sum(cal_table$bin_size)
+  abs_diff <- abs(predicted_mean - observed_mean)
+  ece <- sum(abs_diff * bin_size, na.rm = TRUE) / sum(bin_size, na.rm = TRUE)
   as.numeric(ece)
 }
 
 compute_binary_metrics <- function(y, estimate) {
-  if (!requireNamespace("PatientLevelPrediction", quietly = TRUE)) {
-    stop("Package 'PatientLevelPrediction' is required for model metrics.")
+  if (!requireNamespace("pROC", quietly = TRUE)) {
+    stop("Package 'pROC' is required for AUROC metrics.")
+  }
+  if (!requireNamespace("PRROC", quietly = TRUE)) {
+    stop("Package 'PRROC' is required for AUPRC metrics.")
   }
 
-  prediction <- data.frame(
-    value = as.numeric(estimate),
-    outcomeCount = as.integer(y),
-    stringsAsFactors = FALSE
+  y_num <- as.numeric(y)
+  score <- as.numeric(estimate)
+
+  if (length(unique(y_num)) < 2) {
+    return(list(
+      auroc = NA_real_,
+      auprc = NA_real_,
+      brier = mean((score - y_num)^2)
+    ))
+  }
+
+  roc_obj <- pROC::roc(
+    response = y_num,
+    predictor = score,
+    quiet = TRUE,
+    direction = "<"
   )
 
-  brier_result <- PatientLevelPrediction::brierScore(prediction)
+  pr <- PRROC::pr.curve(
+    scores.class0 = score[y_num == 1],
+    scores.class1 = score[y_num == 0],
+    curve = FALSE
+  )
 
   list(
-    auroc = PatientLevelPrediction::computeAuc(prediction),
-    auprc = PatientLevelPrediction::computeAuprc(prediction),
-    brier = as.numeric(brier_result$brier)
+    auroc = as.numeric(pROC::auc(roc_obj)),
+    auprc = as.numeric(pr$auc.integral),
+    brier = mean((score - y_num)^2)
   )
 }
 
