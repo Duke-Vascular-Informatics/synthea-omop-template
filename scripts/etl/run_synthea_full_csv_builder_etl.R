@@ -16,6 +16,7 @@ run_synthea_full_csv_builder_etl <- function(
     vocab_file_loc = "C:/Users/rapiduser/omop-vocab",
     reset_before_etl = TRUE,
     force_reload_vocab = FALSE,
+    synthea_bulk_load = TRUE,
     create_extra_indices = TRUE) {
 
   config <- get_validation_config()
@@ -165,12 +166,39 @@ run_synthea_full_csv_builder_etl <- function(
     syntheaVersion = synthea_version
   )
 
-  ETLSyntheaBuilder::LoadSyntheaTables(
-    connectionDetails = connection_details,
-    syntheaSchema = synthea_schema,
-    syntheaFileLoc = csv_input_dir,
-    bulkLoad = FALSE
-  )
+  if (isTRUE(synthea_bulk_load)) {
+    message("Loading Synthea staging with bulkLoad=TRUE")
+  } else {
+    message("Loading Synthea staging with bulkLoad=FALSE")
+  }
+
+  load_synthea_tables <- function(use_bulk_load) {
+    ETLSyntheaBuilder::LoadSyntheaTables(
+      connectionDetails = connection_details,
+      syntheaSchema = synthea_schema,
+      syntheaFileLoc = csv_input_dir,
+      bulkLoad = use_bulk_load
+    )
+  }
+
+  if (isTRUE(synthea_bulk_load)) {
+    loaded_with_bulk <- tryCatch({
+      load_synthea_tables(TRUE)
+      TRUE
+    }, error = function(e) {
+      warning(
+        "Bulk Synthea staging load failed; retrying with bulkLoad=FALSE. Error: ",
+        conditionMessage(e)
+      )
+      FALSE
+    })
+
+    if (!isTRUE(loaded_with_bulk)) {
+      load_synthea_tables(FALSE)
+    }
+  } else {
+    load_synthea_tables(FALSE)
+  }
 
   conn_vocab <- DatabaseConnector::connect(connection_details)
   on.exit(DatabaseConnector::disconnect(conn_vocab), add = TRUE)
