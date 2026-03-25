@@ -113,6 +113,47 @@ run_synthea_full_csv_builder_etl <- function(
     invisible(NULL)
   }
 
+  ensure_cdm_tables_exist <- function() {
+    conn_cdm <- DatabaseConnector::connect(connection_details)
+    on.exit(DatabaseConnector::disconnect(conn_cdm), add = TRUE)
+
+    required_cdm_tables <- c(
+      "person", "location", "care_site", "provider",
+      "observation_period", "visit_occurrence"
+    )
+    missing_tables <- required_cdm_tables[!vapply(
+      required_cdm_tables,
+      function(tb) table_exists(conn_cdm, config$cdm_schema, tb),
+      logical(1)
+    )]
+
+    if (length(missing_tables) > 0) {
+      message(
+        "Missing CDM tables detected in ", config$cdm_schema,
+        " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
+      )
+      ETLSyntheaBuilder::CreateCDMTables(
+        connectionDetails = connection_details,
+        cdmSchema = config$cdm_schema,
+        cdmVersion = cdm_version
+      )
+    }
+  }
+
+  drop_rollup_helper_tables <- function(connection, cdm_schema) {
+    helper_tables <- c("all_visits", "assign_all_visit_ids", "final_visit_ids")
+    for (table_name in helper_tables) {
+      sql <- render_sql(
+        "IF OBJECT_ID('@cdm_schema.@table_name', 'U') IS NOT NULL
+           DROP TABLE @cdm_schema.@table_name;",
+        cdm_schema = cdm_schema,
+        table_name = table_name
+      )
+      DatabaseConnector::executeSql(connection, sql)
+    }
+    invisible(NULL)
+  }
+
   message("=== Step 5 CSV builder ETL ===")
   message("run_name: ", run_name)
   message("csv_input_dir: ", normalizePath(csv_input_dir, winslash = "/", mustWork = TRUE))
@@ -121,17 +162,10 @@ run_synthea_full_csv_builder_etl <- function(
   message("synthea_version: ", synthea_version)
   message("cdm_schema: ", config$cdm_schema)
 
-  conn_check <- DatabaseConnector::connect(connection_details)
+  ensure_cdm_tables_exist()
 
-  if (!table_exists(conn_check, config$cdm_schema, "person")) {
-    ETLSyntheaBuilder::CreateCDMTables(
-      connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      cdmVersion = cdm_version
-    )
-  } else {
-    message("CDM tables already exist in ", config$cdm_schema, "; skipping CreateCDMTables.")
-  }
+  conn_check <- DatabaseConnector::connect(connection_details)
+  message("CDM tables verified in ", config$cdm_schema, ".")
 
   DatabaseConnector::executeSql(
     conn_check,
@@ -144,9 +178,7 @@ run_synthea_full_csv_builder_etl <- function(
     message("Reset requested: dropping event + synthea staging tables before reload ...")
     suppressWarnings(try(ETLSyntheaBuilder::DropEventTables(
       connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      cdmVersion = cdm_version,
-      syntheaVersion = synthea_version
+      cdmSchema = config$cdm_schema
     ), silent = TRUE))
     suppressWarnings(try(ETLSyntheaBuilder::DropSyntheaTables(
       connectionDetails = connection_details,
@@ -156,8 +188,12 @@ run_synthea_full_csv_builder_etl <- function(
 
     # Defensive cleanup to handle schema-version mismatches in DropSyntheaTables.
     conn_reset <- DatabaseConnector::connect(connection_details)
+    drop_rollup_helper_tables(conn_reset, config$cdm_schema)
     clear_schema_tables(conn_reset, synthea_schema)
     DatabaseConnector::disconnect(conn_reset)
+
+    # Some reset paths can remove non-vocabulary CDM tables; recreate if needed.
+    ensure_cdm_tables_exist()
   }
 
   ETLSyntheaBuilder::CreateSyntheaTables(
@@ -238,6 +274,7 @@ run_synthea_full_csv_builder_etl <- function(
   ETLSyntheaBuilder::CreateVisitRollupTables(
     connectionDetails = connection_details,
     cdmSchema = config$cdm_schema,
+    syntheaSchema = synthea_schema,
     cdmVersion = cdm_version
   )
 
