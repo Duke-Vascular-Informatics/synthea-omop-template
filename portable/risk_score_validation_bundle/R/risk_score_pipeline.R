@@ -127,6 +127,52 @@ get_outcomes <- function(connection, config) {
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+ensure_concept_ancestor_indexes <- function(connection, config) {
+  sql <- SqlRender::render(
+    sql = "IF OBJECT_ID('@cdm_schema.concept_ancestor', 'U') IS NOT NULL
+           BEGIN
+             IF NOT EXISTS (
+               SELECT 1
+               FROM sys.indexes
+               WHERE object_id = OBJECT_ID('@cdm_schema.concept_ancestor')
+                 AND name = 'IX_concept_ancestor_ancestor'
+             )
+             BEGIN
+               CREATE INDEX IX_concept_ancestor_ancestor
+                 ON @cdm_schema.concept_ancestor (ancestor_concept_id)
+                 INCLUDE (descendant_concept_id, min_levels_of_separation, max_levels_of_separation);
+             END;
+
+             IF NOT EXISTS (
+               SELECT 1
+               FROM sys.indexes
+               WHERE object_id = OBJECT_ID('@cdm_schema.concept_ancestor')
+                 AND name = 'IX_concept_ancestor_descendant'
+             )
+             BEGIN
+               CREATE INDEX IX_concept_ancestor_descendant
+                 ON @cdm_schema.concept_ancestor (descendant_concept_id)
+                 INCLUDE (ancestor_concept_id);
+             END;
+           END;",
+    cdm_schema = config$cdm_schema
+  )
+
+  sql <- SqlRender::translate(sql, targetDialect = "sql server")
+
+  tryCatch({
+    DatabaseConnector::executeSql(connection, sql)
+    message("concept_ancestor indexes verified/created.")
+  }, error = function(e) {
+    warning(
+      "Unable to verify/create concept_ancestor indexes. Descendant-expansion queries may be slow. Details: ",
+      conditionMessage(e)
+    )
+  })
+
+  invisible(NULL)
+}
+
 query_bmi_component_counts <- function(connection, config, component, component_concepts) {
   if (!"concept_role" %in% names(component_concepts)) {
     stop("BMI-derived components require concept_role values: weight and height.")
@@ -840,6 +886,9 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
 
   conn <- DatabaseConnector::connect(connection_details)
   on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
+
+  message("Checking concept_ancestor indexes ...")
+  ensure_concept_ancestor_indexes(conn, config)
 
   message("Calculating person-level score components ...")
   score_data <- calculate_scores(conn, config, specs)
