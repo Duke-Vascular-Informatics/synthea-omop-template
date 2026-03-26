@@ -57,6 +57,7 @@ Key tables in `cdm_synthea` schema:
 
 Rules:
 - Always use **standard concept IDs** (`standard_concept = 'S'`), not source codes.
+- Use `concept_relationship` to map source/non-standard concepts (ICD/CPT/LOINC/SNOMED source forms) to standard concepts before analysis.
 - Join via `concept_ancestor` when descendant expansion is needed (e.g., all subtypes of a drug).
 - Filter out invalid records: `condition_status_concept_id != 4230359` (exclude provisional).
 
@@ -112,6 +113,11 @@ For the `R/risk_score_pipeline.R` pipeline:
 
 Never guess or assume OMOP concept IDs from training knowledge. Always verify against
 the actual vocabulary loaded in `cdm_synthea` by running the `/concept-lookup` prompt.
+
+When building clinical concept sets, validate with all three vocabulary tables:
+- `cdm_synthea.concept` for candidate and standard concept status.
+- `cdm_synthea.concept_relationship` for source-to-standard mapping semantics.
+- `cdm_synthea.concept_ancestor` for descendant/ancestor expansion.
 
 Invoke it in chat before writing any concept ID into code or CSV files:
 

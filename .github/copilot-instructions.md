@@ -51,6 +51,16 @@ Use the `install_from_internal_binary()` helper in `setup/install_packages.R` fo
 - Results schema: `plp_results`.
 - See `omop-ohdsi.instructions.md` for OMOP/OHDSI coding conventions.
 
+## Clinical Code Mapping
+
+- When mapping clinical terms or source codes (for example SNOMED, ICD, CPT, LOINC), do **not** rely on pretrained model memory.
+- Always derive concept mappings from the live OMOP vocabulary in this database.
+- Required lookup workflow:
+  1. Query `cdm_synthea.concept` to identify candidate concepts and confirm `standard_concept` status.
+  2. Use `cdm_synthea.concept_relationship` to map source/non-standard concepts to standard concepts and verify relationship semantics.
+  3. Use `cdm_synthea.concept_ancestor` to expand descendants/ancestors when building concept sets.
+- Do not hard-code concept IDs unless they have been validated against these tables in the current database instance.
+
 ## Security and Safety
 
 - Never hardcode credentials; all connection parameters come from `get_validation_config()`.
