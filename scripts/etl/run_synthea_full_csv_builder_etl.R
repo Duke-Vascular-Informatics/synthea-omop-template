@@ -49,6 +49,22 @@ run_synthea_full_csv_builder_etl <- function(
 
   connection_details <- build_connection_details(config)
 
+  run_db_preflight(
+    connection_details,
+    required_successes = 3L,
+    max_attempts = 10L,
+    delay_seconds = 2
+  )
+
+  run_step_with_retry <- function(step_name, expr, max_attempts = 3L) {
+    with_db_retry(
+      expr,
+      operation_name = step_name,
+      max_attempts = max_attempts,
+      initial_delay_seconds = 2
+    )
+  }
+
   render_sql <- function(sql, ...) {
     SqlRender::translate(
       SqlRender::render(sql, ...),
@@ -64,7 +80,7 @@ run_synthea_full_csv_builder_etl <- function(
       schema_name = schema_name,
       table_name = table_name
     )
-    res <- DatabaseConnector::querySql(connection, sql)
+    res <- query_sql_with_retry(connection, sql)
     as.numeric(res$n[1]) > 0
   }
 
@@ -81,7 +97,7 @@ run_synthea_full_csv_builder_etl <- function(
       schema_name = schema_name,
       table_name = table_name
     )
-    res <- DatabaseConnector::querySql(connection, sql)
+    res <- query_sql_with_retry(connection, sql)
     identical(as.integer(res$has_rows[1]), 1L)
   }
 
@@ -102,19 +118,19 @@ run_synthea_full_csv_builder_etl <- function(
        WHERE s.name = '@schema_name';",
       schema_name = schema_name
     )
-    tbl <- DatabaseConnector::querySql(connection, sql)
+    tbl <- query_sql_with_retry(connection, sql)
     if (nrow(tbl) == 0) {
       return(invisible(NULL))
     }
 
     for (nm in tbl$table_name) {
-      DatabaseConnector::executeSql(connection, paste0("DROP TABLE [", schema_name, "].[", nm, "];"))
+      execute_sql_with_retry(connection, paste0("DROP TABLE [", schema_name, "].[", nm, "];"))
     }
     invisible(NULL)
   }
 
   ensure_cdm_tables_exist <- function() {
-    conn_cdm <- DatabaseConnector::connect(connection_details)
+    conn_cdm <- connect_with_retry(connection_details)
     on.exit(DatabaseConnector::disconnect(conn_cdm), add = TRUE)
 
     required_cdm_tables <- c(
@@ -132,11 +148,11 @@ run_synthea_full_csv_builder_etl <- function(
         "Missing CDM tables detected in ", config$cdm_schema,
         " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
       )
-      ETLSyntheaBuilder::CreateCDMTables(
+      run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables", ETLSyntheaBuilder::CreateCDMTables(
         connectionDetails = connection_details,
         cdmSchema = config$cdm_schema,
         cdmVersion = cdm_version
-      )
+      ))
     }
   }
 
@@ -149,9 +165,123 @@ run_synthea_full_csv_builder_etl <- function(
         cdm_schema = cdm_schema,
         table_name = table_name
       )
-      DatabaseConnector::executeSql(connection, sql)
+      execute_sql_with_retry(connection, sql)
     }
     invisible(NULL)
+  }
+
+  execute_sql_file <- function(connection, file_path) {
+    sql <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
+    execute_sql_with_retry(connection, sql)
+  }
+
+  create_visit_rollup_tables_sql_server <- function() {
+    run_step_with_retry("ETLSyntheaBuilder::CreateVisitRollupTables(sqlOnly)", ETLSyntheaBuilder::CreateVisitRollupTables(
+      connectionDetails = connection_details,
+      cdmSchema = config$cdm_schema,
+      syntheaSchema = synthea_schema,
+      cdmVersion = cdm_version,
+      sqlOnly = TRUE
+    ))
+
+    conn_rollup <- connect_with_retry(connection_details)
+    on.exit(DatabaseConnector::disconnect(conn_rollup), add = TRUE)
+
+    execute_sql_file(conn_rollup, file.path("output", "AllVisitTable.sql"))
+    execute_sql_file(conn_rollup, file.path("output", "AAVITable.sql"))
+
+    final_visit_sql <- render_sql(
+      "IF OBJECT_ID('@cdm_schema.FINAL_VISIT_IDS', 'U') IS NOT NULL
+         DROP TABLE @cdm_schema.FINAL_VISIT_IDS;
+
+       SELECT encounter_id, VISIT_OCCURRENCE_ID_NEW
+       INTO @cdm_schema.FINAL_VISIT_IDS
+       FROM (
+         SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY encounter_id ORDER BY PRIORITY) AS RN
+         FROM (
+             SELECT *,
+                 CASE
+                     WHEN encounterclass IN ('emergency', 'urgent') THEN
+                         CASE
+                             WHEN VISIT_TYPE = 'inpatient' AND VISIT_OCCURRENCE_ID_NEW IS NOT NULL THEN 1
+                             WHEN VISIT_TYPE IN ('emergency', 'urgent') AND VISIT_OCCURRENCE_ID_NEW IS NOT NULL THEN 2
+                             ELSE 99
+                         END
+                     WHEN encounterclass IN ('ambulatory', 'wellness', 'outpatient') THEN
+                         CASE
+                             WHEN VISIT_TYPE = 'inpatient' AND VISIT_OCCURRENCE_ID_NEW IS NOT NULL THEN 1
+                             WHEN VISIT_TYPE IN ('ambulatory', 'wellness', 'outpatient') AND VISIT_OCCURRENCE_ID_NEW IS NOT NULL THEN 2
+                             ELSE 99
+                         END
+                     WHEN encounterclass = 'inpatient' AND VISIT_TYPE = 'inpatient' AND VISIT_OCCURRENCE_ID_NEW IS NOT NULL THEN 1
+                     ELSE 99
+                 END AS PRIORITY
+             FROM @cdm_schema.ASSIGN_ALL_VISIT_IDS
+         ) T1
+       ) RankedVisits
+       WHERE RN = 1;",
+      cdm_schema = config$cdm_schema
+    )
+    execute_sql_with_retry(conn_rollup, final_visit_sql)
+  }
+
+  load_event_tables_sql_server <- function() {
+    run_step_with_retry("ETLSyntheaBuilder::CreateMapAndRollupTables(sqlOnly)", ETLSyntheaBuilder::CreateMapAndRollupTables(
+      connectionDetails = connection_details,
+      cdmSchema = config$cdm_schema,
+      syntheaSchema = synthea_schema,
+      cdmVersion = cdm_version,
+      syntheaVersion = synthea_version,
+      sqlOnly = TRUE
+    ))
+
+    run_step_with_retry("ETLSyntheaBuilder::LoadEventTables(sqlOnly)", ETLSyntheaBuilder::LoadEventTables(
+      connectionDetails = connection_details,
+      cdmSchema = config$cdm_schema,
+      syntheaSchema = synthea_schema,
+      cdmVersion = cdm_version,
+      syntheaVersion = synthea_version,
+      createIndices = FALSE,
+      sqlOnly = TRUE
+    ))
+
+    conn_events <- connect_with_retry(connection_details)
+    on.exit(DatabaseConnector::disconnect(conn_events), add = TRUE)
+
+    map_sql_files <- c(
+      file.path("output", "create_source_to_standard_vocab_map.sql"),
+      file.path("output", "create_source_to_source_vocab_map.sql"),
+      file.path("output", "create_states_map.sql")
+    )
+    for (sql_file in map_sql_files) {
+      execute_sql_file(conn_events, sql_file)
+    }
+
+    event_sql_files <- c(
+      file.path("output", "insert_location.sql"),
+      file.path("output", "insert_care_site.sql"),
+      file.path("output", "insert_person.sql"),
+      file.path("output", "insert_observation_period.sql"),
+      file.path("output", "insert_provider.sql"),
+      file.path("output", "insert_visit_occurrence.sql"),
+      file.path("output", "insert_visit_detail.sql"),
+      file.path("output", "insert_condition_occurrence.sql"),
+      file.path("output", "insert_observation.sql"),
+      file.path("output", "insert_measurement.sql"),
+      file.path("output", "insert_procedure_occurrence.sql"),
+      file.path("output", "insert_drug_exposure.sql"),
+      file.path("output", "insert_condition_era.sql"),
+      file.path("output", "insert_drug_era.sql"),
+      file.path("output", "insert_cdm_source.sql"),
+      file.path("output", "insert_device_exposure.sql"),
+      file.path("output", "insert_death.sql"),
+      file.path("output", "insert_payer_plan_period.sql"),
+      file.path("output", "insert_cost_v300.sql")
+    )
+    for (sql_file in event_sql_files) {
+      execute_sql_file(conn_events, sql_file)
+    }
   }
 
   message("=== Step 5 CSV builder ETL ===")
@@ -164,10 +294,10 @@ run_synthea_full_csv_builder_etl <- function(
 
   ensure_cdm_tables_exist()
 
-  conn_check <- DatabaseConnector::connect(connection_details)
+  conn_check <- connect_with_retry(connection_details)
   message("CDM tables verified in ", config$cdm_schema, ".")
 
-  DatabaseConnector::executeSql(
+  execute_sql_with_retry(
     conn_check,
     paste0("IF SCHEMA_ID('", synthea_schema, "') IS NULL EXEC('CREATE SCHEMA ", synthea_schema, "');")
   )
@@ -176,18 +306,18 @@ run_synthea_full_csv_builder_etl <- function(
 
   if (isTRUE(reset_before_etl)) {
     message("Reset requested: dropping event + synthea staging tables before reload ...")
-    suppressWarnings(try(ETLSyntheaBuilder::DropEventTables(
+    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::DropEventTables", ETLSyntheaBuilder::DropEventTables(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema
-    ), silent = TRUE))
-    suppressWarnings(try(ETLSyntheaBuilder::DropSyntheaTables(
+    )), silent = TRUE))
+    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::DropSyntheaTables", ETLSyntheaBuilder::DropSyntheaTables(
       connectionDetails = connection_details,
       syntheaSchema = synthea_schema,
       syntheaVersion = synthea_version
-    ), silent = TRUE))
+    )), silent = TRUE))
 
     # Defensive cleanup to handle schema-version mismatches in DropSyntheaTables.
-    conn_reset <- DatabaseConnector::connect(connection_details)
+    conn_reset <- connect_with_retry(connection_details)
     drop_rollup_helper_tables(conn_reset, config$cdm_schema)
     clear_schema_tables(conn_reset, synthea_schema)
     DatabaseConnector::disconnect(conn_reset)
@@ -196,11 +326,11 @@ run_synthea_full_csv_builder_etl <- function(
     ensure_cdm_tables_exist()
   }
 
-  ETLSyntheaBuilder::CreateSyntheaTables(
+  run_step_with_retry("ETLSyntheaBuilder::CreateSyntheaTables", ETLSyntheaBuilder::CreateSyntheaTables(
     connectionDetails = connection_details,
     syntheaSchema = synthea_schema,
     syntheaVersion = synthea_version
-  )
+  ))
 
   if (isTRUE(synthea_bulk_load)) {
     message("Loading Synthea staging with bulkLoad=TRUE")
@@ -209,12 +339,12 @@ run_synthea_full_csv_builder_etl <- function(
   }
 
   load_synthea_tables <- function(use_bulk_load) {
-    ETLSyntheaBuilder::LoadSyntheaTables(
+    run_step_with_retry("ETLSyntheaBuilder::LoadSyntheaTables", ETLSyntheaBuilder::LoadSyntheaTables(
       connectionDetails = connection_details,
       syntheaSchema = synthea_schema,
       syntheaFileLoc = csv_input_dir,
       bulkLoad = use_bulk_load
-    )
+    ))
   }
 
   if (isTRUE(synthea_bulk_load)) {
@@ -236,16 +366,16 @@ run_synthea_full_csv_builder_etl <- function(
     load_synthea_tables(FALSE)
   }
 
-  conn_vocab <- DatabaseConnector::connect(connection_details)
+  conn_vocab <- connect_with_retry(connection_details)
   on.exit(DatabaseConnector::disconnect(conn_vocab), add = TRUE)
   vocab_loaded <- vocab_is_loaded(conn_vocab, config$cdm_schema)
   if (isTRUE(force_reload_vocab)) {
     message("force_reload_vocab=true: truncating vocabulary tables before reload ...")
-    suppressWarnings(try(ETLSyntheaBuilder::TruncateVocabTables(
+    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::TruncateVocabTables", ETLSyntheaBuilder::TruncateVocabTables(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema,
       cdmVersion = cdm_version
-    ), silent = TRUE))
+    )), silent = TRUE))
     vocab_loaded <- FALSE
   }
 
@@ -256,56 +386,28 @@ run_synthea_full_csv_builder_etl <- function(
       "; skipping LoadVocabFromCsv()."
     )
   } else {
-    ETLSyntheaBuilder::LoadVocabFromCsv(
+    run_step_with_retry("ETLSyntheaBuilder::LoadVocabFromCsv", ETLSyntheaBuilder::LoadVocabFromCsv(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema,
       vocabFileLoc = vocab_file_loc,
       bulkLoad = TRUE
-    )
+    ))
   }
   DatabaseConnector::disconnect(conn_vocab)
 
-  ETLSyntheaBuilder::CreateVocabMapTables(
-    connectionDetails = connection_details,
-    cdmSchema = config$cdm_schema,
-    cdmVersion = cdm_version
-  )
-
-  ETLSyntheaBuilder::CreateVisitRollupTables(
-    connectionDetails = connection_details,
-    cdmSchema = config$cdm_schema,
-    syntheaSchema = synthea_schema,
-    cdmVersion = cdm_version
-  )
-
-  ETLSyntheaBuilder::CreateMapAndRollupTables(
-    connectionDetails = connection_details,
-    cdmSchema = config$cdm_schema,
-    syntheaSchema = synthea_schema,
-    cdmVersion = cdm_version,
-    syntheaVersion = synthea_version
-  )
-
-  ETLSyntheaBuilder::LoadEventTables(
-    connectionDetails = connection_details,
-    cdmSchema = config$cdm_schema,
-    syntheaSchema = synthea_schema,
-    cdmVersion = cdm_version,
-    syntheaVersion = synthea_version,
-    createIndices = FALSE,
-    sqlOnly = FALSE
-  )
+  create_visit_rollup_tables_sql_server()
+  load_event_tables_sql_server()
 
   if (isTRUE(create_extra_indices)) {
-    suppressWarnings(try(ETLSyntheaBuilder::CreateExtraIndices(
+    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::CreateExtraIndices", ETLSyntheaBuilder::CreateExtraIndices(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema,
       cdmVersion = cdm_version
-    ), silent = TRUE))
+    )), silent = TRUE))
   }
 
   # Ensure concept_ancestor indexes are present for risk score descendant-expansion queries.
-  conn <- DatabaseConnector::connect(connection_details)
+  conn <- connect_with_retry(connection_details)
   on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
 
   index_sql <- SqlRender::translate(
@@ -338,7 +440,7 @@ run_synthea_full_csv_builder_etl <- function(
     ),
     targetDialect = config$dbms
   )
-  DatabaseConnector::executeSql(conn, index_sql)
+  execute_sql_with_retry(conn, index_sql)
 
   invisible(list(run_name = run_name, mode = "csv_builder"))
 }
