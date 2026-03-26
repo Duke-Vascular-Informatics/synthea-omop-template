@@ -76,7 +76,7 @@
     "",
     "Usage:",
     "  Copy to <synthea_home>/src/main/resources/modules/ and run Synthea normally.",
-    "  To load into the omop_synth database, run the Synthea-OMOP ETL pipeline against",
+    "  To load into the omop_synth database, run this project's Step 5 CSV-to-OMOP ETL workflow against",
     "  the generated CSV output.",
     "",
     "Does NOT model: mortality, limb loss, graft failure, or recurrent PAD."

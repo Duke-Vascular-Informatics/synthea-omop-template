@@ -38,7 +38,7 @@ get_validation_config <- function() {
     database         = "omop_synth",
     sql_server_port  = 1434L,
 
-    # CDM schema (created by synthea-omop-etl)
+    # CDM schema (created by this repository's Step 5 ETL workflow)
     cdm_schema       = "cdm_synthea",
     cdm_version      = 5L,
 
