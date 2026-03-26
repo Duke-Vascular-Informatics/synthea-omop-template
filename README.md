@@ -232,6 +232,11 @@ CSV output incrementally into the OMOP CDM.
 
 ETLs Synthea CSV output into the OMOP CDM.
 
+Prerequisite: OMOP vocabularies must already be loaded in `cdm_synthea`
+(`concept`, `concept_relationship`, `concept_ancestor`) by the separate
+`vocab_omop_etl` process. Step 5 now validates vocabulary readiness and exits
+with an error if this prerequisite is not met.
+
 ```powershell
 # Basic (uses csv_input_dir and run_name from config.R or prompts)
 Rscript workflow/05_etl_csv_to_omop.R
@@ -253,6 +258,8 @@ Parameters:
 | `arg1` / `--csv_input_dir` | Path to Synthea CSV output folder |
 | `arg2` / `--run_name` | Label for this ETL run (used in audit fields) |
 | `--reset_before_etl` | `true` clears OMOP staging tables before loading |
+
+Deprecated (ignored): `--force_reload_vocab`, `--vocab_file_loc`
 
 ---
 

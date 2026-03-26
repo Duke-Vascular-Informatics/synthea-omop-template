@@ -16,6 +16,7 @@ This folder provides a consistent, reproducible sequence that maps directly to t
 
 5. `05_etl_csv_to_omop.R`
    - ETL Synthea CSV output to OMOP CDM.
+   - Requires vocabularies to be preloaded by external `vocab_omop_etl`.
 
 6. `06_quality_check_defined_phenotypes.R`
    - Run data quality checks aligned to the defined cohort/outcome/covariate framework.
@@ -59,6 +60,7 @@ powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bun
 
 - `workflow/04_generate_synthea_csv.ps1`: `-SyntheaHome`, `-Population`, `-AgeRange`, `-State`
 - `workflow/05_etl_csv_to_omop.R`: arg1 = `csv_input_dir`, arg2 = `run_name`; optional named args `--csv_input_dir=...`, `--run_name=...`, `--reset_before_etl=true|false`
+- `workflow/05_etl_csv_to_omop.R`: vocabulary loading flags are deprecated and ignored (`--force_reload_vocab`, `--vocab_file_loc`)
 - `workflow/06_quality_check_defined_phenotypes.R`: pass-through args accepted by `quality_check_etl.R`, including `--run_name=...`, `--enforce_thresholds=true|false`, `--min_person_rows=...`, `--min_open_revascularization_rows=...`, `--min_ssi_condition_rows=...`, `--min_mapped_condition_pct=...`
 
 ## Typical execution order

@@ -82,6 +82,33 @@ run_synthea_csv_to_omop_etl <- function(
   conn <- DatabaseConnector::connect(build_connection_details(config))
   on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
 
+  vocab_ready_sql <- SqlRender::translate(
+    SqlRender::render(
+      "SELECT
+         CASE WHEN EXISTS (SELECT 1 FROM @cdm_schema.concept) THEN 1 ELSE 0 END AS has_concept,
+         CASE WHEN EXISTS (SELECT 1 FROM @cdm_schema.concept_relationship) THEN 1 ELSE 0 END AS has_concept_relationship,
+         CASE WHEN EXISTS (SELECT 1 FROM @cdm_schema.concept_ancestor) THEN 1 ELSE 0 END AS has_concept_ancestor;",
+      cdm_schema = cdm_schema
+    ),
+    targetDialect = config$dbms
+  )
+  vocab_ready <- DatabaseConnector::querySql(conn, vocab_ready_sql)
+  if (
+    as.integer(vocab_ready$has_concept[1]) != 1L ||
+    as.integer(vocab_ready$has_concept_relationship[1]) != 1L ||
+    as.integer(vocab_ready$has_concept_ancestor[1]) != 1L
+  ) {
+    stop(
+      paste0(
+        "Vocabulary precheck failed in ", cdm_schema, ". Required populated tables are: ",
+        "concept, concept_relationship, and concept_ancestor. ",
+        "This analysis repository no longer loads vocabularies during ETL. ",
+        "Please run the separate 'vocab_omop_etl' process first."
+      ),
+      call. = FALSE
+    )
+  }
+
   message("=== Phase 1/2: STAGING CSV TABLES ===")
   stage_start <- Sys.time()
 

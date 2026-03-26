@@ -33,12 +33,10 @@ csv_input_dir <- "C:/Users/rapiduser/synthea-data/output/csv"
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
 reset_before_etl <- TRUE
 etl_mode <- "csv_builder"
-force_reload_vocab <- FALSE
 synthea_bulk_load <- TRUE
 synthea_schema <- "synthea"
 synthea_version <- "3.3.0"
 cdm_version_builder <- "5.4"
-vocab_file_loc <- "C:/Users/rapiduser/omop-vocab"
 
 positional <- character()
 for (arg in args) {
@@ -51,12 +49,17 @@ for (arg in args) {
       if (identical(key, "run_name")) run_name <- val
       if (identical(key, "reset_before_etl")) reset_before_etl <- parse_bool(val)
       if (identical(key, "etl_mode")) etl_mode <- tolower(trimws(val))
-      if (identical(key, "force_reload_vocab")) force_reload_vocab <- parse_bool(val)
       if (identical(key, "synthea_bulk_load")) synthea_bulk_load <- parse_bool(val)
       if (identical(key, "synthea_schema")) synthea_schema <- val
       if (identical(key, "synthea_version")) synthea_version <- val
       if (identical(key, "cdm_version_builder")) cdm_version_builder <- val
-      if (identical(key, "vocab_file_loc")) vocab_file_loc <- val
+
+      if (identical(key, "force_reload_vocab") || identical(key, "vocab_file_loc")) {
+        warning(
+          "Arguments --force_reload_vocab and --vocab_file_loc are deprecated and ignored. ",
+          "Vocabulary loading is now externalized to 'vocab_omop_etl'."
+        )
+      }
     }
   } else {
     positional <- c(positional, arg)
@@ -112,9 +115,7 @@ if (identical(etl_mode, "csv_builder")) {
     synthea_schema = synthea_schema,
     synthea_version = synthea_version,
     cdm_version = cdm_version_builder,
-    vocab_file_loc = vocab_file_loc,
     reset_before_etl = reset_before_etl,
-    force_reload_vocab = force_reload_vocab,
     synthea_bulk_load = synthea_bulk_load,
     create_extra_indices = TRUE
   )
@@ -124,8 +125,6 @@ if (identical(etl_mode, "csv_builder")) {
     run_name,
     ", reset_before_etl=",
     ifelse(reset_before_etl, "true", "false"),
-    ", force_reload_vocab=",
-    ifelse(force_reload_vocab, "true", "false"),
     ", synthea_bulk_load=",
     ifelse(synthea_bulk_load, "true", "false"),
     "\n",

@@ -13,9 +13,7 @@ run_synthea_full_csv_builder_etl <- function(
     synthea_schema = "synthea",
   synthea_version = "3.3.0",
     cdm_version = "5.4",
-    vocab_file_loc = "C:/Users/rapiduser/omop-vocab",
     reset_before_etl = TRUE,
-    force_reload_vocab = FALSE,
     synthea_bulk_load = TRUE,
     create_extra_indices = TRUE) {
 
@@ -30,10 +28,6 @@ run_synthea_full_csv_builder_etl <- function(
   csv_files <- list.files(csv_input_dir, pattern = "\\.csv$", full.names = TRUE)
   if (length(csv_files) == 0) {
     stop("No CSV files found in: ", csv_input_dir)
-  }
-
-  if (!dir.exists(vocab_file_loc)) {
-    stop("Vocabulary directory does not exist: ", vocab_file_loc)
   }
 
   if (!requireNamespace("ETLSyntheaBuilder", quietly = TRUE)) {
@@ -108,6 +102,22 @@ run_synthea_full_csv_builder_etl <- function(
       function(table_name) table_has_rows(connection, cdm_schema, table_name),
       logical(1)
     ))
+  }
+
+  assert_vocab_loaded_for_etl <- function(connection, cdm_schema) {
+    if (isTRUE(vocab_is_loaded(connection, cdm_schema))) {
+      return(invisible(TRUE))
+    }
+
+    stop(
+      paste0(
+        "Vocabulary precheck failed in ", cdm_schema, ". Required populated tables are: ",
+        "concept, concept_relationship, and concept_ancestor. ",
+        "This analysis repository no longer loads vocabularies during Step 5 ETL. ",
+        "Please run the separate 'vocab_omop_etl' process to load vocabularies, then rerun workflow/05_etl_csv_to_omop.R."
+      ),
+      call. = FALSE
+    )
   }
 
   clear_schema_tables <- function(connection, schema_name) {
@@ -287,7 +297,6 @@ run_synthea_full_csv_builder_etl <- function(
   message("=== Step 5 CSV builder ETL ===")
   message("run_name: ", run_name)
   message("csv_input_dir: ", normalizePath(csv_input_dir, winslash = "/", mustWork = TRUE))
-  message("vocab_file_loc: ", normalizePath(vocab_file_loc, winslash = "/", mustWork = TRUE))
   message("synthea_schema: ", synthea_schema)
   message("synthea_version: ", synthea_version)
   message("cdm_schema: ", config$cdm_schema)
@@ -301,6 +310,9 @@ run_synthea_full_csv_builder_etl <- function(
     conn_check,
     paste0("IF SCHEMA_ID('", synthea_schema, "') IS NULL EXEC('CREATE SCHEMA ", synthea_schema, "');")
   )
+
+  assert_vocab_loaded_for_etl(conn_check, config$cdm_schema)
+  message("Vocabulary precheck passed in ", config$cdm_schema, ".")
 
   DatabaseConnector::disconnect(conn_check)
 
@@ -365,35 +377,6 @@ run_synthea_full_csv_builder_etl <- function(
   } else {
     load_synthea_tables(FALSE)
   }
-
-  conn_vocab <- connect_with_retry(connection_details)
-  on.exit(DatabaseConnector::disconnect(conn_vocab), add = TRUE)
-  vocab_loaded <- vocab_is_loaded(conn_vocab, config$cdm_schema)
-  if (isTRUE(force_reload_vocab)) {
-    message("force_reload_vocab=true: truncating vocabulary tables before reload ...")
-    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::TruncateVocabTables", ETLSyntheaBuilder::TruncateVocabTables(
-      connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      cdmVersion = cdm_version
-    )), silent = TRUE))
-    vocab_loaded <- FALSE
-  }
-
-  if (isTRUE(vocab_loaded)) {
-    message(
-      "Vocabulary tables already populated in ",
-      config$cdm_schema,
-      "; skipping LoadVocabFromCsv()."
-    )
-  } else {
-    run_step_with_retry("ETLSyntheaBuilder::LoadVocabFromCsv", ETLSyntheaBuilder::LoadVocabFromCsv(
-      connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      vocabFileLoc = vocab_file_loc,
-      bulkLoad = TRUE
-    ))
-  }
-  DatabaseConnector::disconnect(conn_vocab)
 
   create_visit_rollup_tables_sql_server()
   load_event_tables_sql_server()
