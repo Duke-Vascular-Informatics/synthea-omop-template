@@ -312,7 +312,9 @@ run_synthea_full_csv_builder_etl <- function(
       file.path("output", "insert_payer_plan_period.sql"),
       file.path("output", "insert_cost_v300.sql")
     )
-    for (sql_file in event_sql_files) {\n      execute_sql_file(conn_events, sql_file)\n    }
+    for (sql_file in event_sql_files) {
+      execute_sql_file(conn_events, sql_file)
+    }
   }
 
   message("=== Step 5 CSV builder ETL ===")
