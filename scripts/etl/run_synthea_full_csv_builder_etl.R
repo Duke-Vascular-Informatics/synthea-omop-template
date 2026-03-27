@@ -312,20 +312,7 @@ run_synthea_full_csv_builder_etl <- function(
       file.path("output", "insert_payer_plan_period.sql"),
       file.path("output", "insert_cost_v300.sql")
     )
-    for (i in seq_along(event_sql_files)) {
-      sql_file <- event_sql_files[i]
-      
-      # Apply MAXDOP=1 for drug_era to avoid parallel query sync hangs
-      if (tolower(basename(sql_file)) == "insert_drug_era.sql") {
-        message("[PERF] Applying MAXDOP=1 for drug era calculation to avoid parallel query stalls...")
-        execute_sql_with_retry(conn_events, "SET MAXDOP 1;")
-        execute_sql_file(conn_events, sql_file)
-        execute_sql_with_retry(conn_events, "SET MAXDOP 0;")
-        message("[PERF] Reset MAXDOP to default (0).")
-      } else {
-        execute_sql_file(conn_events, sql_file)
-      }
-    }
+    for (sql_file in event_sql_files) {\n      execute_sql_file(conn_events, sql_file)\n    }
   }
 
   message("=== Step 5 CSV builder ETL ===")
