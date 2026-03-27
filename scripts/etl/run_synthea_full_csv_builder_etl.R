@@ -312,8 +312,19 @@ run_synthea_full_csv_builder_etl <- function(
       file.path("output", "insert_payer_plan_period.sql"),
       file.path("output", "insert_cost_v300.sql")
     )
-    for (sql_file in event_sql_files) {
-      execute_sql_file(conn_events, sql_file)
+    for (i in seq_along(event_sql_files)) {
+      sql_file <- event_sql_files[i]
+      
+      # Apply MAXDOP=1 for drug_era to avoid parallel query sync hangs
+      if (tolower(basename(sql_file)) == "insert_drug_era.sql") {
+        message("[PERF] Applying MAXDOP=1 for drug era calculation to avoid parallel query stalls...")
+        execute_sql_with_retry(conn_events, "SET MAXDOP 1;")
+        execute_sql_file(conn_events, sql_file)
+        execute_sql_with_retry(conn_events, "SET MAXDOP 0;")
+        message("[PERF] Reset MAXDOP to default (0).")
+      } else {
+        execute_sql_file(conn_events, sql_file)
+      }
     }
   }
 
@@ -402,21 +413,13 @@ run_synthea_full_csv_builder_etl <- function(
   }
 
   create_visit_rollup_tables_sql_server()
-  load_event_tables_sql_server()
-
-  if (isTRUE(create_extra_indices)) {
-    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::CreateExtraIndices", ETLSyntheaBuilder::CreateExtraIndices(
-      connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      cdmVersion = cdm_version
-    )), silent = TRUE))
-  }
-
-  # Ensure concept_ancestor indexes are present for risk score descendant-expansion queries.
-  conn <- connect_with_retry(connection_details)
-  on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
-
-  index_sql <- SqlRender::translate(
+  
+  # Create concept_ancestor indexes BEFORE load_event_tables_sql_server to support drug_era query optimization
+  message("[PERF] Creating concept_ancestor indexes for drug_era query optimization...")
+  conn_indices_pre <- connect_with_retry(connection_details)
+  on.exit(DatabaseConnector::disconnect(conn_indices_pre), add = TRUE)
+  
+  index_sql_pre <- SqlRender::translate(
     SqlRender::render(
       "IF OBJECT_ID('@cdm_schema.concept_ancestor', 'U') IS NOT NULL
        BEGIN
@@ -429,6 +432,11 @@ run_synthea_full_csv_builder_etl <- function(
            CREATE INDEX IX_concept_ancestor_ancestor
              ON @cdm_schema.concept_ancestor (ancestor_concept_id)
              INCLUDE (descendant_concept_id, min_levels_of_separation, max_levels_of_separation);
+           PRINT 'Created INDEX IX_concept_ancestor_ancestor';
+         END
+         ELSE
+         BEGIN
+           PRINT 'INDEX IX_concept_ancestor_ancestor already exists';
          END;
 
          IF NOT EXISTS (
@@ -440,13 +448,32 @@ run_synthea_full_csv_builder_etl <- function(
            CREATE INDEX IX_concept_ancestor_descendant
              ON @cdm_schema.concept_ancestor (descendant_concept_id)
              INCLUDE (ancestor_concept_id);
+           PRINT 'Created INDEX IX_concept_ancestor_descendant';
+         END
+         ELSE
+         BEGIN
+           PRINT 'INDEX IX_concept_ancestor_descendant already exists';
          END;
        END;",
       cdm_schema = config$cdm_schema
     ),
     targetDialect = config$dbms
   )
-  execute_sql_with_retry(conn, index_sql)
+  execute_sql_with_retry(conn_indices_pre, index_sql_pre)
+  message("[PERF] concept_ancestor indexes ready for drug_era.")
+  
+  load_event_tables_sql_server()
+
+  if (isTRUE(create_extra_indices)) {
+    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::CreateExtraIndices", ETLSyntheaBuilder::CreateExtraIndices(
+      connectionDetails = connection_details,
+      cdmSchema = config$cdm_schema,
+      cdmVersion = cdm_version
+    )), silent = TRUE))
+  }
+
+  # concept_ancestor indexes have already been created before load_event_tables_sql_server
+  # (moved earlier for drug_era query optimization)
 
   invisible(list(run_name = run_name, mode = "csv_builder"))
 }
