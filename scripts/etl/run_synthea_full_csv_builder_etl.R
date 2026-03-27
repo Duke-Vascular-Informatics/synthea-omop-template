@@ -182,6 +182,29 @@ run_synthea_full_csv_builder_etl <- function(
 
   execute_sql_file <- function(connection, file_path) {
     sql <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
+
+    # ETLSyntheaBuilder can emit INSERT ... WITH CTE ... SELECT for person load,
+    # which is invalid in SQL Server. Rewrite to WITH CTE ... INSERT ... SELECT.
+    if (tolower(basename(file_path)) == "insert_person.sql") {
+      pat <- paste0(
+        "(?is)^\\s*(insert\\s+into\\s+cdm_synthea\\.person\\s*\\([^)]*\\)\\s*)",
+        "with\\s+mapped_states\\s+as\\s*\\((.*?)\\)\\s*select(.*)$"
+      )
+      m <- regexec(pat, sql, perl = TRUE)
+      parts <- regmatches(sql, m)[[1]]
+      if (length(parts) == 4) {
+        insert_stmt <- parts[2]
+        cte_body <- parts[3]
+        select_tail <- parts[4]
+        sql <- paste0(
+          "with mapped_states as (", cte_body, ")\n",
+          insert_stmt,
+          "select",
+          select_tail
+        )
+      }
+    }
+
     execute_sql_with_retry(connection, sql)
   }
 
