@@ -145,7 +145,11 @@ run_synthea_full_csv_builder_etl <- function(
 
     required_cdm_tables <- c(
       "person", "location", "care_site", "provider",
-      "observation_period", "visit_occurrence"
+      "observation_period", "visit_occurrence",
+      "visit_detail", "condition_occurrence", "observation",
+      "measurement", "procedure_occurrence", "drug_exposure",
+      "condition_era", "drug_era", "cdm_source",
+      "device_exposure", "death", "payer_plan_period", "cost"
     )
     missing_tables <- required_cdm_tables[!vapply(
       required_cdm_tables,
@@ -154,15 +158,110 @@ run_synthea_full_csv_builder_etl <- function(
     )]
 
     if (length(missing_tables) > 0) {
-      message(
-        "Missing CDM tables detected in ", config$cdm_schema,
-        " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
+      vocab_tables <- c(
+        "concept", "concept_ancestor", "concept_class", "concept_relationship",
+        "concept_synonym", "domain", "drug_strength", "relationship",
+        "vocabulary", "source_to_concept_map"
       )
-      run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables", ETLSyntheaBuilder::CreateCDMTables(
+      vocab_present <- all(vapply(
+        vocab_tables,
+        function(tb) table_exists(conn_cdm, config$cdm_schema, tb),
+        logical(1)
+      ))
+
+      if (!vocab_present) {
+        message(
+          "Missing CDM tables detected in ", config$cdm_schema,
+          " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
+        )
+        run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables", ETLSyntheaBuilder::CreateCDMTables(
+          connectionDetails = connection_details,
+          cdmSchema = config$cdm_schema,
+          cdmVersion = cdm_version
+        ))
+        return(invisible(NULL))
+      }
+
+      # Vocabulary-only reset path: create only missing non-vocabulary tables from DDL.
+      message(
+        "Missing non-vocabulary CDM tables detected in ", config$cdm_schema,
+        " (", paste(missing_tables, collapse = ", "), "); creating missing tables from DDL."
+      )
+
+      run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables(sqlOnly)", ETLSyntheaBuilder::CreateCDMTables(
         connectionDetails = connection_details,
         cdmSchema = config$cdm_schema,
-        cdmVersion = cdm_version
+        cdmVersion = cdm_version,
+        outputFolder = file.path(getwd(), "output", "cdm_sql"),
+        sqlOnly = TRUE
       ))
+
+      ddl_path <- file.path("output", "cdm_sql", paste0("OMOPCDM_sql_server_", cdm_version, "_ddl.sql"))
+      if (!file.exists(ddl_path)) {
+        stop("CDM DDL file not found after sqlOnly generation: ", ddl_path)
+      }
+
+      ddl_lines <- readLines(ddl_path, warn = FALSE)
+      i <- 1L
+      while (i <= length(ddl_lines)) {
+        line <- ddl_lines[[i]]
+        if (!grepl("^\\s*CREATE\\s+TABLE\\s+", line, ignore.case = TRUE)) {
+          i <- i + 1L
+          next
+        }
+
+        m <- regexec(
+          "(?i)^\\s*CREATE\\s+TABLE\\s+([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\s*\\(",
+          line,
+          perl = TRUE
+        )
+        parts <- regmatches(line, m)[[1]]
+        if (length(parts) < 3) {
+          i <- i + 1L
+          next
+        }
+
+        table_name <- tolower(parts[3])
+        block <- line
+        j <- i + 1L
+        while (j <= length(ddl_lines)) {
+          block <- paste(block, ddl_lines[[j]], sep = "\n")
+          if (grepl("\\)\\s*;\\s*$", ddl_lines[[j]])) {
+            break
+          }
+          j <- j + 1L
+        }
+
+        if (table_name %in% missing_tables) {
+          block <- gsub(
+            "(?i)^\\s*CREATE\\s+TABLE\\s+[A-Za-z0-9_]+\\.",
+            paste0("CREATE TABLE ", config$cdm_schema, "."),
+            block,
+            perl = TRUE
+          )
+          create_sql <- paste0(
+            "IF OBJECT_ID('", config$cdm_schema, ".", table_name, "','U') IS NULL\n",
+            "BEGIN\n",
+            block,
+            "\nEND;"
+          )
+          execute_sql_with_retry(conn_cdm, create_sql)
+        }
+
+        i <- j + 1L
+      }
+
+      still_missing <- required_cdm_tables[!vapply(
+        required_cdm_tables,
+        function(tb) table_exists(conn_cdm, config$cdm_schema, tb),
+        logical(1)
+      )]
+      if (length(still_missing) > 0) {
+        stop(
+          "Failed to create required CDM tables: ",
+          paste(still_missing, collapse = ", ")
+        )
+      }
     }
   }
 
@@ -182,6 +281,55 @@ run_synthea_full_csv_builder_etl <- function(
 
   execute_sql_file <- function(connection, file_path) {
     sql <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
+              # Check if vocabulary tables are already present
+              vocab_tables <- c(
+                "concept", "concept_ancestor", "concept_class", "concept_relationship",
+                "concept_synonym", "domain", "drug_strength", "relationship",
+                "vocabulary", "source_to_concept_map"
+              )
+              vocab_present <- all(vapply(
+                vocab_tables,
+                function(tb) table_exists(conn_cdm, config$cdm_schema, tb),
+                logical(1)
+              ))
+
+              if (!vocab_present) {
+                # No vocabulary tables: use standard CreateCDMTables to generate all
+                message(
+                  "Missing CDM tables detected in ", config$cdm_schema,
+                  " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
+                )
+                run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables", ETLSyntheaBuilder::CreateCDMTables(
+                  connectionDetails = connection_details,
+                  cdmSchema = config$cdm_schema,
+                  cdmVersion = cdm_version
+                ))
+              } else {
+                # Vocabulary tables present: safely create only missing non-vocabulary tables
+                missing_nv <- setdiff(missing_tables, vocab_tables)
+                if (length(missing_nv) > 0) {
+                  message(
+                    "Missing non-vocabulary CDM tables detected: ",
+                    paste(missing_nv, collapse = ", "),
+                    "; using pre-generated DDL."
+                  )
+          
+                  missing_ddl_file <- file.path("output", "cdm_sql", "create_missing_cdm_tables.sql")
+                  if (!file.exists(missing_ddl_file)) {
+                    stop(
+                      "Missing CDM tables DDL file not found. Expected: ",
+                      missing_ddl_file,
+                      "\nRun ETLSyntheaBuilder::CreateCDMTables(sqlOnly=TRUE) first or generate DDL manually."
+                    )
+                  }
+          
+                  missing_ddl <- paste(readLines(missing_ddl_file, warn = FALSE), collapse = "\n")
+                  missing_ddl <- gsub("\\[cdm_synthea\\]", paste0("[", config$cdm_schema, "]"), missing_ddl)
+                  execute_sql_with_retry(conn_cdm, missing_ddl)
+          
+                  message("Non-vocabulary CDM tables created successfully.")
+                }
+              }
 
     # ETLSyntheaBuilder can emit INSERT ... WITH CTE ... SELECT for person load,
     # which is invalid in SQL Server. Rewrite to WITH CTE ... INSERT ... SELECT.
