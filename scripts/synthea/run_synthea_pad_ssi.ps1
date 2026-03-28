@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $false)]
-  [string]$SyntheaHome = $(if ([string]::IsNullOrWhiteSpace($env:SYNTHEA_HOME)) { "C:\Users\rapiduser\source\repos\synthea" } else { $env:SYNTHEA_HOME }),
+  [string]$SyntheaHome = $env:SYNTHEA_HOME,
 
   [Parameter(Mandatory = $false)]
   [int]$Population = 1000,
@@ -26,7 +26,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($SyntheaHome)) {
-  throw "SyntheaHome not provided. Pass -SyntheaHome <path> or set SYNTHEA_HOME."
+  $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+  $SyntheaHome = Join-Path $repoRoot "external/synthea"
 }
 
 $syntheaBat = Join-Path $SyntheaHome "run_synthea.bat"

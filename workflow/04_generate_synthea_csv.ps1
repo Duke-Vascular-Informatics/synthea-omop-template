@@ -18,7 +18,7 @@
 # - Population/AgeRange/State: forwarded directly to downstream runner script.
 # -----------------------------------------------------------------------------
 param(
-  [string]$SyntheaHome = $(if ([string]::IsNullOrWhiteSpace($env:SYNTHEA_HOME)) { "C:\Users\rapiduser\source\repos\synthea" } else { $env:SYNTHEA_HOME }),
+  [string]$SyntheaHome = $env:SYNTHEA_HOME,
   [int]$Population = 1000,
   [string]$AgeRange = "40-100",
   [string]$State = "North Carolina"
@@ -43,6 +43,12 @@ $ErrorActionPreference = "Stop"
 # -----------------------------------------------------------------------------
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptDir "..")
+
+# If SYNTHEA_HOME is not set, default to the repository submodule location.
+if ([string]::IsNullOrWhiteSpace($SyntheaHome)) {
+  $SyntheaHome = Join-Path $repoRoot "external/synthea"
+}
+
 Push-Location $repoRoot
 
 # -----------------------------------------------------------------------------
