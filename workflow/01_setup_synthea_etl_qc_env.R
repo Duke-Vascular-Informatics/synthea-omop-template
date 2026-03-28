@@ -18,6 +18,9 @@ set_workflow_root()
 
 source("setup/setup_renv.R")
 source("setup/install_packages.R")
+source("config.R")
+source("R/drivers.R")
+source("R/connection.R")
 
 if (!requireNamespace("DatabaseConnector", quietly = TRUE)) {
   if (!requireNamespace("renv", quietly = TRUE)) {
@@ -34,4 +37,13 @@ if (length(missing) > 0) {
   stop("Missing required packages after setup: ", paste(missing, collapse = ", "))
 }
 
-cat("Step 1 complete: environment and packages are ready for Synthea/ETL/data-check workflow.\n")
+config <- get_validation_config()
+connection_details <- build_connection_details(config)
+run_db_preflight(
+  connection_details = connection_details,
+  required_successes = 3L,
+  max_attempts = 10L,
+  delay_seconds = 2
+)
+
+cat("Step 1 complete: environment and packages are ready, and database connectivity preflight passed.\n")

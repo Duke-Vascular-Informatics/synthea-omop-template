@@ -41,7 +41,7 @@ Examples:
 
 ```powershell
 # R-based steps
-Rscript workflow/00_preflight_checks.R
+Rscript workflow/00_preflight_checks.R  # deprecated shim -> runs Step 01
 Rscript workflow/01_setup_synthea_etl_qc_env.R
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
 Rscript workflow/03_generate_synthea_module_artifacts.R

@@ -49,9 +49,8 @@ The following GitHub packages are pinned and supported through prebuilt local bi
 | `OHDSI/CohortGenerator` | v0.9.0 |
 | `OHDSI/PatientLevelPrediction` | v6.4.0 |
 
-Local binaries live in `internal_repo/bin/windows/contrib/<R-version>/`. `setup/install_packages.R`
-installs from these binaries first, falling back to GitHub only if a binary is missing.
-This allows installs to run without GitHub access once binaries are prebuilt.
+`setup/install_packages.R` installs from CRAN first (Duke mirror), then falls back to
+GitHub for OHDSI packages that are not available on CRAN.
 
 ---
 
@@ -59,8 +58,7 @@ This allows installs to run without GitHub access once binaries are prebuilt.
 
 `workflow/00_preflight_checks.R`
 
-Validates that R version, Java, JDBC driver, and SQL Server connectivity are all healthy
-before proceeding with any analysis steps.
+Deprecated compatibility shim. Running Step 0 now delegates to Step 1.
 
 ```powershell
 Rscript workflow/00_preflight_checks.R
@@ -90,8 +88,9 @@ source("setup/install_packages.R")
 This step:
 - Activates `renv`
 - Installs CRAN dependencies from the Duke mirror
-- Installs GitHub-pinned OHDSI packages from local internal binaries when available
+- Installs GitHub-pinned OHDSI packages when unavailable on CRAN
 - Provisions the JDBC driver bundle to `drivers/`
+- Runs database connectivity preflight checks
 
 Root-level `setup_renv.R` and `install_packages.R` remain as compatibility wrappers.
 
