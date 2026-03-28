@@ -73,23 +73,8 @@
 #   4. Repeat until the SME signs off on the module.
 #   5. Proceed to Step 4 (generate Synthea CSV) only after sign-off.
 
-resolve_script_path <- function() {
-  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-  if (length(file_arg) > 0) {
-    return(normalizePath(sub("^--file=", "", file_arg[1]), winslash = "/", mustWork = FALSE))
-  }
-
-  if (!is.null(sys.frames()[[1]]$ofile)) {
-    return(normalizePath(sys.frames()[[1]]$ofile, winslash = "/", mustWork = FALSE))
-  }
-
-  NA_character_
-}
-
-script_path <- resolve_script_path()
-if (!is.na(script_path)) {
-  setwd(normalizePath(file.path(dirname(script_path), ".."), winslash = "/", mustWork = FALSE))
-}
+source("workflow/workflow_bootstrap.R")
+set_workflow_root()
 
 if (!requireNamespace("jsonlite", quietly = TRUE)) {
   stop("Package 'jsonlite' is required. Install via renv first.")

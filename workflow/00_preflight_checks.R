@@ -2,36 +2,14 @@
 # Optional preflight checks before running the canonical workflow.
 
 # -----------------------------------------------------------------------------
-# Chunk 1: Determine script location and normalize working directory.
+# Chunk 1: Normalize working directory via shared workflow bootstrap helper.
 # Purpose:
-# - Make this script robust whether invoked as `Rscript workflow/...` or sourced
-#   interactively from a different current directory.
-# - Ensure all subsequent relative paths (e.g., `config.R`, `cohorts/...`) are
-#   resolved from the project root, not the caller's shell directory.
-# Outcome:
-# - If the script path can be inferred, `setwd()` points to repo root.
+# - Centralize script-path and project-root resolution in one place.
+# - Ensure all relative paths below resolve from repository root.
 # -----------------------------------------------------------------------------
 
-resolve_script_path <- function() {
-  # Rscript invocation often includes a --file=... argument; prefer that.
-  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-  if (length(file_arg) > 0) {
-    return(normalizePath(sub("^--file=", "", file_arg[1]), winslash = "/", mustWork = FALSE))
-  }
-
-  # Fallback for some sourced execution contexts where `ofile` is available.
-  if (!is.null(sys.frames()[[1]]$ofile)) {
-    return(normalizePath(sys.frames()[[1]]$ofile, winslash = "/", mustWork = FALSE))
-  }
-
-  # If neither mechanism works, keep current working directory as-is.
-  NA_character_
-}
-
-script_path <- resolve_script_path()
-if (!is.na(script_path)) {
-  setwd(normalizePath(file.path(dirname(script_path), ".."), winslash = "/", mustWork = FALSE))
-}
+source("workflow/workflow_bootstrap.R")
+set_workflow_root()
 
 # -----------------------------------------------------------------------------
 # Chunk 2: Activate project environment and source core helpers.
