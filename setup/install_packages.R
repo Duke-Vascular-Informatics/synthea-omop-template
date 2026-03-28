@@ -45,6 +45,9 @@ cran_packages <- c(
   "Andromeda",           # Disk-based data frames for large cohort data
   "ParallelLogger",      # Logging framework used across OHDSI tools
   "CirceR",              # Cohort expression evaluation
+  "FeatureExtraction",   # Feature engineering package used by PLP
+  "CohortGenerator",     # Cohort generation helpers
+  "PatientLevelPrediction", # External validation framework
   # ML backend packages (used by various PLP model types)
   "glmnet",              # Regularised regression (LASSO / Ridge / EN)
   "xgboost",             # Gradient boosted trees
@@ -69,15 +72,10 @@ for (pkg in cran_packages) {
   }
 }
 
-# --- OHDSI GitHub packages ----------------------------------------------------
-# Strategy:
-# 1) Prefer CRAN when available.
-# 2) Fall back to GitHub when package is not available on CRAN.
+# --- OHDSI GitHub-only packages -----------------------------------------------
+# Keep this list limited to packages that are not available on CRAN.
 
 github_packages <- list(
-  list(package = "FeatureExtraction",      repo = "OHDSI/FeatureExtraction",      ref = "v3.6.0"),
-  list(package = "CohortGenerator",        repo = "OHDSI/CohortGenerator",        ref = "v0.9.0"),
-  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0"),
   list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
 )
 
@@ -86,18 +84,13 @@ available_cran <- tryCatch(rownames(available.packages()), error = function(e) c
 for (p in github_packages) {
   pkg_name <- p$package
 
-  if (pkg_name %in% available_cran) {
-    message("Installing ", pkg_name, " from CRAN ...")
-    renv::install(pkg_name)
-  } else {
-    # Use renv::install() with the "owner/repo@ref" specifier so renv records
-    # the GitHub source in its metadata and renv::snapshot() can track it.
-    # This is intentionally not skipped even if already installed, because a
-    # prior binary install may have left the package with an "unknown source"
-    # that would cause renv::snapshot() to abort.
-    message("Installing ", pkg_name, " from GitHub via renv (", p$repo, " @ ", p$ref, ") ...")
-    renv::install(paste0(p$repo, "@", p$ref))
-  }
+  # Use renv::install() with the "owner/repo@ref" specifier so renv records
+  # the GitHub source in its metadata and renv::snapshot() can track it.
+  # This is intentionally not skipped even if already installed, because a
+  # prior binary install may have left the package with an "unknown source"
+  # that would cause renv::snapshot() to abort.
+  message("Installing ", pkg_name, " from GitHub via renv (", p$repo, " @ ", p$ref, ") ...")
+  renv::install(paste0(p$repo, "@", p$ref))
 }
 
 # --- Snapshot environment ----------------------------------------------------
