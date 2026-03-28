@@ -30,6 +30,7 @@ installing them from GitHub with `remotes::install_github()` or `pak`:
 | `FeatureExtraction` | 3.6.0 | `internal_repo/bin/windows/contrib/4.5/FeatureExtraction_3.6.0.zip` |
 | `CohortGenerator` | 0.9.0 | `internal_repo/bin/windows/contrib/4.5/CohortGenerator_0.9.0.zip` |
 | `PatientLevelPrediction` | 6.4.0 | `internal_repo/bin/windows/contrib/4.5/PatientLevelPrediction_6.4.0.zip` |
+| `ETLSyntheaBuilder` | 2.1 | `internal_repo/bin/windows/contrib/4.5/ETLSyntheaBuilder_2.1.zip` |
 
 Use the `install_from_internal_binary()` helper in `setup/install_packages.R` for these packages.
 

@@ -88,7 +88,8 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
 github_packages <- list(
   list(package = "FeatureExtraction",      repo = "OHDSI/FeatureExtraction",      ref = "v3.6.0"),
   list(package = "CohortGenerator",        repo = "OHDSI/CohortGenerator",        ref = "v0.9.0"),
-  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0")
+  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0"),
+  list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
 )
 
 r_ver <- paste(R.version$major, sub("\\..*$", "", R.version$minor), sep = ".")

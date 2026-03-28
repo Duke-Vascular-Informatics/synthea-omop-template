@@ -10,17 +10,17 @@
 # =============================================================================
 
 # --- Java configuration (must be set before rJava / DatabaseConnector load) ---
-java_home <- "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot"
-java_bin  <- file.path(java_home, "bin")
+JAVA_HOME <- "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot"
+java_bin  <- file.path(JAVA_HOME, "bin")
 
-Sys.setenv(JAVA_HOME = java_home)
+Sys.setenv(JAVA_HOME = JAVA_HOME)
 Sys.setenv(PATH = paste(
   normalizePath(java_bin, winslash = "\\", mustWork = FALSE),
   Sys.getenv("PATH"), sep = .Platform$path.sep
 ))
 options(java.parameters = paste0(
   "-Djava.home=",
-  normalizePath(java_home, winslash = "/", mustWork = FALSE)
+  normalizePath(JAVA_HOME, winslash = "/", mustWork = FALSE)
 ))
 
 if (!dir.exists(java_home)) {
@@ -57,7 +57,8 @@ cran_packages <- c(
   "readr",
   # Dev / housekeeping
   "remotes",
-  "languageserver"       # IDE language server support
+  "languageserver",
+  "devtools"       # IDE language server support
 )
 
 installed <- rownames(installed.packages())
@@ -76,7 +77,8 @@ for (pkg in cran_packages) {
 github_packages <- list(
   list(package = "FeatureExtraction",      repo = "OHDSI/FeatureExtraction",      ref = "v3.6.0"),
   list(package = "CohortGenerator",        repo = "OHDSI/CohortGenerator",        ref = "v0.9.0"),
-  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0")
+  list(package = "PatientLevelPrediction", repo = "OHDSI/PatientLevelPrediction", ref = "v6.4.0"),
+  list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
 )
 
 r_ver <- paste(R.version$major, sub("\\..*$", "", R.version$minor), sep = ".")
@@ -122,18 +124,6 @@ for (p in github_packages) {
   remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
 }
 
-# --- ETLSyntheaBuilder (Synthea CSV -> OMOP ETL) -----------------------------
-if (!"ETLSyntheaBuilder" %in% rownames(installed.packages())) {
-  message("Installing ETLSyntheaBuilder from OHDSI/ETL-Synthea ...")
-  # ETLSyntheaBuilder is distributed from the ETL-Synthea repository.
-  # Use renv::install for reproducible project-local installation.
-  renv::install("OHDSI/ETL-Synthea")
-}
-
-if (!requireNamespace("ETLSyntheaBuilder", quietly = TRUE)) {
-  stop("ETLSyntheaBuilder installation failed or package unavailable after install.")
-}
-
 # --- Snapshot environment ----------------------------------------------------
 if (requireNamespace("renv", quietly = TRUE)) {
   renv::snapshot(prompt = FALSE)
@@ -149,6 +139,4 @@ ensure_jdbc_bundle(get_validation_config())
 message("JDBC driver provisioned.")
 
 message("\nAll packages installed and JDBC driver ready.")
-message("IMPORTANT: The Synthea->OMOP ETL path now uses EtlSyntheaBuilder.")
-message("If missing, install via renv::install(<EtlSyntheaBuilder package source>) and run renv::snapshot().")
 message("Next step: source('run_validation.R') to run the pipeline.")
