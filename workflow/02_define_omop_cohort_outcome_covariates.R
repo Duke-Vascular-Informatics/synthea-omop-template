@@ -2,7 +2,19 @@
 # Step 2: Define cohort, outcome, and covariates by OMOP concepts.
 # This step validates required definition artifacts and prints a compact manifest.
 
-source("workflow/workflow_bootstrap.R")
+bootstrap_path <- local({
+  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  if (length(file_arg) > 0) {
+    normalizePath(
+      file.path(dirname(sub("^--file=", "", file_arg[1])), "workflow_bootstrap.R"),
+      winslash = "/",
+      mustWork = FALSE
+    )
+  } else {
+    "workflow/workflow_bootstrap.R"
+  }
+})
+source(bootstrap_path)
 set_workflow_root()
 
 artifacts <- c(

@@ -1,7 +1,19 @@
 #!/usr/bin/env Rscript
 # Step 6: Data quality check against defined cohort, outcome, and covariates.
 
-source("workflow/workflow_bootstrap.R")
+bootstrap_path <- local({
+  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  if (length(file_arg) > 0) {
+    normalizePath(
+      file.path(dirname(sub("^--file=", "", file_arg[1])), "workflow_bootstrap.R"),
+      winslash = "/",
+      mustWork = FALSE
+    )
+  } else {
+    "workflow/workflow_bootstrap.R"
+  }
+})
+source(bootstrap_path)
 set_workflow_root()
 
 source("config.R")
