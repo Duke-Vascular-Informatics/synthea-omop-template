@@ -52,20 +52,6 @@ The following GitHub packages are pinned and supported through prebuilt local bi
 `setup/install_packages.R` installs from CRAN first (Duke mirror), then falls back to
 GitHub for OHDSI packages that are not available on CRAN.
 
----
-
-## Step 0 — Preflight Checks
-
-`workflow/00_preflight_checks.R`
-
-Deprecated compatibility shim. Running Step 0 now delegates to Step 1.
-
-```powershell
-Rscript workflow/00_preflight_checks.R
-```
-
----
-
 ## Step 1 — Setup Environment
 
 `workflow/01_setup_synthea_etl_qc_env.R`
