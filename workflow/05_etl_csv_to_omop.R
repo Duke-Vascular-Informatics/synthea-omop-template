@@ -12,9 +12,6 @@ csv_input_dir <- "../synthea-data/output/csv"
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
 reset_before_etl <- TRUE
 synthea_bulk_load <- TRUE
-synthea_schema <- "synthea"
-synthea_version <- "3.3.0"
-cdm_version_builder <- "5.4"
 
 positional <- character()
 for (arg in args) {
@@ -27,9 +24,6 @@ for (arg in args) {
       if (identical(key, "run_name")) run_name <- val
       if (identical(key, "reset_before_etl")) reset_before_etl <- parse_bool(val)
       if (identical(key, "synthea_bulk_load")) synthea_bulk_load <- parse_bool(val)
-      if (identical(key, "synthea_schema")) synthea_schema <- val
-      if (identical(key, "synthea_version")) synthea_version <- val
-      if (identical(key, "cdm_version_builder")) cdm_version_builder <- val
 
       if (identical(key, "force_reload_vocab") || identical(key, "vocab_file_loc")) {
         warning(
@@ -107,12 +101,8 @@ source("scripts/etl/run_synthea_full_csv_builder_etl.R")
 run_synthea_full_csv_builder_etl(
   csv_input_dir = csv_input_dir,
   run_name = run_name,
-  synthea_schema = synthea_schema,
-  synthea_version = synthea_version,
-  cdm_version = cdm_version_builder,
   reset_before_etl = reset_before_etl,
-  synthea_bulk_load = synthea_bulk_load,
-  create_extra_indices = TRUE
+  synthea_bulk_load = synthea_bulk_load
 )
 
 cat(

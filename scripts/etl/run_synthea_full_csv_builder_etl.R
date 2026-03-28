@@ -14,8 +14,7 @@ run_synthea_full_csv_builder_etl <- function(
   synthea_version = "3.3.0",
     cdm_version = "5.4",
     reset_before_etl = TRUE,
-    synthea_bulk_load = TRUE,
-    create_extra_indices = TRUE) {
+    synthea_bulk_load = TRUE) {
 
   config <- get_validation_config()
   ensure_jdbc_bundle(config)
@@ -500,13 +499,11 @@ run_synthea_full_csv_builder_etl <- function(
   
   load_event_tables_sql_server()
 
-  if (isTRUE(create_extra_indices)) {
-    suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::CreateExtraIndices", ETLSyntheaBuilder::CreateExtraIndices(
-      connectionDetails = connection_details,
-      cdmSchema = config$cdm_schema,
-      cdmVersion = cdm_version
-    )), silent = TRUE))
-  }
+  suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::CreateExtraIndices", ETLSyntheaBuilder::CreateExtraIndices(
+    connectionDetails = connection_details,
+    cdmSchema = config$cdm_schema,
+    cdmVersion = cdm_version
+  )), silent = TRUE))
 
   invisible(list(run_name = run_name, mode = "csv_builder"))
 }
