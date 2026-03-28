@@ -73,6 +73,15 @@
 #   4. Repeat until the SME signs off on the module.
 #   5. Proceed to Step 4 (generate Synthea CSV) only after sign-off.
 
+# -----------------------------------------------------------------------------
+# Chunk 1 - Workflow bootstrap
+# Purpose:
+# Resolve and source the shared workflow bootstrap helper, then normalize the
+# working directory to the repository root.
+# Code path notes:
+# - If script is executed via Rscript, parse --file= to resolve helper path.
+# - If sourced interactively, fall back to project-relative helper path.
+# -----------------------------------------------------------------------------
 bootstrap_path <- local({
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(file_arg) > 0) {
@@ -88,10 +97,28 @@ bootstrap_path <- local({
 source(bootstrap_path)
 set_workflow_root()
 
+# -----------------------------------------------------------------------------
+# Chunk 2 - Dependency guard for jsonlite
+# Purpose:
+# Ensure the JSON parser package is present before attempting to read the module
+# artifact. This is a hard stop because all downstream logic depends on it.
+# Code path notes:
+# - Success: continue.
+# - Failure: stop immediately with install guidance.
+# -----------------------------------------------------------------------------
 if (!requireNamespace("jsonlite", quietly = TRUE)) {
   stop("Package 'jsonlite' is required. Install via renv first.")
 }
 
+# -----------------------------------------------------------------------------
+# Chunk 3 - Module artifact existence and structural checks
+# Purpose:
+# Validate the core input artifact and confirm the expected Synthea structure.
+# Code path notes:
+# - Missing file: stop with path-specific error.
+# - Empty / malformed states collection: stop (cannot run coverage checks).
+# - Valid structure: proceed to concept coverage evaluation.
+# -----------------------------------------------------------------------------
 module_path <- "synthea/modules/pad_ssi.json"
 if (!file.exists(module_path)) {
   stop("Missing module file: ", module_path)
@@ -119,6 +146,15 @@ if (is.null(module$states) || length(module$states) == 0) {
 #      Note: component_concepts.csv stores OMOP standard concept_ids; the table
 #      below translates each back to the source code actually written in the JSON.
 
+# -----------------------------------------------------------------------------
+# Chunk 4 - Required concept manifest
+# Purpose:
+# Define the expected concept coverage list for target cohort, outcome cohort,
+# and risk-score covariates. Each row is a required concept-system-code triple.
+# Code path notes:
+# - This table is the contract checked against module JSON contents.
+# - Update this manifest when phenotype definitions change.
+# -----------------------------------------------------------------------------
 required_concepts <- data.frame(
   stringsAsFactors = FALSE,
   description = c(
@@ -173,6 +209,16 @@ required_concepts <- data.frame(
   )
 )
 
+# -----------------------------------------------------------------------------
+# Chunk 5 - Helper: collect all coded entries from Synthea states
+# Purpose:
+# Traverse every state and gather all (system, code) pairs from both:
+# - state-level codes[]
+# - Observation value_code payloads
+# Code path notes:
+# - Duplicates are collapsed with unique() before matching checks.
+# - Missing code fields are skipped safely.
+# -----------------------------------------------------------------------------
 # Collect every (system, code) pair that appears anywhere in the module states,
 # including value_code fields on Observation states.
 collect_module_codes <- function(states) {
@@ -202,6 +248,16 @@ collect_module_codes <- function(states) {
 
 module_codes <- collect_module_codes(module$states)
 
+# -----------------------------------------------------------------------------
+# Chunk 6 - Coverage evaluation and warning path
+# Purpose:
+# Compare required concept manifest to collected module concepts and emit
+# warnings for any missing entries.
+# Code path notes:
+# - Match found: continue silently for that concept.
+# - Match missing: emit warning and increment missing count.
+# - Warnings are non-fatal so the HTML diagram still gets generated for review.
+# -----------------------------------------------------------------------------
 n_missing <- 0L
 for (i in seq_len(nrow(required_concepts))) {
   req_sys  <- required_concepts$system[i]
@@ -218,6 +274,14 @@ for (i in seq_len(nrow(required_concepts))) {
   }
 }
 
+# -----------------------------------------------------------------------------
+# Chunk 7 - Coverage summary branch
+# Purpose:
+# Provide a concise pass/fail summary after all concept checks complete.
+# Code path notes:
+# - n_missing == 0: print PASS summary.
+# - n_missing > 0: print NOT FOUND summary and remediation hint.
+# -----------------------------------------------------------------------------
 if (n_missing == 0L) {
   cat(sprintf(
     "Coverage check PASSED: all %d required concepts found in module JSON.\n",
@@ -231,6 +295,14 @@ if (n_missing == 0L) {
   cat("Review the warnings above and update synthea/modules/pad_ssi.json accordingly.\n")
 }
 
+# -----------------------------------------------------------------------------
+# Chunk 8 - Diagram regeneration subprocess
+# Purpose:
+# Rebuild the HTML state-diagram artifact from the validated module JSON.
+# Code path notes:
+# - status == 0: generation succeeded; continue to completion message.
+# - status != 0: hard stop because downstream SME review artifact is missing.
+# -----------------------------------------------------------------------------
 # Regenerate the HTML diagram viewer from the module JSON.
 args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, "synthea/modules/pad_ssi.diagram.html")
 status <- system2(file.path(R.home("bin"), "Rscript.exe"), args = args)
@@ -238,4 +310,9 @@ if (!identical(status, 0L)) {
   stop("Failed to generate Synthea diagram HTML.")
 }
 
+# -----------------------------------------------------------------------------
+# Chunk 9 - Completion banner
+# Purpose:
+# Confirm that validation paths completed and the review artifact was generated.
+# -----------------------------------------------------------------------------
 cat("Step 3 complete: module validated and diagram HTML generated.\n")
