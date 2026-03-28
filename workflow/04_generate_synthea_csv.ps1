@@ -56,10 +56,32 @@ Push-Location $repoRoot
 # Purpose:
 # Execute the canonical Synthea runner for PAD/SSI synthetic data generation.
 # Code path notes:
+# - Pre-flight guard verifies Step 3 module sync output exists in
+#   <SyntheaHome>/src/main/resources/modules/pad_ssi.json.
 # - -RequireModuleOnly $true ensures module artifacts are required and validated.
 # - Any error bubbles up due to $ErrorActionPreference = "Stop".
 # -----------------------------------------------------------------------------
 try {
+  $moduleFileName = "pad_ssi.json"
+  $modulesDir = Join-Path $SyntheaHome "src/main/resources/modules"
+  $syncedModulePath = Join-Path $modulesDir $moduleFileName
+
+  if (!(Test-Path $modulesDir)) {
+    throw "Expected Synthea modules directory not found under SyntheaHome: $modulesDir"
+  }
+
+  if (!(Test-Path $syncedModulePath)) {
+    throw @"
+Expected module file from Step 3 was not found:
+  $syncedModulePath
+
+Run Step 3 first to sync the module JSON into your Synthea checkout:
+  Rscript workflow/03_generate_synthea_module_artifacts.R
+"@
+  }
+
+  Write-Host "Verified Step 3 module sync: $syncedModulePath" -ForegroundColor Cyan
+
   & "scripts/synthea/run_synthea_pad_ssi.ps1" `
     -SyntheaHome $SyntheaHome `
     -Population $Population `
