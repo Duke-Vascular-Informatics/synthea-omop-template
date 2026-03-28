@@ -56,28 +56,41 @@ if (length(missing_packages) > 0) {
 }
 
 # -----------------------------------------------------------------------------
-# Chunk 4: Validate required repository artifacts exist.
+# Chunk 4: Validate repository artifacts with strict vs. informational severity.
 # Purpose:
-# - Ensure critical SQL/cohort/risk-score/module files are present in the repo.
-# - Fail fast with a concrete missing-file list if the checkout is incomplete.
+# - Keep hard failure only for baseline files that must exist in a clean clone.
+# - Avoid failing preflight on files that may be generated later in the workflow
+#   or are optional depending on execution path.
 # Outcome:
-# - Hard stop (`stop`) when required files are missing.
+# - `stop()` only for truly required baseline artifacts.
+# - Informational notes for optional/later-generated artifacts.
 # -----------------------------------------------------------------------------
 
-required_files <- c(
+baseline_required_files <- c(
   "config.R",
   "cohorts/target_surgery.sql",
   "cohorts/outcome_ssi.sql",
   "risk_score/components.csv",
   "risk_score/component_concepts.csv",
-  "risk_score/risk_lookup.csv",
+  "risk_score/risk_lookup.csv"
+)
+
+missing_baseline_files <- baseline_required_files[!file.exists(baseline_required_files)]
+if (length(missing_baseline_files) > 0) {
+  stop("Missing required baseline files: ", paste(missing_baseline_files, collapse = ", "))
+}
+
+optional_or_later_files <- c(
   "synthea/modules/pad_ssi.json",
   "scripts/sql/synthea_csv_to_omop_transform.sql"
 )
 
-missing_files <- required_files[!file.exists(required_files)]
-if (length(missing_files) > 0) {
-  stop("Missing required files: ", paste(missing_files, collapse = ", "))
+missing_optional_files <- optional_or_later_files[!file.exists(optional_or_later_files)]
+if (length(missing_optional_files) > 0) {
+  message(
+    "Preflight note: optional or later-generated files not found (non-fatal): ",
+    paste(missing_optional_files, collapse = ", ")
+  )
 }
 
 # -----------------------------------------------------------------------------
