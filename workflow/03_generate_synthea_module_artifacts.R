@@ -129,6 +129,74 @@ if (is.null(module$states) || length(module$states) == 0) {
   stop("Synthea module has no states: ", module_path)
 }
 
+# -----------------------------------------------------------------------------
+# Chunk 3b - Sync module JSON into Synthea checkout modules folder
+# Purpose:
+# Ensure the validated module JSON is copied into the Synthea runtime module
+# directory so downstream CSV generation can execute against the latest module.
+# Code path notes:
+# - Preferred destination is the user's explicit local Synthea checkout path.
+# - If unavailable, fall back to SYNTHEA_HOME and then repo-local external/synthea.
+# - If no valid modules directory is found, fail fast with guidance.
+# -----------------------------------------------------------------------------
+modules_dir_candidates <- c(
+  "C:/Users/rapiduser/source/repos/synthea/src/main/resources/modules",
+  if (nzchar(Sys.getenv("SYNTHEA_HOME"))) {
+    file.path(Sys.getenv("SYNTHEA_HOME"), "src", "main", "resources", "modules")
+  },
+  "external/synthea/src/main/resources/modules"
+)
+modules_dir_candidates <- unique(modules_dir_candidates)
+modules_dir_candidates <- modules_dir_candidates[nzchar(modules_dir_candidates)]
+
+target_modules_dir <- NA_character_
+for (candidate in modules_dir_candidates) {
+  if (dir.exists(candidate)) {
+    target_modules_dir <- normalizePath(candidate, winslash = "/", mustWork = TRUE)
+    break
+  }
+}
+
+if (is.na(target_modules_dir)) {
+  stop(
+    "Could not find a Synthea modules directory. Checked: ",
+    paste(modules_dir_candidates, collapse = ", "),
+    ". Ensure your Synthea checkout exists or set SYNTHEA_HOME."
+  )
+}
+
+target_module_path <- file.path(target_modules_dir, basename(module_path))
+
+# Replace prior version explicitly to avoid any ambiguity about which file is
+# active in the Synthea checkout.
+if (file.exists(target_module_path)) {
+  removed <- file.remove(target_module_path)
+  if (!removed) {
+    stop("Failed to remove existing module file before copy: ", target_module_path)
+  }
+}
+
+copy_ok <- file.copy(module_path, target_module_path, overwrite = FALSE)
+if (!copy_ok) {
+  stop("Failed to copy module JSON to Synthea modules folder: ", target_module_path)
+}
+
+if (!file.exists(target_module_path)) {
+  stop("Module copy reported success but destination file is missing: ", target_module_path)
+}
+
+src_size <- file.info(module_path)$size
+dst_size <- file.info(target_module_path)$size
+if (!identical(src_size, dst_size)) {
+  stop(
+    "Module copy verification failed (size mismatch). Source bytes=", src_size,
+    ", destination bytes=", dst_size,
+    ". Destination: ", target_module_path
+  )
+}
+
+cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
+
 # ---------------------------------------------------------------------------
 # COHORT / COVARIATE COVERAGE CHECK
 # ---------------------------------------------------------------------------
