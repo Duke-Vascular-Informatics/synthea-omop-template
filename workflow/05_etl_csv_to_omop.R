@@ -2,43 +2,11 @@
 # Step 5: ETL Synthea output to OMOP.
 # Full-domain CSV -> OMOP ETL via ETLSyntheaBuilder.
 
-args <- commandArgs(trailingOnly = TRUE)
-
-parse_bool <- function(x) {
-  tolower(trimws(as.character(x))) %in% c("1", "true", "t", "yes", "y")
-}
-
+# Fixed script settings (Step 1 sets working directory/environment).
 csv_input_dir <- "../synthea-data/output/csv"
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
 reset_before_etl <- TRUE
 synthea_bulk_load <- TRUE
-
-positional <- character()
-for (arg in args) {
-  if (grepl("^--", arg)) {
-    m <- regmatches(arg, regexec("^--([^=]+)=(.*)$", arg))[[1]]
-    if (length(m) == 3) {
-      key <- m[2]
-      val <- m[3]
-      if (identical(key, "csv_input_dir")) csv_input_dir <- val
-      if (identical(key, "run_name")) run_name <- val
-      if (identical(key, "reset_before_etl")) reset_before_etl <- parse_bool(val)
-      if (identical(key, "synthea_bulk_load")) synthea_bulk_load <- parse_bool(val)
-
-      if (identical(key, "force_reload_vocab") || identical(key, "vocab_file_loc")) {
-        warning(
-          "Arguments --force_reload_vocab and --vocab_file_loc are deprecated and ignored. ",
-          "Vocabulary loading is now externalized to 'vocab_omop_etl'."
-        )
-      }
-    }
-  } else {
-    positional <- c(positional, arg)
-  }
-}
-
-if (length(positional) >= 1 && nzchar(positional[[1]])) csv_input_dir <- positional[[1]]
-if (length(positional) >= 2 && nzchar(positional[[2]])) run_name <- positional[[2]]
 
 assert_step1_environment <- function() {
   required_paths <- c(
