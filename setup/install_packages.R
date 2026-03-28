@@ -81,23 +81,22 @@ github_packages <- list(
   list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
 )
 
-installed <- rownames(installed.packages())
 available_cran <- tryCatch(rownames(available.packages()), error = function(e) character(0))
 
 for (p in github_packages) {
   pkg_name <- p$package
 
-  if (pkg_name %in% installed) {
-    message(pkg_name, " already installed – skipping.")
-    next
-  }
-
   if (pkg_name %in% available_cran) {
     message("Installing ", pkg_name, " from CRAN ...")
     renv::install(pkg_name)
   } else {
-    message("Installing ", pkg_name, " from GitHub (", p$repo, " @ ", p$ref, ") ...")
-    remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
+    # Use renv::install() with the "owner/repo@ref" specifier so renv records
+    # the GitHub source in its metadata and renv::snapshot() can track it.
+    # This is intentionally not skipped even if already installed, because a
+    # prior binary install may have left the package with an "unknown source"
+    # that would cause renv::snapshot() to abort.
+    message("Installing ", pkg_name, " from GitHub via renv (", p$repo, " @ ", p$ref, ") ...")
+    renv::install(paste0(p$repo, "@", p$ref))
   }
 }
 
