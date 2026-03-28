@@ -23,8 +23,8 @@ options(java.parameters = paste0(
   normalizePath(JAVA_HOME, winslash = "/", mustWork = FALSE)
 ))
 
-if (!dir.exists(java_home)) {
-  stop("Configured JAVA_HOME does not exist: ", java_home)
+if (!dir.exists(JAVA_HOME)) {
+  stop("Configured JAVA_HOME does not exist: ", JAVA_HOME)
 }
 
 # --- Activate renv (creates library in project directory) ---------------------
@@ -33,9 +33,9 @@ if (file.exists("renv/activate.R")) source("renv/activate.R")
 # --- CRAN mirror --------------------------------------------------------------
 options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
 
-# --- Ensure remotes / pak are available for GitHub installs ------------------
-if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-if (!requireNamespace("rJava",   quietly = TRUE)) install.packages("rJava")
+# --- Ensure remotes / rJava are available for GitHub installs ----------------
+if (!requireNamespace("remotes", quietly = TRUE)) renv::install("remotes")
+if (!requireNamespace("rJava", quietly = TRUE)) renv::install("rJava")
 
 # --- CRAN packages ------------------------------------------------------------
 cran_packages <- c(
@@ -64,15 +64,15 @@ cran_packages <- c(
 installed <- rownames(installed.packages())
 for (pkg in cran_packages) {
   if (!pkg %in% installed) {
-    message("Installing ", pkg, " ...")
-    install.packages(pkg)
+    message("Installing ", pkg, " from CRAN ...")
+    renv::install(pkg)
   }
 }
 
 # --- OHDSI GitHub packages ----------------------------------------------------
 # Strategy:
-# 1) Prefer internal prebuilt binaries in internal_repo/bin/windows/contrib/<R>.
-# 2) If missing, fall back to GitHub install (for online bootstrap only).
+# 1) Prefer CRAN when available.
+# 2) Fall back to GitHub when package is not available on CRAN.
 
 github_packages <- list(
   list(package = "FeatureExtraction",      repo = "OHDSI/FeatureExtraction",      ref = "v3.6.0"),
@@ -81,28 +81,8 @@ github_packages <- list(
   list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
 )
 
-r_ver <- paste(R.version$major, sub("\\..*$", "", R.version$minor), sep = ".")
-internal_repo <- file.path(getwd(), "internal_repo", "bin", "windows", "contrib", r_ver)
-
-install_from_internal_binary <- function(pkg_name, repo_path) {
-  if (!dir.exists(repo_path)) return(FALSE)
-
-  # Match package zip regardless of version suffix.
-  zip_files <- list.files(
-    repo_path,
-    pattern = paste0("^", pkg_name, "_.*\\.zip$"),
-    full.names = TRUE
-  )
-  if (length(zip_files) == 0) return(FALSE)
-
-  zip_files <- zip_files[order(file.info(zip_files)$mtime, decreasing = TRUE)]
-  zip_file <- zip_files[[1]]
-  message("Installing ", pkg_name, " from internal binary: ", basename(zip_file))
-  install.packages(zip_file, repos = NULL, type = "win.binary")
-  TRUE
-}
-
 installed <- rownames(installed.packages())
+available_cran <- tryCatch(rownames(available.packages()), error = function(e) character(0))
 
 for (p in github_packages) {
   pkg_name <- p$package
@@ -112,16 +92,13 @@ for (p in github_packages) {
     next
   }
 
-  installed_from_internal <- install_from_internal_binary(pkg_name, internal_repo)
-  if (isTRUE(installed_from_internal)) {
-    next
+  if (pkg_name %in% available_cran) {
+    message("Installing ", pkg_name, " from CRAN ...")
+    renv::install(pkg_name)
+  } else {
+    message("Installing ", pkg_name, " from GitHub (", p$repo, " @ ", p$ref, ") ...")
+    remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
   }
-
-  message(
-    "No internal binary found for ", pkg_name,
-    " in ", internal_repo, ". Falling back to GitHub install ..."
-  )
-  remotes::install_github(p$repo, ref = p$ref, upgrade = "never")
 }
 
 # --- Snapshot environment ----------------------------------------------------

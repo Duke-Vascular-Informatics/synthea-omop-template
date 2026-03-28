@@ -1,5 +1,5 @@
 ---
-description: "Use when installing, loading, or suggesting R packages. Enforces CRAN mirror, renv workflow, and local binary installation for offline OHDSI packages (FeatureExtraction, CohortGenerator, PatientLevelPrediction)."
+description: "Use when installing, loading, or suggesting R packages. Enforces CRAN mirror, renv workflow, and CRAN-first with GitHub fallback for non-CRAN OHDSI packages."
 applyTo: "**/*.R"
 ---
 
@@ -22,25 +22,19 @@ This project uses `renv` for reproducible package management:
 - **Restore environment**: `renv::restore()` on a fresh clone
 - Never edit `renv.lock` manually
 
-## Offline OHDSI GitHub Packages
+## OHDSI Packages Not On CRAN
 
-Three OHDSI packages are pre-built as local Windows binaries. **Never** suggest
-`remotes::install_github()`, `pak::pkg_install()`, or any GitHub-based install for these:
+Use CRAN first. When a required package is not available on CRAN, use GitHub fallback via
+`remotes::install_github()` with the pinned refs in `setup/install_packages.R`.
 
-| Package | Version | Local binary path |
-|---------|---------|-------------------|
-| `FeatureExtraction` | 3.6.0 | `internal_repo/bin/windows/contrib/4.5/FeatureExtraction_3.6.0.zip` |
-| `CohortGenerator` | 0.9.0 | `internal_repo/bin/windows/contrib/4.5/CohortGenerator_0.9.0.zip` |
-| `PatientLevelPrediction` | 6.4.0 | `internal_repo/bin/windows/contrib/4.5/PatientLevelPrediction_6.4.0.zip` |
+Current GitHub fallback set:
 
-Use the project helper:
-
-```r
-# Defined in setup/install_packages.R
-install_from_internal_binary("FeatureExtraction")
-install_from_internal_binary("CohortGenerator")
-install_from_internal_binary("PatientLevelPrediction")
-```
+| Package | Repo | Ref |
+|---------|------|-----|
+| `FeatureExtraction` | `OHDSI/FeatureExtraction` | `v3.6.0` |
+| `CohortGenerator` | `OHDSI/CohortGenerator` | `v0.9.0` |
+| `PatientLevelPrediction` | `OHDSI/PatientLevelPrediction` | `v6.4.0` |
+| `ETLSyntheaBuilder` | `OHDSI/ETL-Synthea` | `v2.1.0` |
 
 ## Other OHDSI Packages
 
@@ -48,5 +42,5 @@ install_from_internal_binary("PatientLevelPrediction")
 
 ## Version Alignment
 
-Do not suggest upgrading any of the three pre-built packages above beyond their pinned versions
-without first rebuilding the local binary via `scripts/prebuild_github_binaries.R`.
+Do not suggest upgrading pinned GitHub package refs without validating compatibility first.
+Keep R version compatibility in mind (currently R 4.5) and python version 3.9.25 for OHDSI package build scripts.

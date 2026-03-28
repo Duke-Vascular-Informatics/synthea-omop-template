@@ -20,19 +20,16 @@ intentionally self-contained and offline-capable.
   Do not suggest the default `https://cloud.r-project.org` or any other mirror.
 - See `setup/install_packages.R` for the canonical install workflow.
 
-## Offline GitHub Packages
+## GitHub Package Fallback
 
-Three OHDSI packages are **locally hosted as pre-built Windows binaries** — never suggest
-installing them from GitHub with `remotes::install_github()` or `pak`:
+Some OHDSI packages are not on CRAN and must be installed from GitHub when unavailable on CRAN.
 
-| Package | Version | Local binary |
-|---------|---------|--------------|
-| `FeatureExtraction` | 3.6.0 | `internal_repo/bin/windows/contrib/4.5/FeatureExtraction_3.6.0.zip` |
-| `CohortGenerator` | 0.9.0 | `internal_repo/bin/windows/contrib/4.5/CohortGenerator_0.9.0.zip` |
-| `PatientLevelPrediction` | 6.4.0 | `internal_repo/bin/windows/contrib/4.5/PatientLevelPrediction_6.4.0.zip` |
-| `ETLSyntheaBuilder` | 2.1 | `internal_repo/bin/windows/contrib/4.5/ETLSyntheaBuilder_2.1.zip` |
-
-Use the `install_from_internal_binary()` helper in `setup/install_packages.R` for these packages.
+- Use CRAN first (via `renv::install()`), then fall back to `remotes::install_github()` for non-CRAN packages.
+- Current GitHub fallback packages in `setup/install_packages.R`:
+  - `FeatureExtraction` (`OHDSI/FeatureExtraction`, `v3.6.0`)
+  - `CohortGenerator` (`OHDSI/CohortGenerator`, `v0.9.0`)
+  - `PatientLevelPrediction` (`OHDSI/PatientLevelPrediction`, `v6.4.0`)
+  - `ETLSyntheaBuilder` (`OHDSI/ETL-Synthea`, `v2.1.0`)
 
 ## Architecture
 
