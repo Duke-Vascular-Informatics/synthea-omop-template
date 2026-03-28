@@ -11,7 +11,7 @@ run_synthea_full_csv_builder_etl <- function(
     csv_input_dir,
     run_name = paste0("padssi-csv-full-", format(Sys.time(), "%Y%m%d-%H%M%S")),
     synthea_schema = "synthea",
-  synthea_version = "3.3.0",
+    synthea_version = "3.3.0",
     cdm_version = "5.4",
     reset_before_etl = TRUE,
     synthea_bulk_load = TRUE) {
@@ -188,8 +188,8 @@ run_synthea_full_csv_builder_etl <- function(
       )
 
       ddl_dir <- file.path("output", "cdm_sql")
-      missing_ddl_path <- file.path(ddl_dir, "create_missing_cdm_tables.sql")
-      if (!file.exists(missing_ddl_path)) {
+      full_ddl_path <- file.path(ddl_dir, paste0("OMOPCDM_sql_server_", cdm_version, "_ddl.sql"))
+      if (!file.exists(full_ddl_path)) {
         run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables(sqlOnly)", ETLSyntheaBuilder::CreateCDMTables(
           connectionDetails = connection_details,
           cdmSchema = config$cdm_schema,
@@ -199,14 +199,52 @@ run_synthea_full_csv_builder_etl <- function(
         ))
       }
 
-      if (!file.exists(missing_ddl_path)) {
-        stop("Missing CDM DDL file not found: ", missing_ddl_path)
+      if (!file.exists(full_ddl_path)) {
+        stop("Missing full CDM DDL file not found: ", full_ddl_path)
       }
 
-      missing_ddl_sql <- paste(readLines(missing_ddl_path, warn = FALSE), collapse = "\n")
-      missing_ddl_sql <- gsub("(?i)\\bcdm_synthea\\.", paste0(config$cdm_schema, "."), missing_ddl_sql, perl = TRUE)
-      missing_ddl_sql <- gsub("\\[cdm_synthea\\]", paste0("[", config$cdm_schema, "]"), missing_ddl_sql)
-      execute_sql_with_retry(conn_cdm, missing_ddl_sql)
+      ddl_lines <- readLines(full_ddl_path, warn = FALSE)
+      create_line_idx <- grep("^\\s*CREATE\\s+TABLE\\s+", ddl_lines, ignore.case = TRUE)
+      if (length(create_line_idx) == 0L) {
+        stop("No CREATE TABLE statements found in: ", full_ddl_path)
+      }
+
+      for (k in seq_along(create_line_idx)) {
+        start_idx <- create_line_idx[[k]]
+        end_idx <- if (k < length(create_line_idx)) create_line_idx[[k + 1L]] - 1L else length(ddl_lines)
+        create_line <- ddl_lines[[start_idx]]
+
+        m <- regexec(
+          "(?i)^\\s*CREATE\\s+TABLE\\s+([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)",
+          create_line,
+          perl = TRUE
+        )
+        parts <- regmatches(create_line, m)[[1]]
+        if (length(parts) < 3L) {
+          next
+        }
+
+        table_name <- tolower(parts[[3]])
+        if (!(table_name %in% missing_tables) || (table_name %in% vocab_tables)) {
+          next
+        }
+
+        stmt <- paste(ddl_lines[start_idx:end_idx], collapse = "\n")
+        stmt <- sub(
+          "(?i)^\\s*CREATE\\s+TABLE\\s+[A-Za-z0-9_]+\\.",
+          paste0("CREATE TABLE ", config$cdm_schema, "."),
+          stmt,
+          perl = TRUE
+        )
+
+        create_sql <- paste0(
+          "IF OBJECT_ID('", config$cdm_schema, ".", table_name, "','U') IS NULL\n",
+          "BEGIN\n",
+          stmt,
+          "\nEND;"
+        )
+        execute_sql_with_retry(conn_cdm, create_sql)
+      }
 
       still_missing <- required_cdm_tables[!vapply(
         required_cdm_tables,
@@ -259,6 +297,61 @@ run_synthea_full_csv_builder_etl <- function(
           select_tail
         )
       }
+    }
+
+    # insert_drug_era.sql joins drug_exposure directly against concept_ancestor
+    # (75M rows), causing CXSYNC_PORT parallelism stalls that never complete.
+    # Fix: pre-materialize the ~300-row drug→ingredient mapping into a temp table,
+    # then rewrite ctePreDrugTarget to join that instead.
+    if (tolower(basename(file_path)) == "insert_drug_era.sql") {
+      schema <- config$cdm_schema
+      schema_esc <- gsub("\\.", "\\\\.", schema)
+
+      # Replace c.concept_id alias in ctePreDrugTarget SELECT list
+      sql <- gsub(
+        "c\\.concept_id\\s+AS\\s+ingredient_concept_id",
+        "dim.ingredient_concept_id",
+        sql, ignore.case = TRUE
+      )
+
+      # Replace the expensive 3-table JOIN+WHERE block with a join to the pre-computed map.
+      # The (?si) flags make . match newlines and the pattern case-insensitive.
+      # We consume through "AND c.concept_class_id = 'Ingredient'..." and replace
+      # with the map join + "WHERE 1=1" so the remaining AND clauses stay valid.
+      sql <- gsub(
+        paste0("(?si)JOIN\\s+", schema_esc, "\\.concept_ancestor\\s+ca",
+               ".*?AND\\s+c\\.concept_class_id\\s*=\\s*'Ingredient'[^\n]*"),
+        paste0("JOIN #drug_ingredient_map dim ON dim.drug_concept_id = d.drug_concept_id\n",
+               "\t\tWHERE 1=1"),
+        sql, perl = TRUE
+      )
+
+      # Add OPTION(MAXDOP 1) to the final SELECT INTO to prevent parallel stalls
+      # on the window functions over the (now small) intermediate dataset.
+      sql <- sub(
+        "GROUP BY person_id, drug_concept_id, drug_era_end_date;",
+        "GROUP BY person_id, drug_concept_id, drug_era_end_date\nOPTION (MAXDOP 1);",
+        sql, ignore.case = TRUE
+      )
+
+      # Prepend temp table pre-computation (runs in seconds: 257 distinct concepts)
+      prep <- paste0(
+        "IF OBJECT_ID('tempdb..#drug_ingredient_map', 'U') IS NOT NULL\n",
+        "  DROP TABLE #drug_ingredient_map;\n\n",
+        "SELECT DISTINCT d.drug_concept_id, c.concept_id AS ingredient_concept_id\n",
+        "INTO #drug_ingredient_map\n",
+        "FROM ", schema, ".drug_exposure d\n",
+        "  JOIN ", schema, ".concept_ancestor ca\n",
+        "    ON ca.descendant_concept_id = d.drug_concept_id\n",
+        "  JOIN ", schema, ".concept c\n",
+        "    ON ca.ancestor_concept_id = c.concept_id\n",
+        "WHERE c.vocabulary_id = 'RxNorm'\n",
+        "  AND c.concept_class_id = 'Ingredient'\n",
+        "  AND d.drug_concept_id != 0\n",
+        "OPTION (MAXDOP 1);\n\n",
+        "CREATE INDEX IX_dim_dc ON #drug_ingredient_map (drug_concept_id);\n\n"
+      )
+      sql <- paste0(prep, sql)
     }
 
     execute_sql_with_retry(connection, sql)
