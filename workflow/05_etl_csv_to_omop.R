@@ -1,13 +1,82 @@
 #!/usr/bin/env Rscript
-# Step 5: ETL Synthea output to OMOP.
-# Full-domain CSV -> OMOP ETL via ETLSyntheaBuilder.
+# Step 5: ETL Synthea output CSV files into OMOP CDM using ETLSyntheaBuilder.
+#
+# Purpose:
+# - Execute a full-domain Synthea CSV -> OMOP ETL run for this study.
+# - Keep ETLBuilder table lifecycle isolated to a dedicated schema to avoid
+#   DDL/constraint mismatches with previously created OMOP tables.
+#
+# What this wrapper script does:
+# 1) Verifies expected project context (Step 1 must have been run).
+# 2) Activates renv and prepares Java/JDBC settings used by OHDSI packages.
+# 3) Validates required packages and installs missing packages via renv.
+# 4) Prints explicit runtime configuration for auditability.
+# 5) Calls scripts/etl/run_synthea_full_csv_builder_etl.R to perform ETL.
+#
+# Default Step 5 strategy:
+# - Target CDM schema: omop_synth_pad_oler_ssi
+# - Vocabulary mode   : ETLSyntheaBuilder::LoadVocabFromCsv (README-style)
+# - Vocabulary folder : supplied via env var OHDSI_VOCAB_CSV_DIR
+#
+# Expected vocabulary folder contents:
+# - CONCEPT.csv
+# - CONCEPT_ANCESTOR.csv
+# - CONCEPT_CLASS.csv
+# - CONCEPT_RELATIONSHIP.csv
+# - CONCEPT_SYNONYM.csv
+# - DOMAIN.csv
+# - DRUG_STRENGTH.csv
+# - RELATIONSHIP.csv
+# - VOCABULARY.csv
+# - SOURCE_TO_CONCEPT_MAP.csv
+#
+# Usage example (PowerShell):
+#   $env:OHDSI_VOCAB_CSV_DIR = "C:\\path\\to\\Vocabulary_YYYYMMDD"
+#   Rscript workflow/05_etl_csv_to_omop.R
+#
+# Notes:
+# - This script intentionally keeps values explicit and readable instead of
+#   over-generalizing with many CLI switches.
+# - Edit the settings block below when you need a one-off rerun variant.
 
-# Fixed script settings (Step 1 sets working directory/environment).
+# -----------------------------------------------------------------------------
+# Step-level runtime settings
+# -----------------------------------------------------------------------------
+# Path to Synthea CSV output directory produced by Step 4.
 csv_input_dir <- "../synthea-data/output/csv"
+
+# ETL run identifier that appears in logs/output metadata.
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
+
+# TRUE  = drop/recreate staging/event artifacts before load.
+# FALSE = incremental/reuse behavior where possible.
 reset_before_etl <- TRUE
+
+# TRUE  = attempt SQL Server bulk insert path first.
+# FALSE = force non-bulk row load path.
 synthea_bulk_load <- TRUE
 
+# TRUE  = print verbose ETL logs/progress ticks.
+verbose <- TRUE
+
+# TRUE  = reload vocab into target CDM schema from CSV folder.
+# FALSE = do not use CSV vocab load path (helper script may use fallback logic).
+reload_vocab_from_csv <- TRUE
+
+# Required when reload_vocab_from_csv = TRUE.
+# Set in shell, for example: $env:OHDSI_VOCAB_CSV_DIR = "C:\\Vocabulary_20250301"
+vocab_file_loc <- Sys.getenv("OHDSI_VOCAB_CSV_DIR", unset = "C:/Users/rapiduser/omop-vocab")
+
+# OHDSI vocabulary distributions are tab-delimited.
+vocab_delimiter <- "\t"
+
+# Fresh CDM schema used only for ETLSyntheaBuilder-driven table lifecycle.
+target_cdm_schema <- "omop_synth_pad_oler_ssi"
+
+# Fallback vocabulary source schema if CSV reload is disabled.
+vocabulary_source_schema <- "cdm_synthea"
+
+# Guardrail to ensure this script is run from the project root after Step 1 setup.
 assert_step1_environment <- function() {
   required_paths <- c(
     "renv/activate.R",
@@ -31,23 +100,45 @@ assert_step1_environment <- function() {
 
 assert_step1_environment()
 
+# Activate project package library.
 source("renv/activate.R")
 if (requireNamespace("renv", quietly = TRUE)) {
   renv::load(project = getwd())
 }
 
+# Load central configuration and initialize Java for rJava/DatabaseConnector.
 source("config.R")
 cfg <- get_validation_config()
 if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home)) {
   java_bin <- file.path(cfg$java_home, "bin")
   Sys.setenv(JAVA_HOME = cfg$java_home)
-  Sys.setenv(PATH = paste(normalizePath(java_bin, winslash = "/", mustWork = FALSE), Sys.getenv("PATH"), sep = .Platform$path.sep))
+  Sys.setenv(PATH = paste(
+    normalizePath(java_bin, winslash = "/", mustWork = FALSE),
+    Sys.getenv("PATH"),
+    sep = .Platform$path.sep
+  ))
   options(java.parameters = paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE)))
+
+  # Set the JDBC Windows Integrated Authentication native library path so that
+  # DatabaseConnector can locate sqljdbc_auth.dll without needing manual env-var
+  # setup before invoking Rscript.  Both JAVA_TOOL_OPTIONS and PATH are required:
+  # - JAVA_TOOL_OPTIONS passes -Djava.library.path to the JVM at startup.
+  # - PATH lets Windows resolve the DLL's own dependencies from the same directory.
+  if (!is.null(cfg$jdbc_auth_dir) && nzchar(cfg$jdbc_auth_dir) && dir.exists(cfg$jdbc_auth_dir)) {
+    jdbc_auth_native <- normalizePath(cfg$jdbc_auth_dir, winslash = "/", mustWork = FALSE)
+    Sys.setenv(JAVA_TOOL_OPTIONS = paste0("-Djava.library.path=", jdbc_auth_native))
+    Sys.setenv(PATH = paste(
+      jdbc_auth_native,
+      Sys.getenv("PATH"),
+      sep = .Platform$path.sep
+    ))
+  }
 }
 
 required_pkgs <- c("DatabaseConnector", "SqlRender", "data.table")
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs) > 0) {
+  # Enforce repository-standard CRAN mirror for reproducibility.
   options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
   message("Installing missing Step 5 packages via renv: ", paste(missing_pkgs, collapse = ", "))
   for (pkg in missing_pkgs) {
@@ -60,26 +151,55 @@ if (length(missing_pkgs) > 0) {
 
 missing_pkgs_after_install <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs_after_install) > 0) {
-  stop("Step 5 cannot continue; missing packages after install attempt: ",
-       paste(missing_pkgs_after_install, collapse = ", "))
+  stop(
+    "Step 5 cannot continue; missing packages after install attempt: ",
+    paste(missing_pkgs_after_install, collapse = ", ")
+  )
 }
 
+message("=== Step 5 configuration ===")
+message("JDBC auth DLL directory: ", if (!is.null(cfg$jdbc_auth_dir) && dir.exists(cfg$jdbc_auth_dir)) cfg$jdbc_auth_dir else "<not found>")
+message("Target CDM schema      : ", target_cdm_schema)
+message("Reload vocab from CSV  : ", ifelse(reload_vocab_from_csv, "true", "false"))
+if (reload_vocab_from_csv) {
+  message("Vocab CSV directory    : ", ifelse(nzchar(vocab_file_loc), vocab_file_loc, "<unset>"))
+  if (!nzchar(vocab_file_loc)) {
+    stop(
+      "OHDSI_VOCAB_CSV_DIR is not set. Set this environment variable to the vocabulary CSV folder before running Step 5.",
+      call. = FALSE
+    )
+  }
+}
+message("Vocabulary source schema (fallback): ", vocabulary_source_schema)
+message("Reset before ETL       : ", ifelse(reset_before_etl, "true", "false"))
+message("Synthea bulk load      : ", ifelse(synthea_bulk_load, "true", "false"))
+message("CSV input directory    : ", normalizePath(csv_input_dir, winslash = "/", mustWork = FALSE))
+message("Run name               : ", run_name)
+
+# Delegate actual ETL execution to the main ETLBuilder orchestration script.
 source("scripts/etl/run_synthea_full_csv_builder_etl.R")
 
 run_synthea_full_csv_builder_etl(
   csv_input_dir = csv_input_dir,
   run_name = run_name,
+  cdm_schema = target_cdm_schema,
+  vocabulary_source_schema = vocabulary_source_schema,
+  reload_vocab_from_csv = reload_vocab_from_csv,
+  vocab_file_loc = vocab_file_loc,
+  vocab_delimiter = vocab_delimiter,
   reset_before_etl = reset_before_etl,
-  synthea_bulk_load = synthea_bulk_load
+  synthea_bulk_load = synthea_bulk_load,
+  verbose = verbose
 )
 
 cat(
-  "Step 5 complete: full-domain CSV ETL loaded to OMOP. run_name=",
-  run_name,
-  ", reset_before_etl=",
-  ifelse(reset_before_etl, "true", "false"),
-  ", synthea_bulk_load=",
-  ifelse(synthea_bulk_load, "true", "false"),
+  "Step 5 complete: full-domain CSV ETL loaded to OMOP.",
+  "run_name=", run_name,
+  ", cdm_schema=", target_cdm_schema,
+  ", reload_vocab_from_csv=", ifelse(reload_vocab_from_csv, "true", "false"),
+  ", vocab_source_schema=", vocabulary_source_schema,
+  ", reset_before_etl=", ifelse(reset_before_etl, "true", "false"),
+  ", synthea_bulk_load=", ifelse(synthea_bulk_load, "true", "false"),
   "\n",
   sep = ""
 )
