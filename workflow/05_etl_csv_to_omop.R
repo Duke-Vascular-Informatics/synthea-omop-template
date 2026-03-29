@@ -71,7 +71,16 @@ vocab_file_loc <- Sys.getenv("OHDSI_VOCAB_CSV_DIR", unset = "C:/Users/rapiduser/
 vocab_delimiter <- "\t"
 
 # Fresh CDM schema used only for ETLSyntheaBuilder-driven table lifecycle.
-target_cdm_schema <- "omop_synth_pad_oler_ssi_03"
+# Auto-increment mode picks the next available suffix each run:
+#   omop_synth_pad_oler_ssi_02, _03, _04, ...
+target_cdm_schema_base <- "omop_synth_pad_oler_ssi"
+target_cdm_schema_auto_increment <- TRUE
+target_cdm_schema_start_suffix <- 2L
+target_cdm_schema <- paste0(
+  target_cdm_schema_base,
+  "_",
+  sprintf("%02d", target_cdm_schema_start_suffix)
+)
 
 # Fallback vocabulary source schema if CSV reload is disabled.
 vocabulary_source_schema <- "cdm_synthea"
@@ -154,6 +163,73 @@ if (length(missing_pkgs_after_install) > 0) {
   stop(
     "Step 5 cannot continue; missing packages after install attempt: ",
     paste(missing_pkgs_after_install, collapse = ", ")
+  )
+}
+
+# Resolve target CDM schema name automatically by scanning existing schemas and
+# picking the next numeric suffix. This avoids reusing a failed-attempt schema
+# and triggering huge logged DELETE operations on retry.
+if (isTRUE(target_cdm_schema_auto_increment)) {
+  resolve_next_cdm_schema <- function(cfg, base_schema, start_suffix = 2L) {
+    connection_details <- DatabaseConnector::createConnectionDetails(
+      dbms = cfg$dbms,
+      server = cfg$server,
+      user = "",
+      password = "",
+      pathToDriver = cfg$jdbc_runtime_dir,
+      extraSettings = paste0(
+        "database=", cfg$database,
+        ";integratedSecurity=true",
+        ";authenticationScheme=NativeAuthentication",
+        ";trustServerCertificate=true",
+        ";portNumber=", cfg$sql_server_port
+      )
+    )
+
+    conn <- DatabaseConnector::connect(connection_details)
+    on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
+
+    safe_base <- gsub("'", "''", base_schema, fixed = TRUE)
+    sql <- paste0(
+      "SELECT name FROM sys.schemas ",
+      "WHERE name = '", safe_base, "' ",
+      "   OR name LIKE '", safe_base, "[_]%';"
+    )
+    schema_rows <- DatabaseConnector::querySql(conn, sql)
+    schema_names <- if (nrow(schema_rows) > 0L) {
+      as.character(schema_rows$name)
+    } else {
+      character(0)
+    }
+
+    pat <- paste0("^", gsub("([][{}()+*^$|\\?.])", "\\\\\\1", base_schema), "_(\\\\d+)$")
+    suffixes <- suppressWarnings(as.integer(sub(pat, "\\1", schema_names, perl = TRUE)))
+    valid_suffixes <- suffixes[!is.na(suffixes)]
+
+    next_suffix <- if (length(valid_suffixes) == 0L) {
+      as.integer(start_suffix)
+    } else {
+      max(valid_suffixes) + 1L
+    }
+
+    paste0(base_schema, "_", sprintf("%02d", next_suffix))
+  }
+
+  target_cdm_schema <- tryCatch(
+    resolve_next_cdm_schema(cfg, target_cdm_schema_base, target_cdm_schema_start_suffix),
+    error = function(e) {
+      fallback_schema <- paste0(
+        target_cdm_schema_base,
+        "_",
+        sprintf("%02d", as.integer(target_cdm_schema_start_suffix))
+      )
+      warning(
+        "Could not auto-resolve next target schema; using fallback schema '",
+        fallback_schema,
+        "'. Error: ", conditionMessage(e)
+      )
+      fallback_schema
+    }
   )
 }
 
