@@ -71,7 +71,7 @@ vocab_file_loc <- Sys.getenv("OHDSI_VOCAB_CSV_DIR", unset = "C:/Users/rapiduser/
 vocab_delimiter <- "\t"
 
 # Fresh CDM schema used only for ETLSyntheaBuilder-driven table lifecycle.
-target_cdm_schema <- "omop_synth_pad_oler_ssi_fresh"
+target_cdm_schema <- "omop_synth_pad_oler_ssi_02"
 
 # Fallback vocabulary source schema if CSV reload is disabled.
 vocabulary_source_schema <- "cdm_synthea"
