@@ -392,6 +392,12 @@ run_synthea_full_csv_builder_etl <- function(
       ))
 
       if (!vocab_present) {
+        # Ensure CDM schema exists before calling CreateCDMTables
+        execute_sql_with_retry(
+          conn_cdm,
+          paste0("IF SCHEMA_ID('", config$cdm_schema, "') IS NULL EXEC('CREATE SCHEMA ", config$cdm_schema, "');")
+        )
+
         message(
           "Missing CDM tables detected in ", config$cdm_schema,
           " (", paste(missing_tables, collapse = ", "), "); recreating CDM tables."
