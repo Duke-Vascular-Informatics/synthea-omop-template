@@ -86,7 +86,9 @@ is_transient_db_error <- function(err_msg) {
     "broken pipe",
     "connection closed",
     "socket",
-    "io exception"
+    "io exception",
+    "cannot open database",
+    "requested by the login"
   )
   any(vapply(transient_patterns, grepl, logical(1), x = msg, fixed = TRUE))
 }
