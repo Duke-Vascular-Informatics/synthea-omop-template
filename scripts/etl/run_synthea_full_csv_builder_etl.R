@@ -597,6 +597,20 @@ run_synthea_full_csv_builder_etl <- function(
       sql <- paste0(prep, sql)
     }
 
+    # Date column VARCHAR→DATETIME2 conversion patch: Since pre-flight alignment
+    # converts all staging date/datetime columns to VARCHAR(32) to work around
+    # JDBC type-binding issues, we must now cast them back to their proper CDM
+    # datetime types when ETL transformations read them from staging.  This patch
+    # wraps common Synthea date column references in CAST(... AS DATETIME2, 121)
+    # or CONVERT(DATETIME2, ..., 23) to handle ISO-8601 string format safely.
+    # Known date columns: birthdate, startdate, stopdate, date columns in vitals,
+    # procedures, medications, conditions, observations, etc.
+    sql <- gsub(
+      "\\b([a-z]+)\\.\\b(birthdate|startdate|stopdate|START_DATE|STOP_DATE|BIRTHDATE)\\b",
+      "CONVERT(DATETIME2, \\1.\\2, 23)",
+      sql, ignore.case = TRUE, perl = TRUE
+    )
+
     execute_sql_with_retry(connection, sql)
   }
 
