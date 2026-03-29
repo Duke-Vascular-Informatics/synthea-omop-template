@@ -824,6 +824,106 @@ run_synthea_full_csv_builder_etl <- function(
       )
     }
 
+    # Pre-flight: ensure the transaction log is large enough for the vocab
+    # bulk load.  CONCEPT_ANCESTOR alone is 75 M rows; JDBC batch inserts are
+    # fully logged even in SIMPLE recovery, so we need ≥ 25 GB of log space
+    # before we start.  ALTER DATABASE MODIFY FILE is async, so we must WAIT
+    # and verify the log actually grew on disk before proceeding.
+    log_msg("Pre-flight: expanding transaction log for bulk vocabulary load ...")
+    tryCatch({
+      conn_log <- connect_with_retry(connection_details)
+      on.exit(DatabaseConnector::disconnect(conn_log), add = TRUE)
+
+      log_meta_sql <- render_sql(
+        "SELECT f.name AS log_name, f.size * 8.0 / 1024 AS size_mb
+         FROM sys.master_files f
+         JOIN sys.databases d ON f.database_id = d.database_id
+         WHERE d.name = '@database' AND f.type_desc = 'LOG';",
+        database = config$database
+      )
+      log_meta <- query_sql_with_retry(conn_log, log_meta_sql)
+      names(log_meta) <- tolower(names(log_meta))
+
+      if (nrow(log_meta) > 0L) {
+        log_file_name <- as.character(log_meta$log_name[[1]])
+        log_size_mb   <- as.numeric(log_meta$size_mb[[1]])
+        target_mb     <- 25600L   # 25 GB
+
+        # Switch to SIMPLE recovery so ETL checkpoints can truncate the log
+        execute_sql_with_retry(conn_log,
+          paste0("ALTER DATABASE [", config$database, "] SET RECOVERY SIMPLE;")
+        )
+
+        if (log_size_mb < target_mb) {
+          log_msg(
+            "Growing transaction log from ", round(log_size_mb, 0),
+            " MB to ", target_mb, " MB ...", level = "WARN"
+          )
+          execute_sql_with_retry(conn_log, paste0(
+            "ALTER DATABASE [", config$database, "] MODIFY FILE ",
+            "(NAME = N'", log_file_name, "', ",
+            "SIZE = ", target_mb, "MB, FILEGROWTH = 2048MB);"
+          ))
+
+          # ALTER DATABASE MODIFY FILE is async; SQL Server returns immediately
+          # but allocates the space on disk in a background task.  We must poll
+          # until the log size reaches the target, otherwise the bulk insert will
+          # start before the log has actually grown and immediately hit "log full".
+          log_msg("Waiting for transaction log to be allocated on disk (this may take 30-60s) ...")
+          max_wait_attempts <- 120L
+          wait_interval <- 3L
+          for (wait_attempt in seq_len(max_wait_attempts)) {
+            Sys.sleep(wait_interval)
+            current_log_sql <- render_sql(
+              "SELECT f.size * 8.0 / 1024 AS size_mb
+               FROM sys.master_files f
+               WHERE f.database_id = DB_ID('@database') AND f.type_desc = 'LOG' AND f.name = '@log_name';",
+              database = config$database,
+              log_name = log_file_name
+            )
+            current_log <- query_sql_with_retry(conn_log, current_log_sql, max_attempts = 1L)
+            current_size_mb <- as.numeric(current_log$size_mb[[1]])
+
+            if (current_size_mb >= target_mb * 0.95) {
+              log_msg(
+                "Transaction log allocated: ", round(current_size_mb, 0),
+                " MB (>= 95% of target). Ready for bulk vocab load."
+              )
+              break
+            }
+
+            if (wait_attempt %% 10L == 0L) {
+              log_msg(
+                "Still waiting... current log size: ", round(current_size_mb, 0),
+                " MB (target: ", target_mb, " MB)"
+              )
+            }
+          }
+
+          if (wait_attempt >= max_wait_attempts) {
+            log_msg(
+              "Log pre-growth did not complete within timeout; proceeding anyway. ",
+              "Monitor for 'log full' errors and re-run if needed.",
+              level = "WARN"
+            )
+          }
+        } else {
+          # Already large enough; just set generous autogrowth
+          execute_sql_with_retry(conn_log, paste0(
+            "ALTER DATABASE [", config$database, "] MODIFY FILE ",
+            "(NAME = N'", log_file_name, "', FILEGROWTH = 2048MB);"
+          ))
+          log_msg("Log is already ", round(log_size_mb, 0),
+                  " MB (>= target); autogrowth set to 2 GB.")
+        }
+      }
+    }, error = function(e) {
+      log_msg(
+        "Could not pre-grow transaction log (non-fatal): ", conditionMessage(e),
+        level = "WARN"
+      )
+    })
+
     log_msg(
       "Reloading vocabulary from CSV via ETLSyntheaBuilder::LoadVocabFromCsv (README-style) ..."
     )

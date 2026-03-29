@@ -90,32 +90,48 @@ tryCatch({
   }
 
   # =========================================================================
-  # 3. Shrink the transaction log file
+  # 3. Pre-grow the transaction log to handle bulk vocabulary CSV load
   # =========================================================================
-  cat("[INFO] Shrinking transaction log file...\n")
+  # CONCEPT_ANCESTOR alone is 75 M rows. JDBC batch inserts are individually
+  # logged even in SIMPLE recovery mode, so the log must accommodate the full
+  # undo chain until the batch commits (~15-20 GB).  We pre-grow to 25 GB and
+  # set autogrowth to 2 GB so SQL Server never stalls mid-insert trying to
+  # auto-extend.  Shrinking to a small size would just cause this to repeat.
+  target_min_mb <- 25600L   # 25 GB
 
-  # Target size: 500 MB (adjust if needed)
-  target_size_mb <- 500
+  if (log_file_size < target_min_mb) {
+    cat("[INFO] Pre-growing log from ", log_file_size, " MB to 25 GB for bulk vocab load...\n")
+    grow_sql <- paste0(
+      "ALTER DATABASE [", cfg$database, "] MODIFY FILE ",
+      "(NAME = N'", log_file_name, "', ",
+      "SIZE = ", target_min_mb, "MB, FILEGROWTH = 2048MB);"
+    )
+    DatabaseConnector::executeSql(conn, grow_sql)
+    cat("[INFO] \u2713 Log pre-growth initiated (SQL Server will allocate in background)\n\n")
+  } else {
+    # Already large enough; just ensure autogrowth is generous
+    cat("[INFO] Log is already ", log_file_size, " MB (>= 25 GB); setting autogrowth to 2 GB\n")
+    autogrow_sql <- paste0(
+      "ALTER DATABASE [", cfg$database, "] MODIFY FILE ",
+      "(NAME = N'", log_file_name, "', FILEGROWTH = 2048MB);"
+    )
+    DatabaseConnector::executeSql(conn, autogrow_sql)
+    cat("[INFO] \u2713 Autogrowth updated\n\n")
+  }
 
-  shrink_sql <- paste0(
-    "DBCC SHRINKFILE([", log_file_name, "], ", target_size_mb, ") WITH NO_INFOMSGS;"
-  )
-  DatabaseConnector::executeSql(conn, shrink_sql)
-
-  # Check new size
+  # Report final size (may not reflect full pre-growth if SQL Server is still allocating)
   logspace_after <- DatabaseConnector::querySql(conn, logspace_sql)
   colnames(logspace_after) <- tolower(colnames(logspace_after))
   new_size <- round(logspace_after$size_mb[[1]], 1)
 
-  cat("[INFO] ✓ Transaction log shrunk from ", log_file_size, " MB to ", new_size, " MB\n\n")
-
   # =========================================================================
-  # 4. Summary and recovery mode reset offer
+  # 4. Summary
   # =========================================================================
-  cat("[INFO] ✓ Transaction log maintenance complete!\n\n")
+  cat("[INFO] \u2713 Transaction log maintenance complete!\n\n")
   cat("[INFO] Current status:\n")
-  cat("       - Recovery mode: SIMPLE (bulk inserts will auto-truncate log)\n")
-  cat("       - Log file size: ", new_size, " MB\n")
+  cat("       - Recovery mode: SIMPLE (bulk inserts will checkpoint-truncate log)\n")
+  cat("       - Log file size: ", new_size, " MB (target >= 25,600 MB)\n")
+  cat("       - Autogrowth: 2 GB per increment\n")
   cat("       - Ready for bulk ETL operations\n\n")
 
   cat("[INFO] After ETL completes, you may want to switch back to FULL recovery:\n")
