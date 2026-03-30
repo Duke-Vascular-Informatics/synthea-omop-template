@@ -69,16 +69,28 @@ try {
   # which silently disables module restriction.
   $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "-m", "$ModuleName", "$State") + $exporterArgs)
 
+  # Start-Process can split multi-word arguments unless they are explicitly
+  # quoted as a single command-line token. This helper keeps states such as
+  # "North Carolina" intact when passed to run_synthea.bat.
+  $quoteArg = {
+    param([string]$value)
+    if ($null -eq $value) { return '""' }
+    $escaped = $value -replace '"', '\\"'
+    if ($escaped -match '[\s"]') { return ('"' + $escaped + '"') }
+    return $escaped
+  }
+
   $success = $false
   $usedModuleRestriction = $false
 
   foreach ($args in $attempts) {
-    Write-Host ("Attempt: .\\run_synthea.bat " + ($args -join " ")) -ForegroundColor Yellow
+    $argumentLine = (($args | ForEach-Object { & $quoteArg $_ }) -join " ")
+    Write-Host ("Attempt: .\\run_synthea.bat " + $argumentLine) -ForegroundColor Yellow
 
     $stdoutFile = [System.IO.Path]::GetTempFileName()
     $stderrFile = [System.IO.Path]::GetTempFileName()
     try {
-      $proc = Start-Process -FilePath $syntheaBat -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+      $proc = Start-Process -FilePath $syntheaBat -ArgumentList $argumentLine -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
 
       if (Test-Path $stdoutFile) {
         Get-Content -Path $stdoutFile | ForEach-Object { Write-Host $_ }
