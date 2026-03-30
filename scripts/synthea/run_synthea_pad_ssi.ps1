@@ -67,7 +67,14 @@ try {
   # This Synthea checkout supports -m for module filtering.
   # Do not use --modules here: App.java treats unknown --args as config keys,
   # which silently disables module restriction.
-  $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "-m", "$ModuleName", "$State") + $exporterArgs)
+  # When $RequireModuleOnly is $false we run ALL bundled modules (including the
+  # custom pad_ssi.json already copied above) so that medications, full
+  # procedures, and the complete clinical picture are generated alongside PAD.
+  if ($RequireModuleOnly) {
+    $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "-m", "$ModuleName", "$State") + $exporterArgs)
+  } else {
+    $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "$State") + $exporterArgs)
+  }
 
   # Start-Process can split multi-word arguments unless they are explicitly
   # quoted as a single command-line token. This helper keeps states such as

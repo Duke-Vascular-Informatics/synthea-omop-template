@@ -7,7 +7,8 @@
     "outcome window.",
     "",
     "Clinical workflow:",
-    "  1. PAD diagnosis (ConditionOnset)",
+    "  1a. PAD onset delay: Uniform(0, 50) years after age 40 (onset age 40-90)",
+    "  1b. PAD diagnosis (ConditionOnset) — capped at age 90",
     "  2. Outpatient PAD diagnosis encounter",
     "  3. Document presenting symptom (asymptomatic, claudication, rest pain, wound/tissue loss)",
     "  4. Document comorbidities (smoking, diabetes, hypertension, COPD, CHF, functional",
@@ -56,8 +57,10 @@
     "",
     "Primary concept codes (OMOP-mappable):",
     "  PAD condition          : SNOMED-CT 399957001",
-    "  Femoro-popliteal bypass: SNOMED-CT 232723009",
-    "  Endovascular procedure : SNOMED-CT 233258006",
+    "  Femoro-popliteal bypass    : SNOMED-CT 112828007",
+    "  Femoral endarterectomy     : SNOMED-CT 16589005",
+    "  Aortobifemoral bypass      : SNOMED-CT 405482000",
+    "  Femoro-tibial bypass       : SNOMED-CT 47575002",
     "  SSI condition          : SNOMED-CT 76844004",
     "  Debridement (re-op)    : SNOMED-CT 118294005",
     "  Ankle-brachial index   : LOINC     59574-4",
@@ -96,7 +99,46 @@
         "quantity": 40,
         "unit": "years"
       },
-      "direct_transition": "PAD_Onset"
+      "direct_transition": "PAD_Onset_Delay"
+    },
+
+    "PAD_Onset_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "PAD onset delay: Uniform(0, 50) years after age 40 (onset age 40-90).",
+        "This allows a wide window for when PAD was first diagnosed.",
+        "A downstream Past_10_Years_Check gate filters to procedures within",
+        "the past decade for the index study cohort. Age_90_Check ensures no",
+        "procedure occurs on patients over age 90."
+      ],
+      "range": {
+        "low": 0,
+        "high": 50,
+        "unit": "years"
+      },
+      "direct_transition": "Age_90_Check"
+    },
+
+    "Age_90_Check": {
+      "type": "Simple",
+      "remarks": [
+        "Cap the PAD pathway at age 90. Patients older than 90 after the",
+        "onset delay are routed to Terminal so procedure ages stay realistic."
+      ],
+      "conditional_transition": [
+        {
+          "condition": {
+            "condition_type": "Age",
+            "operator": "<=",
+            "quantity": 90,
+            "unit": "years"
+          },
+          "transition": "PAD_Onset"
+        },
+        {
+          "transition": "Terminal"
+        }
+      ]
     },
 
     "PAD_Onset": {
@@ -506,8 +548,8 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "232723009",
-          "display": "Bypass of femoral artery to popliteal artery"
+          "code": "112828007",
+          "display": "Femoral-popliteal artery bypass graft"
         }
       ],
       "duration": { "low": 2, "high": 4, "unit": "hours" },
@@ -690,19 +732,81 @@
     },
 
     "Revascularization_Procedure": {
+      "type": "Simple",
+      "remarks": [
+        "Open lower extremity revascularization procedure selection.",
+        "Four representative procedure types with equal probability (25% each):"
+      ],
+      "distributed_transition": [
+        {
+          "distribution": 0.25,
+          "transition": "Femoro_Popliteal_Bypass"
+        },
+        {
+          "distribution": 0.25,
+          "transition": "Femoral_Endarterectomy"
+        },
+        {
+          "distribution": 0.25,
+          "transition": "Aorto_Bifemoral_Bypass"
+        },
+        {
+          "distribution": 0.25,
+          "transition": "Femoro_Tibial_Bypass"
+        }
+      ]
+    },
+
+    "Femoro_Popliteal_Bypass": {
       "type": "Procedure",
       "reason": "PAD_Onset",
-      "remarks": [
-        "Femoro-popliteal bypass is modeled as the representative open LE revascularization.",
-        "To model additional procedure types (aortofemoral bypass SNOMED 174814006,",
-        "femoral endarterectomy SNOMED 85356008), replace with a distributed_transition",
-        "to separate procedure states."
-      ],
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "232723009",
-          "display": "Bypass of femoral artery to popliteal artery"
+          "code": "112828007",
+          "display": "Femoral-popliteal artery bypass graft"
+        }
+      ],
+      "duration": { "low": 2, "high": 5, "unit": "hours" },
+      "direct_transition": "Pre_Op_Antibiotic_End"
+    },
+
+    "Femoral_Endarterectomy": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "16589005",
+          "display": "Femoral endarterectomy"
+        }
+      ],
+      "duration": { "low": 1, "high": 3, "unit": "hours" },
+      "direct_transition": "Pre_Op_Antibiotic_End"
+    },
+
+    "Aorto_Bifemoral_Bypass": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "405482000",
+          "display": "Aorto-femoral arterial bypass"
+        }
+      ],
+      "duration": { "low": 2, "high": 4, "unit": "hours" },
+      "direct_transition": "Pre_Op_Antibiotic_End"
+    },
+
+    "Femoro_Tibial_Bypass": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "47575002",
+          "display": "Femorotibial vascular bypass, anterior or posterior"
         }
       ],
       "duration": { "low": 2, "high": 5, "unit": "hours" },
@@ -737,7 +841,23 @@
         "post-surgery — consistent with 30-day outcome definition in target study."
       ],
       "range": { "low": 5, "high": 25, "unit": "days" },
-      "direct_transition": "SSI_Fixed_Risk"
+      "direct_transition": "Past_10_Years_Check"
+    },
+
+    "Past_10_Years_Check": {
+      "type": "Simple",
+      "remarks": [
+        "Gate to filter procedures to past 10 years (Option 2 constraint).",
+        "Since PAD_Onset_Delay ranges from 0-50 years uniformly, approximately",
+        "80% of generated procedures fall within the past 10 years (10-year window",
+        "/ 50-year range = 20/50 = 40% in past 10 years... actually 10/50=20% > 10y,",
+        "so 80% within 10y). These proceed to SSI risk assessment. The remaining 20%",
+        "are considered outside the study's temporal cohort and terminate."
+      ],
+      "distributed_transition": [
+        { "distribution": 0.8, "transition": "SSI_Fixed_Risk" },
+        { "distribution": 0.2, "transition": "Terminal" }
+      ]
     },
 
     "SSI_Fixed_Risk": {

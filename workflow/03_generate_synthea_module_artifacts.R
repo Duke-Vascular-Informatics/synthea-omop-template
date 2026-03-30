@@ -227,7 +227,10 @@ required_concepts <- data.frame(
   stringsAsFactors = FALSE,
   description = c(
     # --- Target cohort ---
-    "Index procedure: open LE revascularization",
+    "Index procedure: femoro-popliteal bypass",
+    "Index procedure: femoral endarterectomy",
+    "Index procedure: aortobifemoral bypass",
+    "Index procedure: femoro-tibial bypass",
     # --- Outcome cohort ---
     "Outcome: SSI / infection of surgical wound",
     # --- Covariates: BMI / anthropometrics ---
@@ -254,7 +257,8 @@ required_concepts <- data.frame(
     "Tobacco smoking status observation"
   ),
   system = c(
-    "SNOMED-CT", "SNOMED-CT",
+    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
+    "SNOMED-CT",
     "LOINC", "LOINC", "LOINC",
     "SNOMED-CT",
     "LOINC",
@@ -265,12 +269,11 @@ required_concepts <- data.frame(
     "LOINC"
   ),
   code = c(
-    "232723009", "76844004",
+    "112828007", "16589005", "405482000", "47575002", "76844004",
     "39156-5", "8302-2", "29463-7",
     "25876001",
     "59574-4",
-    "232723009",
-    "2673",
+    "112828007", "2673",
     "44054006", "13645005", "84114007", "38341003", "129839007",
     "266261006",
     "72166-2"
@@ -384,3 +387,5 @@ if (!identical(status, 0L)) {
 # Confirm that validation paths completed and the review artifact was generated.
 # -----------------------------------------------------------------------------
 cat("Step 3 complete: module validated and diagram HTML generated.\n")
+
+

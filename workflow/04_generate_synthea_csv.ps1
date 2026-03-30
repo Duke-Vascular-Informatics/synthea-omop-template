@@ -87,7 +87,7 @@ Run Step 3 first to sync the module JSON into your Synthea checkout:
     -Population $Population `
     -AgeRange $AgeRange `
     -State $State `
-    -RequireModuleOnly $true
+    -RequireModuleOnly $false
 }
 
 # -----------------------------------------------------------------------------

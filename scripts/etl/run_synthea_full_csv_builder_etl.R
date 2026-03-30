@@ -612,7 +612,7 @@ run_synthea_full_csv_builder_etl <- function(
     # "5889" can be interpreted as year 5889 by style-23 conversion.
     date_expr <- paste0(
       "CASE ",
-      "WHEN TRY_CONVERT(INT, \\1.\\2) IS NOT NULL THEN DATEADD(DAY, TRY_CONVERT(INT, \\1.\\2), CONVERT(DATETIME2, '1970-01-01', 23)) ",
+      "WHEN TRY_CONVERT(INT, TRY_CONVERT(VARCHAR(50), \\1.\\2)) IS NOT NULL THEN DATEADD(DAY, TRY_CONVERT(INT, TRY_CONVERT(VARCHAR(50), \\1.\\2)), CONVERT(DATETIME2, '1970-01-01', 23)) ",
       "ELSE COALESCE(TRY_CONVERT(DATETIME2, \\1.\\2, 126), TRY_CONVERT(DATETIME2, \\1.\\2, 23)) ",
       "END"
     )
