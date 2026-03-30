@@ -43,7 +43,21 @@
 # Step-level runtime settings
 # -----------------------------------------------------------------------------
 # Path to Synthea CSV output directory produced by Step 4.
-csv_input_dir <- "../synthea-data/output/csv"
+# Priority:
+#  1) SYNTHEA_CSV_DIR env var (explicit override)
+#  2) <SYNTHEA_HOME>/output/csv (local Synthea checkout)
+#  3) legacy project-relative folder fallback
+csv_input_dir <- Sys.getenv(
+  "SYNTHEA_CSV_DIR",
+  unset = file.path(
+    Sys.getenv("SYNTHEA_HOME", unset = "C:/Users/rapiduser/source/repos/synthea"),
+    "output",
+    "csv"
+  )
+)
+if (!dir.exists(csv_input_dir)) {
+  csv_input_dir <- "../synthea-data/output/csv"
+}
 
 # ETL run identifier that appears in logs/output metadata.
 run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
