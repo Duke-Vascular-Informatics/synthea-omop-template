@@ -605,21 +605,19 @@ run_synthea_full_csv_builder_etl <- function(
 
     # Date column VARCHAR→DATETIME2 conversion patch: staging date fields may
     # arrive in one of three forms depending on JDBC coercion behavior:
-    #   1) ISO timestamp string (yyyy-mm-ddThh:mm:ss[.fff][Z])
-    #   2) ISO date string      (yyyy-mm-dd)
-    #   3) Integer day offset from 1970-01-01 (for example: -10010)
-    # To prevent hard conversion failures, map all known date tokens to a
-    # tolerant COALESCE(TRY_CONVERT..., DATEADD(day, int, '1970-01-01')).
+    #   1) Integer day offset from 1970-01-01 (for example: -10010, 5889)
+    #   2) ISO timestamp string (yyyy-mm-ddThh:mm:ss[.fff][Z])
+    #   3) ISO date string      (yyyy-mm-dd)
+    # Integer-like tokens must be handled first; otherwise values such as
+    # "5889" can be interpreted as year 5889 by style-23 conversion.
     date_expr <- paste0(
-      "COALESCE(",
-      "TRY_CONVERT(DATETIME2, \\1.\\2, 126), ",
-      "TRY_CONVERT(DATETIME2, \\1.\\2, 23), ",
-      "CASE WHEN TRY_CONVERT(INT, \\1.\\2) IS NOT NULL ",
-      "THEN DATEADD(DAY, TRY_CONVERT(INT, \\1.\\2), CONVERT(DATETIME2, '1970-01-01', 23)) END",
-      ")"
+      "CASE ",
+      "WHEN TRY_CONVERT(INT, \\1.\\2) IS NOT NULL THEN DATEADD(DAY, TRY_CONVERT(INT, \\1.\\2), CONVERT(DATETIME2, '1970-01-01', 23)) ",
+      "ELSE COALESCE(TRY_CONVERT(DATETIME2, \\1.\\2, 126), TRY_CONVERT(DATETIME2, \\1.\\2, 23)) ",
+      "END"
     )
     sql <- gsub(
-      "\\b([a-z]+)\\.\\b(birthdate|startdate|stopdate|START_DATE|STOP_DATE|BIRTHDATE)\\b",
+      "\\b([a-z]+)\\.\\b(birthdate|startdate|stopdate|start|stop|START_DATE|STOP_DATE|BIRTHDATE|START|STOP)\\b",
       date_expr,
       sql, ignore.case = TRUE, perl = TRUE
     )
