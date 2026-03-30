@@ -312,7 +312,13 @@ summary_sql <- SqlRender::translate(SqlRender::render(
     "   ) AND co.condition_source_value = '399957001') AS pad_condition_rows,\n",
     "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
     "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
-    "   ) AND co.condition_source_value = '76844004') AS ssi_condition_rows;"
+    "   ) AND co.condition_source_value = '76844004') AS ssi_condition_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.condition_era ce WHERE ce.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   )) AS condition_era_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.drug_era de WHERE de.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   )) AS drug_era_rows;"
   ),
   staging_schema = staging_schema,
   cdm_schema = cdm_schema_active,
@@ -338,6 +344,8 @@ open_revasc_rows <- value_from_summary(summary_df, c("openRevascularizationRows"
 ssi_rows <- value_from_summary(summary_df, c("ssiConditionRows", "ssi_condition_rows"))
 condition_rows <- value_from_summary(summary_df, c("conditionRows", "condition_rows"))
 mapped_condition_rows <- value_from_summary(summary_df, c("mappedConditionRows", "mapped_condition_rows"))
+condition_era_rows <- value_from_summary(summary_df, c("conditionEraRows", "condition_era_rows"))
+drug_era_rows <- value_from_summary(summary_df, c("drugEraRows", "drug_era_rows"))
 
 mapped_pct <- if (!is.na(condition_rows) && condition_rows > 0) {
   100 * mapped_condition_rows / condition_rows
@@ -348,6 +356,11 @@ mapped_pct <- if (!is.na(condition_rows) && condition_rows > 0) {
 # Mapping completeness sanity check.
 cat("Mapping quality\n")
 cat("Mapped condition percentage: ", round(mapped_pct, 2), "%\n\n", sep = "")
+
+# Era table coverage checks ensure condition/drug episodes were materialized.
+cat("Era table checks\n")
+cat("condition_era rows: ", format(condition_era_rows, big.mark = ","), "\n", sep = "")
+cat("drug_era rows: ", format(drug_era_rows, big.mark = ","), "\n\n", sep = "")
 
 # -----------------------------------------------------------------------------
 # Age-profile check: confirms plausible population bounds after ETL.
