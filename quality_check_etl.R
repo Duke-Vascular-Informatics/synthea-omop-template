@@ -2,8 +2,17 @@
 # quality_check_etl.R
 #
 # Run post-load quality checks after the Synthea CSV -> OMOP ETL.
+#
+# Design notes:
+# - This script supports both historical CSV-stage pipelines
+#   (synthea_csv_stage.*_stage tables) and the current ETLSyntheaBuilder
+#   staging pattern (synthea.* tables).
+# - It auto-detects the active loaded CDM schema so Step 6 works even when
+#   Step 5 uses auto-incremented schemas (omop_synth_pad_oler_ssi_02, _03, ...).
+# - It can optionally enforce threshold gates for CI-style pass/fail checks.
 # =============================================================================
 
+# JVM + JDBC setup must happen before DatabaseConnector first touches Java.
 local({
   java_home <- "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot"
   jdbc_auth_dir <- file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64")
@@ -28,6 +37,16 @@ source("config.R")
 source("R/drivers.R")
 source("R/connection.R")
 
+# -----------------------------------------------------------------------------
+# CLI argument parsing
+# -----------------------------------------------------------------------------
+# Supported flags:
+#   --run_name=<name>
+#   --enforce_thresholds=<true|false>
+#   --min_person_rows=<n>
+#   --min_open_revascularization_rows=<n>
+#   --min_ssi_condition_rows=<n>
+#   --min_mapped_condition_pct=<pct>
 parse_args <- function(args) {
   opts <- list(
     run_name = "",
@@ -71,33 +90,185 @@ args <- commandArgs(trailingOnly = TRUE)
 opts <- parse_args(args)
 run_name <- opts$run_name
 
+# -----------------------------------------------------------------------------
+# Connection helpers and metadata probes
+# -----------------------------------------------------------------------------
 config <- get_validation_config()
 conn <- DatabaseConnector::connect(build_connection_details(config))
 on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
 
+# Centralized query wrapper keeps all SQL calls in one place.
 run_query <- function(sql) {
   DatabaseConnector::querySql(conn, sql, snakeCaseToCamelCase = TRUE)
 }
 
+# Helper: test if a physical table exists in SQL Server.
+table_exists <- function(schema_name, table_name) {
+  sql <- SqlRender::translate(SqlRender::render(
+    "SELECT CASE WHEN OBJECT_ID('@schema_name.@table_name', 'U') IS NULL THEN 0 ELSE 1 END AS exists_flag;",
+    schema_name = schema_name,
+    table_name = table_name
+  ), targetDialect = config$dbms)
+  res <- run_query(sql)
+  as.integer(res$existsFlag[[1]]) == 1L
+}
+
+# Helper: test if a given column exists in a table.
+# Used for backward compatibility where run_name may not exist in staging.
+column_exists <- function(schema_name, table_name, column_name) {
+  sql <- SqlRender::translate(SqlRender::render(
+    "SELECT COUNT(*) AS n
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = '@schema_name'
+       AND TABLE_NAME = '@table_name'
+       AND COLUMN_NAME = '@column_name';",
+    schema_name = schema_name,
+    table_name = table_name,
+    column_name = column_name
+  ), targetDialect = config$dbms)
+  res <- run_query(sql)
+  as.numeric(res$n[[1]]) > 0
+}
+
+# Resolve active CDM schema:
+# 1) Use config$cdm_schema if it exists and has data.
+# 2) Otherwise scan omop_synth_pad_oler_ssi* schemas and pick most recent
+#    suffix containing person rows.
+resolve_cdm_schema <- function(default_schema) {
+  has_default_person <- FALSE
+  if (table_exists(default_schema, "person")) {
+    cnt_sql <- SqlRender::translate(SqlRender::render(
+      "SELECT COUNT(*) AS n FROM @cdm_schema.person;",
+      cdm_schema = default_schema
+    ), targetDialect = config$dbms)
+    cnt <- run_query(cnt_sql)
+    has_default_person <- as.numeric(cnt$n[[1]]) > 0
+  }
+  if (has_default_person) {
+    return(default_schema)
+  }
+
+  schema_sql <- "
+    SELECT name
+    FROM sys.schemas
+    WHERE name = 'omop_synth_pad_oler_ssi'
+       OR name LIKE 'omop_synth_pad_oler_ssi[_]%';"
+  schema_rows <- run_query(schema_sql)
+  if (nrow(schema_rows) == 0) {
+    return(default_schema)
+  }
+
+  schema_names <- as.character(schema_rows$name)
+  pat <- "^omop_synth_pad_oler_ssi_(\\d+)$"
+  suffix <- suppressWarnings(as.integer(sub(pat, "\\1", schema_names, perl = TRUE)))
+
+  order_index <- order(ifelse(is.na(suffix), -1L, suffix), decreasing = TRUE)
+  ordered_candidates <- schema_names[order_index]
+
+  for (candidate in ordered_candidates) {
+    if (!table_exists(candidate, "person")) {
+      next
+    }
+    cnt_sql <- SqlRender::translate(SqlRender::render(
+      "SELECT COUNT(*) AS n FROM @cdm_schema.person;",
+      cdm_schema = candidate
+    ), targetDialect = config$dbms)
+    cnt <- run_query(cnt_sql)
+    if (as.numeric(cnt$n[[1]]) > 0) {
+      return(candidate)
+    }
+  }
+
+  default_schema
+}
+
+cdm_schema_active <- resolve_cdm_schema(config$cdm_schema)
+
+# Detect staging mode:
+# - csv_stage mode: legacy workflow with synthea_csv_stage.*_stage tables
+# - synthea mode: current ETLSyntheaBuilder staging in synthea.* tables
+staging_mode <- if (table_exists("synthea_csv_stage", "patients_stage")) {
+  "csv_stage"
+} else if (table_exists("synthea", "patients")) {
+  "synthea"
+} else {
+  "none"
+}
+
+if (identical(staging_mode, "csv_stage")) {
+  staging_schema <- "synthea_csv_stage"
+  patients_table <- "patients_stage"
+  encounters_table <- "encounters_stage"
+  procedures_table <- "procedures_stage"
+  conditions_table <- "conditions_stage"
+} else if (identical(staging_mode, "synthea")) {
+  staging_schema <- "synthea"
+  patients_table <- "patients"
+  encounters_table <- "encounters"
+  procedures_table <- "procedures"
+  conditions_table <- "conditions"
+} else {
+  stop("Could not find expected staging tables in either synthea_csv_stage or synthea schema.")
+}
+
+# Enable run_name filter only when staging tables physically contain a run_name
+# column; older/newer load paths may not track run lineage at row level.
+has_run_name <- column_exists(staging_schema, patients_table, "run_name")
+run_name_filter <- if (isTRUE(has_run_name)) {
+  " WHERE run_name = '@run_name'"
+} else {
+  ""
+}
+
+# Some ETL paths prefix person_source_value with synthea_csv:, others do not.
+# Probe once and choose the safest person filter for downstream metrics.
+use_synthea_csv_source_filter <- FALSE
+if (table_exists(cdm_schema_active, "person")) {
+  src_filter_probe_sql <- SqlRender::translate(SqlRender::render(
+    "SELECT COUNT(*) AS n
+     FROM @cdm_schema.person
+     WHERE person_source_value LIKE 'synthea_csv:%';",
+    cdm_schema = cdm_schema_active
+  ), targetDialect = config$dbms)
+  src_filter_probe <- run_query(src_filter_probe_sql)
+  use_synthea_csv_source_filter <- as.numeric(src_filter_probe$n[[1]]) > 0
+}
+
+person_filter <- if (use_synthea_csv_source_filter) {
+  "p.person_source_value LIKE 'synthea_csv:%'"
+} else {
+  "1=1"
+}
+
+# -----------------------------------------------------------------------------
+# Human-readable run header
+# -----------------------------------------------------------------------------
 cat("=== ETL QUALITY CHECK ===\n")
 cat("Run name:", run_name, "\n\n")
+cat("Active CDM schema:", cdm_schema_active, "\n")
+cat("Staging schema:", staging_schema, "\n")
+cat("Staging mode:", staging_mode, "\n")
+cat("Run-name filter:", ifelse(has_run_name, "enabled", "disabled"), "\n\n")
 
+# -----------------------------------------------------------------------------
+# Staging counts: show evidence that each expected source table is populated.
+# -----------------------------------------------------------------------------
 resource_sql <- SqlRender::translate(SqlRender::render(
-  "
-  SELECT source_schema, COUNT(*) AS row_count
-  FROM (
-    SELECT 'patients_stage'   AS source_schema FROM @staging_schema.patients_stage   WHERE run_name = '@run_name'
-    UNION ALL
-    SELECT 'encounters_stage'  AS source_schema FROM @staging_schema.encounters_stage  WHERE run_name = '@run_name'
-    UNION ALL
-    SELECT 'procedures_stage'  AS source_schema FROM @staging_schema.procedures_stage  WHERE run_name = '@run_name'
-    UNION ALL
-    SELECT 'conditions_stage'  AS source_schema FROM @staging_schema.conditions_stage  WHERE run_name = '@run_name'
-  ) t
-  GROUP BY source_schema
-  ORDER BY source_schema;
-  ",
-  staging_schema = "synthea_csv_stage",
+  paste0(
+    "SELECT source_schema, COUNT(*) AS row_count\n",
+    "FROM (\n",
+    "  SELECT '", patients_table, "'   AS source_schema FROM @staging_schema.", patients_table, run_name_filter, "\n",
+    "  UNION ALL\n",
+    "  SELECT '", encounters_table, "' AS source_schema FROM @staging_schema.", encounters_table, run_name_filter, "\n",
+    "  UNION ALL\n",
+    "  SELECT '", procedures_table, "' AS source_schema FROM @staging_schema.", procedures_table, run_name_filter, "\n",
+    "  UNION ALL\n",
+    "  SELECT '", conditions_table, "' AS source_schema FROM @staging_schema.", conditions_table, run_name_filter, "\n",
+    ") t\n",
+    "GROUP BY source_schema\n",
+    "ORDER BY source_schema;"
+  ),
+  staging_schema = staging_schema,
   run_name = run_name
 ), targetDialect = config$dbms)
 
@@ -106,50 +277,45 @@ cat("Staging table counts\n")
 print(resource_counts)
 cat("\n")
 
+# -----------------------------------------------------------------------------
+# OMOP summary: aggregate ETL output shape and key condition/procedure signals.
+# -----------------------------------------------------------------------------
 summary_sql <- SqlRender::translate(SqlRender::render(
-  "
-  SELECT
-    (
-      (SELECT COUNT(*) FROM @staging_schema.patients_stage   WHERE run_name = '@run_name') +
-      (SELECT COUNT(*) FROM @staging_schema.encounters_stage WHERE run_name = '@run_name') +
-      (SELECT COUNT(*) FROM @staging_schema.procedures_stage WHERE run_name = '@run_name') +
-      (SELECT COUNT(*) FROM @staging_schema.conditions_stage WHERE run_name = '@run_name')
-    ) AS staged_rows,
-    (
-      SELECT SUM(CASE WHEN row_count > 0 THEN 1 ELSE 0 END)
-      FROM (
-        SELECT COUNT(*) AS row_count FROM @staging_schema.patients_stage   WHERE run_name = '@run_name'
-        UNION ALL
-        SELECT COUNT(*) AS row_count FROM @staging_schema.encounters_stage WHERE run_name = '@run_name'
-        UNION ALL
-        SELECT COUNT(*) AS row_count FROM @staging_schema.procedures_stage WHERE run_name = '@run_name'
-        UNION ALL
-        SELECT COUNT(*) AS row_count FROM @staging_schema.conditions_stage WHERE run_name = '@run_name'
-      ) stage_counts
-    ) AS staged_tables_with_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.person WHERE person_source_value LIKE 'synthea_csv:%') AS person_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence WHERE visit_source_value LIKE 'synthea_csv:%') AS visit_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     )) AS procedure_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     ) AND po.procedure_source_value = '232723009') AS open_revascularization_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     )) AS condition_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     ) AND co.condition_concept_id > 0) AS mapped_condition_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     ) AND co.condition_source_value = '399957001') AS pad_condition_rows,
-    (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (
-       SELECT p.person_id FROM @cdm_schema.person p WHERE p.person_source_value LIKE 'synthea_csv:%'
-     ) AND co.condition_source_value = '76844004') AS ssi_condition_rows;
-  ",
-  staging_schema = "synthea_csv_stage",
-  cdm_schema = config$cdm_schema,
+  paste0(
+    "SELECT\n",
+    "  ((SELECT COUNT(*) FROM @staging_schema.", patients_table, run_name_filter, ") +\n",
+    "   (SELECT COUNT(*) FROM @staging_schema.", encounters_table, run_name_filter, ") +\n",
+    "   (SELECT COUNT(*) FROM @staging_schema.", procedures_table, run_name_filter, ") +\n",
+    "   (SELECT COUNT(*) FROM @staging_schema.", conditions_table, run_name_filter, ")) AS staged_rows,\n",
+    "  (SELECT SUM(CASE WHEN row_count > 0 THEN 1 ELSE 0 END) FROM (\n",
+    "     SELECT COUNT(*) AS row_count FROM @staging_schema.", patients_table, run_name_filter, "\n",
+    "     UNION ALL SELECT COUNT(*) AS row_count FROM @staging_schema.", encounters_table, run_name_filter, "\n",
+    "     UNION ALL SELECT COUNT(*) AS row_count FROM @staging_schema.", procedures_table, run_name_filter, "\n",
+    "     UNION ALL SELECT COUNT(*) AS row_count FROM @staging_schema.", conditions_table, run_name_filter, "\n",
+    "   ) stage_counts) AS staged_tables_with_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.person p WHERE ", person_filter, ") AS person_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.visit_occurrence) AS visit_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   )) AS procedure_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   ) AND po.procedure_source_value = '232723009') AS open_revascularization_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   )) AS condition_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   ) AND co.condition_concept_id > 0) AS mapped_condition_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   ) AND co.condition_source_value = '399957001') AS pad_condition_rows,\n",
+    "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
+    "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
+    "   ) AND co.condition_source_value = '76844004') AS ssi_condition_rows;"
+  ),
+  staging_schema = staging_schema,
+  cdm_schema = cdm_schema_active,
   run_name = run_name
 ), targetDialect = config$dbms)
 
@@ -158,6 +324,8 @@ cat("OMOP summary\n")
 print(summary_df)
 cat("\n")
 
+# Helper to tolerate snake_case/camelCase name differences returned by
+# DatabaseConnector across versions/options.
 value_from_summary <- function(df, candidates) {
   nm <- names(df)
   hit <- candidates[candidates %in% nm]
@@ -177,20 +345,24 @@ mapped_pct <- if (!is.na(condition_rows) && condition_rows > 0) {
   NA_real_
 }
 
+# Mapping completeness sanity check.
 cat("Mapping quality\n")
 cat("Mapped condition percentage: ", round(mapped_pct, 2), "%\n\n", sep = "")
 
+# -----------------------------------------------------------------------------
+# Age-profile check: confirms plausible population bounds after ETL.
+# -----------------------------------------------------------------------------
 age_sql <- SqlRender::translate(SqlRender::render(
-  "
-  SELECT
-    COUNT(*) AS n_people,
-    SUM(CASE WHEN year_of_birth >= YEAR(GETDATE()) - 18 THEN 1 ELSE 0 END) AS age_under_18_count,
-    MIN(year_of_birth) AS min_year_of_birth,
-    MAX(year_of_birth) AS max_year_of_birth
-  FROM @cdm_schema.person
-  WHERE person_source_value LIKE 'synthea_csv:%';
-  ",
-  cdm_schema = config$cdm_schema
+  paste0(
+    "SELECT\n",
+    "  COUNT(*) AS n_people,\n",
+    "  SUM(CASE WHEN year_of_birth >= YEAR(GETDATE()) - 18 THEN 1 ELSE 0 END) AS age_under_18_count,\n",
+    "  MIN(year_of_birth) AS min_year_of_birth,\n",
+    "  MAX(year_of_birth) AS max_year_of_birth\n",
+    "FROM @cdm_schema.person p\n",
+    "WHERE ", person_filter, ";"
+  ),
+  cdm_schema = cdm_schema_active
 ), targetDialect = config$dbms)
 
 age_df <- run_query(age_sql)
@@ -198,24 +370,27 @@ cat("Age distribution check\n")
 print(age_df)
 cat("\n")
 
+# -----------------------------------------------------------------------------
+# Clinical signal check: rough face-validity counts for study-relevant markers.
+# -----------------------------------------------------------------------------
 ssi_person_sql <- SqlRender::translate(SqlRender::render(
-  "
-  SELECT
-    COUNT(DISTINCT CASE WHEN po.procedure_source_value = '232723009' THEN p.person_id END) AS people_with_open_revascularization,
-    COUNT(DISTINCT CASE WHEN co.condition_source_value = '399957001' THEN p.person_id END) AS people_with_pad,
-    COUNT(DISTINCT CASE WHEN co.condition_source_value = '76844004' THEN p.person_id END) AS people_with_ssi
-  FROM @cdm_schema.person p
-  LEFT JOIN @cdm_schema.procedure_occurrence po
-    ON po.person_id = p.person_id
-  LEFT JOIN @cdm_schema.condition_occurrence co
-    ON co.person_id = p.person_id
-  WHERE p.person_source_value LIKE 'synthea_csv:%'
-    AND (
-      po.procedure_source_value = '232723009'
-      OR co.condition_source_value IN ('399957001', '76844004')
-    );
-  ",
-  cdm_schema = config$cdm_schema
+  paste0(
+    "SELECT\n",
+    "  COUNT(DISTINCT CASE WHEN po.procedure_source_value = '232723009' THEN p.person_id END) AS people_with_open_revascularization,\n",
+    "  COUNT(DISTINCT CASE WHEN co.condition_source_value = '399957001' THEN p.person_id END) AS people_with_pad,\n",
+    "  COUNT(DISTINCT CASE WHEN co.condition_source_value = '76844004' THEN p.person_id END) AS people_with_ssi\n",
+    "FROM @cdm_schema.person p\n",
+    "LEFT JOIN @cdm_schema.procedure_occurrence po\n",
+    "  ON po.person_id = p.person_id\n",
+    "LEFT JOIN @cdm_schema.condition_occurrence co\n",
+    "  ON co.person_id = p.person_id\n",
+    "WHERE ", person_filter, "\n",
+    "  AND (\n",
+    "    po.procedure_source_value = '232723009'\n",
+    "    OR co.condition_source_value IN ('399957001', '76844004')\n",
+    "  );"
+  ),
+  cdm_schema = cdm_schema_active
 ), targetDialect = config$dbms)
 
 signal_df <- run_query(ssi_person_sql)
@@ -223,6 +398,9 @@ cat("Clinical signal check\n")
 print(signal_df)
 cat("\n")
 
+# -----------------------------------------------------------------------------
+# Optional threshold gate for automated pipeline enforcement.
+# -----------------------------------------------------------------------------
 if (isTRUE(opts$enforce_thresholds)) {
   failures <- character()
 

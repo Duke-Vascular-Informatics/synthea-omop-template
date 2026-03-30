@@ -1,6 +1,16 @@
 #!/usr/bin/env Rscript
 # Step 6: Data quality check against defined cohort, outcome, and covariates.
 
+# This wrapper script intentionally stays thin and delegates all SQL-heavy
+# validation logic to quality_check_etl.R. Its responsibilities are:
+#  1) locate workflow bootstrap reliably across invocation contexts,
+#  2) normalize working directory to project root,
+#  3) initialize Java variables needed by DatabaseConnector/rJava,
+#  4) forward any CLI flags to quality_check_etl.R,
+#  5) propagate non-zero exit status as a hard workflow failure.
+
+# Resolve the bootstrap file relative to this script path when launched by
+# Rscript, while still supporting interactive/manual execution fallback.
 bootstrap_path <- local({
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(file_arg) > 0) {
@@ -13,9 +23,14 @@ bootstrap_path <- local({
     "workflow/workflow_bootstrap.R"
   }
 })
+
+# Bootstrap sets helper functions used by all workflow steps (for example
+# set_workflow_root()) and establishes consistent runtime assumptions.
 source(bootstrap_path)
 set_workflow_root()
 
+# Load central configuration once and apply Java runtime settings before any
+# package lazily initializes JVM bindings.
 source("config.R")
 cfg <- get_validation_config()
 if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home)) {
@@ -25,15 +40,21 @@ if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home
   options(java.parameters = paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE)))
 }
 
+# Forward all incoming CLI args transparently so callers can pass threshold
+# gates or run-name overrides directly at Step 6 entrypoint.
 args <- commandArgs(trailingOnly = TRUE)
 
+# Default execution target is quality_check_etl.R in the project root.
 cmd <- c("quality_check_etl.R")
 if (length(args) > 0) {
   cmd <- c(cmd, args)
 }
 
+# Execute in a child R session to isolate script-level options and avoid
+# accidental object leakage from wrapper into quality-check script scope.
 status <- system2(file.path(R.home("bin"), "Rscript.exe"), args = cmd)
 if (!identical(status, 0L)) {
+  # Preserve fail-fast behavior for downstream workflow automation.
   stop("Quality check failed.")
 }
 
