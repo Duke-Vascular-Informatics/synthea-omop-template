@@ -20,7 +20,7 @@
 param(
   [string]$SyntheaHome = $env:SYNTHEA_HOME,
   [int]$Population = 1000,
-  [string]$AgeRange = "40-100",
+  [string]$AgeRange = "60-100",
   [string]$State = "North Carolina"
 )
 

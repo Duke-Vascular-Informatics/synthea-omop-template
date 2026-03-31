@@ -7,7 +7,7 @@
     "outcome window.",
     "",
     "Clinical workflow:",
-    "  1a. PAD onset delay: Uniform(0, 50) years after age 40 (onset age 40-90)",
+    "  1a. PAD onset delay: Uniform(0, 20) years after age 60 (onset age 60-80)",
     "  1b. PAD diagnosis (ConditionOnset) — capped at age 90",
     "  2. Outpatient PAD diagnosis encounter",
     "  3. Document presenting symptom (asymptomatic, claudication, rest pain, wound/tissue loss)",
@@ -96,7 +96,7 @@
       "allow": {
         "condition_type": "Age",
         "operator": ">=",
-        "quantity": 40,
+        "quantity": 60,
         "unit": "years"
       },
       "direct_transition": "PAD_Onset_Delay"
@@ -105,15 +105,15 @@
     "PAD_Onset_Delay": {
       "type": "Delay",
       "remarks": [
-        "PAD onset delay: Uniform(0, 50) years after age 40 (onset age 40-90).",
-        "This allows a wide window for when PAD was first diagnosed.",
-        "A downstream Past_10_Years_Check gate filters to procedures within",
-        "the past decade for the index study cohort. Age_90_Check ensures no",
-        "procedure occurs on patients over age 90."
+        "PAD onset delay: Uniform(0, 20) years after age 60 (onset age 60-80).",
+        "Reduced from 0-50 to 0-20 years to concentrate PAD onset earlier in",
+        "post-60 life, increasing the proportion of patients whose surgery falls",
+        "within the study simulation window. Age_90_Check ensures no procedure",
+        "occurs on patients over age 90."
       ],
       "range": {
         "low": 0,
-        "high": 50,
+        "high": 20,
         "unit": "years"
       },
       "direct_transition": "Age_90_Check"
@@ -847,17 +847,12 @@
     "Past_10_Years_Check": {
       "type": "Simple",
       "remarks": [
-        "Gate to filter procedures to past 10 years (Option 2 constraint).",
-        "Since PAD_Onset_Delay ranges from 0-50 years uniformly, approximately",
-        "80% of generated procedures fall within the past 10 years (10-year window",
-        "/ 50-year range = 20/50 = 40% in past 10 years... actually 10/50=20% > 10y,",
-        "so 80% within 10y). These proceed to SSI risk assessment. The remaining 20%",
-        "are considered outside the study's temporal cohort and terminate."
+        "Previously a probabilistic gate dropping 20% of completed surgeries as a",
+        "proxy for temporal cohort filtering. Temporal filtering is now handled",
+        "entirely by the SQL cohort definition (target_surgery.sql study_start_date /",
+        "study_end_date), so all completed surgeries pass through to SSI assessment."
       ],
-      "distributed_transition": [
-        { "distribution": 0.8, "transition": "SSI_Fixed_Risk" },
-        { "distribution": 0.2, "transition": "Terminal" }
-      ]
+      "direct_transition": "SSI_Fixed_Risk"
     },
 
     "SSI_Fixed_Risk": {
