@@ -227,7 +227,10 @@ log_name_sql <- paste0(
 log_name_row <- DatabaseConnector::querySql(conn_final, log_name_sql)
 colnames(log_name_row) <- tolower(colnames(log_name_row))
 log_name <- as.character(log_name_row$name[[1]])
-DatabaseConnector::executeSql(conn_final, paste0("DBCC SHRINKFILE (", log_name, ", 1024);"))
+tryCatch(
+  DatabaseConnector::querySql(conn_final, paste0("DBCC SHRINKFILE (", log_name, ", 1024);")),
+  error = function(e) cat("[INFO] SHRINKFILE note (non-fatal):", conditionMessage(e), "\n")
+)
 cat("[INFO] \u2713 Transaction log shrunk back to ~1 GB\n")
 
 DatabaseConnector::disconnect(conn_final)

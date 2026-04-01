@@ -110,11 +110,18 @@ prepare_txlog_for_bulk_etl <- function(cfg,
   # ---------------------------------------------------------------------------
   # 3. CHECKPOINT + DBCC SHRINKFILE to reclaim space from prior runs.
   # ---------------------------------------------------------------------------
+  # Note: DBCC SHRINKFILE returns a result set, so querySql() must be used
+  # instead of executeSql() to avoid a "result set generated for update" error.
   cat("[txlog] Running CHECKPOINT + DBCC SHRINKFILE to reclaim prior-run space ...\n")
   DatabaseConnector::executeSql(conn, "CHECKPOINT;")
-  DatabaseConnector::executeSql(
-    conn,
-    paste0("DBCC SHRINKFILE (", log_name, ", ", as.integer(shrink_to_mb), ");")
+  tryCatch(
+    DatabaseConnector::querySql(
+      conn,
+      paste0("DBCC SHRINKFILE (", log_name, ", ", as.integer(shrink_to_mb), ");")
+    ),
+    error = function(e) {
+      cat("[txlog] SHRINKFILE note (non-fatal):", conditionMessage(e), "\n")
+    }
   )
 
   log_after_shrink <- DatabaseConnector::querySql(conn, logfile_sql)
