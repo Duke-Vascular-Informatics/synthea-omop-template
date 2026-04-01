@@ -807,6 +807,18 @@ run_synthea_full_csv_builder_etl <- function(
   # ---------------------------------------------------------------------------
   # 7. CDM table structure and staging schema setup
   # ---------------------------------------------------------------------------
+  # When using the shared vocab schema, wire synonyms BEFORE ensure_cdm_tables_exist()
+  # so that the vocab-present check inside that function finds the synonym objects
+  # and takes the "create only missing non-vocab tables" path instead of calling
+  # CreateCDMTables for the full schema (which would create real vocab tables that
+  # then conflict with the synonyms).
+  if (isTRUE(use_shared_vocab_schema)) {
+    log_msg("Vocabulary path: shared schema synonyms → '", shared_vocab_schema, "'")
+    source("R/db_maintenance.R")
+    create_vocab_synonyms(config, config$cdm_schema, shared_vocab_schema)
+    progress$tick("Vocabulary synonyms wired to shared schema")
+  }
+
   # Verify (or create) all OMOP CDM tables in the target schema.  This step
   # is idempotent — it only issues DDL for genuinely missing tables.
   ensure_cdm_tables_exist()
@@ -844,12 +856,8 @@ run_synthea_full_csv_builder_etl <- function(
   # Hard guard: regardless of path taken, assert_vocab_loaded_for_etl() will
   # stop execution if concept/concept_ancestor/concept_relationship are empty.
   if (isTRUE(use_shared_vocab_schema)) {
-    log_msg(
-      "Vocabulary path: shared schema synonyms → '", shared_vocab_schema, "'"
-    )
-    source("R/db_maintenance.R")
-    create_vocab_synonyms(config, config$cdm_schema, shared_vocab_schema)
-    progress$tick("Vocabulary synonyms wired to shared schema")
+    # Synonyms already wired before ensure_cdm_tables_exist() above — nothing more to do.
+    log_msg("Vocabulary synonyms confirmed in '", config$cdm_schema, "'.")
 
   } else if (isTRUE(reload_vocab_from_csv)) {
     if (is.null(active_vocab_file_loc) || !dir.exists(active_vocab_file_loc)) {
