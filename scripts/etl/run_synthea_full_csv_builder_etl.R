@@ -613,6 +613,20 @@ run_synthea_full_csv_builder_etl <- function(
       sql <- paste0(prep, sql)
     }
 
+    # insert_condition_era.sql uses a gap-and-island CTE chain with nested window
+    # functions (ROW_NUMBER, MAX OVER UNBOUNDED PRECEDING) and a cross-join
+    # between start/end events.  SQL Server picks a parallel plan that stalls
+    # indefinitely on CXSYNC_PORT thread synchronisation.
+    # Fix: append OPTION(MAXDOP 1) to the SELECT INTO #tmp_ce query to force a
+    # serial plan.  This drops runtime from hours to under a minute.
+    if (tolower(basename(file_path)) == "insert_condition_era.sql") {
+      sql <- sub(
+        "(SELECT\\s[\\s\\S]*?FROM\\s+cteConditionEnds[\\s\\S]*?GROUP BY person_id,\\s*condition_concept_id,\\s*era_end_date)(\\s*;)",
+        "\\1\nOPTION (MAXDOP 1)\\2",
+        sql, perl = TRUE, ignore.case = TRUE
+      )
+    }
+
     # Date column VARCHAR→DATETIME2 conversion patch: staging date fields may
     # arrive in one of three forms depending on JDBC coercion behavior:
     #   1) Integer day offset from 1970-01-01 (for example: -10010, 5889)
@@ -1459,8 +1473,14 @@ run_synthea_full_csv_builder_etl <- function(
   create_visit_rollup_tables_sql_server()
   progress$tick("Visit rollup tables materialized")
   
-  # Create concept_ancestor indexes BEFORE load_event_tables_sql_server to support drug_era query optimization
-  message("[PERF] Creating concept_ancestor indexes for drug_era query optimization...")
+  # Create supporting indexes BEFORE load_event_tables_sql_server.
+  #
+  # 1. concept_ancestor indexes: support the drug_era ingredient mapping query.
+  # 2. condition_occurrence covering index: support the condition_era gap-and-island
+  #    CTE which scans condition_occurrence twice (start events + end events UNION ALL)
+  #    partitioned by (person_id, condition_concept_id).  Without this index SQL Server
+  #    performs two full table scans, compounding the CXSYNC_PORT stall risk.
+  message("[PERF] Creating pre-era indexes (concept_ancestor + condition_occurrence)...")
   conn_indices_pre <- connect_with_retry(connection_details)
   on.exit(DatabaseConnector::disconnect(conn_indices_pre), add = TRUE)
   
@@ -1495,7 +1515,33 @@ run_synthea_full_csv_builder_etl <- function(
     targetDialect = config$dbms
   )
   execute_sql_with_retry(conn_indices_pre, index_sql_pre)
-  message("[PERF] concept_ancestor indexes ready for drug_era.")
+
+  # Covering index on condition_occurrence for condition_era CTE performance.
+  # The gap-and-island algorithm partitions by (person_id, condition_concept_id)
+  # and orders by condition_start_date, so this index satisfies both scans
+  # in the UNION ALL without touching the heap.
+  co_index_sql <- SqlRender::translate(
+    SqlRender::render(
+      "IF OBJECT_ID('@cdm_schema.condition_occurrence', 'U') IS NOT NULL
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM sys.indexes
+           WHERE object_id = OBJECT_ID('@cdm_schema.condition_occurrence')
+             AND name = 'IX_condition_occurrence_era'
+         )
+         BEGIN
+           CREATE INDEX IX_condition_occurrence_era
+             ON @cdm_schema.condition_occurrence
+               (person_id, condition_concept_id, condition_start_date)
+             INCLUDE (condition_occurrence_id, condition_end_date);
+         END;
+       END;",
+      cdm_schema = config$cdm_schema
+    ),
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, co_index_sql)
+  message("[PERF] Pre-era indexes ready (concept_ancestor + condition_occurrence).")
   progress$tick("concept_ancestor indexes verified")
   
   load_event_tables_sql_server(progress)
