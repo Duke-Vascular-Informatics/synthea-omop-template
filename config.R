@@ -38,6 +38,11 @@ get_validation_config <- function() {
     database         = "omop_synth",
     sql_server_port  = 1433L,
 
+    # Shared vocabulary schema — loaded once via scripts/setup_omop_vocab_schema.R.
+    # All CDM schemas reference this via SQL Server synonyms instead of holding
+    # their own copy of the 130M-row vocabulary.
+    vocab_schema     = "omop_vocab",
+
     # CDM schema (created by this repository's Step 5 ETL workflow)
     cdm_schema       = "cdm_synthea",
     cdm_version      = 5L,

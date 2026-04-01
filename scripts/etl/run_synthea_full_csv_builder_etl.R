@@ -86,6 +86,8 @@ run_synthea_full_csv_builder_etl <- function(
   vocab_delimiter = "\t",
     reset_before_etl = TRUE,
     synthea_bulk_load = TRUE,
+    use_shared_vocab_schema = FALSE,
+    shared_vocab_schema = "omop_vocab",
     verbose = TRUE) {
 
   # ---------------------------------------------------------------------------
@@ -209,15 +211,23 @@ run_synthea_full_csv_builder_etl <- function(
     )
   }
 
-  # table_exists() returns TRUE if a table with the given name exists in the
-  # given schema.  Uses INFORMATION_SCHEMA.TABLES for portability.
+  # table_exists() returns TRUE if a real table OR a synonym with the given
+  # name exists in the given schema.  Checks both INFORMATION_SCHEMA.TABLES
+  # (real tables/views) and sys.synonyms so that vocabulary synonym objects
+  # created by create_vocab_synonyms() are treated as present by all
+  # downstream guards (ensure_cdm_tables_exist, vocab_is_loaded, etc.).
   table_exists <- function(connection, schema_name, table_name) {
-    sql <- render_sql(
-      "SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.TABLES
-       WHERE TABLE_SCHEMA = '@schema_name'
-         AND TABLE_NAME = '@table_name';",
-      schema_name = schema_name,
-      table_name = table_name
+    sql <- paste0(
+      "SELECT COUNT(*) AS n FROM (",
+      "  SELECT TABLE_NAME AS obj_name FROM INFORMATION_SCHEMA.TABLES ",
+      "  WHERE TABLE_SCHEMA = '", gsub("'", "''", schema_name), "'",
+      "    AND TABLE_NAME   = '", gsub("'", "''", table_name),  "'",
+      "  UNION ALL",
+      "  SELECT s.name AS obj_name FROM sys.synonyms s",
+      "  JOIN sys.schemas sc ON s.schema_id = sc.schema_id",
+      "  WHERE sc.name = '", gsub("'", "''", schema_name), "'",
+      "    AND s.name  = '", gsub("'", "''", table_name),  "'",
+      ") AS obj;"
     )
     res <- query_sql_with_retry(connection, sql)
     as.numeric(res$n[1]) > 0
@@ -816,17 +826,32 @@ run_synthea_full_csv_builder_etl <- function(
   # ---------------------------------------------------------------------------
   # 8. Vocabulary load
   # ---------------------------------------------------------------------------
-  # Preferred path (reload_vocab_from_csv = TRUE):
+  # Vocabulary loading — three paths in priority order:
+  #
+  # Path A (use_shared_vocab_schema = TRUE):
+  #   Wire SQL Server synonyms in the target schema pointing to the shared
+  #   omop_vocab schema.  No data is copied; vocab is available instantly.
+  #   Requires scripts/setup_omop_vocab_schema.R to have been run once.
+  #
+  # Path B (reload_vocab_from_csv = TRUE):
   #   Call ETLSyntheaBuilder::LoadVocabFromCsv with the OHDSI vocabulary CSV
   #   directory.  This loads ~130M rows across 9 vocabulary tables.
   #
-  # Fallback path (reload_vocab_from_csv = FALSE):
+  # Path C (reload_vocab_from_csv = FALSE):
   #   If the target schema has no vocabulary, bootstrap it from the reference
   #   schema (vocabulary_source_schema) via INSERT ... SELECT.
   #
   # Hard guard: regardless of path taken, assert_vocab_loaded_for_etl() will
   # stop execution if concept/concept_ancestor/concept_relationship are empty.
-  if (isTRUE(reload_vocab_from_csv)) {
+  if (isTRUE(use_shared_vocab_schema)) {
+    log_msg(
+      "Vocabulary path: shared schema synonyms → '", shared_vocab_schema, "'"
+    )
+    source("R/db_maintenance.R")
+    create_vocab_synonyms(config, config$cdm_schema, shared_vocab_schema)
+    progress$tick("Vocabulary synonyms wired to shared schema")
+
+  } else if (isTRUE(reload_vocab_from_csv)) {
     if (is.null(active_vocab_file_loc) || !dir.exists(active_vocab_file_loc)) {
       stop(
         "reload_vocab_from_csv=TRUE but vocab_file_loc is not set to an existing directory: ",

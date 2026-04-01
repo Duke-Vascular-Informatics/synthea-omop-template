@@ -73,9 +73,25 @@ synthea_bulk_load <- TRUE
 # TRUE  = print verbose ETL logs/progress ticks.
 verbose <- TRUE
 
+# Vocabulary strategy — choose ONE of the following:
+#
+# use_shared_vocab_schema = TRUE  (recommended after first-time setup)
+#   Wires SQL Server synonyms pointing to the shared omop_vocab schema.
+#   No data is copied; setup takes ~1 second.
+#   Prerequisite: run scripts/setup_omop_vocab_schema.R once on this instance.
+#
+# use_shared_vocab_schema = FALSE + reload_vocab_from_csv = TRUE
+#   Loads vocabulary fresh from CSV on every run (~30-60 min, ~25 GB log).
+#   Use only on a new instance before setup_omop_vocab_schema.R has been run.
+#
+# use_shared_vocab_schema = FALSE + reload_vocab_from_csv = FALSE
+#   Bootstraps vocab via INSERT...SELECT from vocabulary_source_schema.
+use_shared_vocab_schema <- TRUE
+shared_vocab_schema     <- "omop_vocab"
+
 # TRUE  = reload vocab into target CDM schema from CSV folder.
 # FALSE = do not use CSV vocab load path (helper script may use fallback logic).
-reload_vocab_from_csv <- TRUE
+reload_vocab_from_csv <- FALSE
 
 # Required when reload_vocab_from_csv = TRUE.
 # Set in shell, for example: $env:OHDSI_VOCAB_CSV_DIR = "C:\\Vocabulary_20250301"
@@ -266,20 +282,32 @@ message("Synthea bulk load      : ", ifelse(synthea_bulk_load, "true", "false"))
 message("CSV input directory    : ", normalizePath(csv_input_dir, winslash = "/", mustWork = FALSE))
 message("Run name               : ", run_name)
 
+# ---------------------------------------------------------------------------
+# Pre-flight: check and prepare the SQL Server transaction log.
+# The vocabulary CSV load (CONCEPT_ANCESTOR: 75 M rows) requires a large
+# log headroom even in SIMPLE recovery.  This call shrinks any space left
+# over from prior runs and pre-grows the log to 25 GB before touching any
+# OMOP tables, preventing mid-ETL "transaction log full" failures.
+# ---------------------------------------------------------------------------
+source("R/db_maintenance.R")
+prepare_txlog_for_bulk_etl(cfg)
+
 # Delegate actual ETL execution to the main ETLBuilder orchestration script.
 source("scripts/etl/run_synthea_full_csv_builder_etl.R")
 
 run_synthea_full_csv_builder_etl(
-  csv_input_dir = csv_input_dir,
-  run_name = run_name,
-  cdm_schema = target_cdm_schema,
+  csv_input_dir            = csv_input_dir,
+  run_name                 = run_name,
+  cdm_schema               = target_cdm_schema,
   vocabulary_source_schema = vocabulary_source_schema,
-  reload_vocab_from_csv = reload_vocab_from_csv,
-  vocab_file_loc = vocab_file_loc,
-  vocab_delimiter = vocab_delimiter,
-  reset_before_etl = reset_before_etl,
-  synthea_bulk_load = synthea_bulk_load,
-  verbose = verbose
+  reload_vocab_from_csv    = reload_vocab_from_csv,
+  vocab_file_loc           = vocab_file_loc,
+  vocab_delimiter          = vocab_delimiter,
+  reset_before_etl         = reset_before_etl,
+  synthea_bulk_load        = synthea_bulk_load,
+  use_shared_vocab_schema  = use_shared_vocab_schema,
+  shared_vocab_schema      = shared_vocab_schema,
+  verbose                  = verbose
 )
 
 cat(
