@@ -353,7 +353,7 @@ All components are fully mapped:
 | `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
 | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
 | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
-| `optime4h` | ⚠️ **UNMAPPED** (concept_id = 0) | Operative time ≥ 240 min requires value-based logic against LOINC 89875-9 (concept_id 1175267, "Procedure duration"); a simple concept presence lookup is insufficient. Not scored until implemented. |
+| `optime4h` | 4159960 + descendants ⚠️ **datetime-derived** | Operative time ≥ 240 min computed as `DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240` on any revascularization procedure descended from 4159960. Simple concept presence lookup is insufficient; scoring pipeline must use the datetime diff. **Synthea limitation:** procedures are recorded at day granularity (no clock time), so this component produces no valid synthetic signal — approach is correct for real EHR data with OR start/stop times. |
 | `mFI_high` | 201820, 255573, 316139, 316866, ⚠️ **4215267 invalid** | Composite modified Frailty Index ≥ 2/5: diabetes, COPD, CHF, hypertension, functional status. concept_id 4215267 maps to "Agent relationship" (non-standard) — functional dependence has no reliable single OMOP concept; see `component_concepts.csv` for options. |
 | `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
 
