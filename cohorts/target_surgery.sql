@@ -19,12 +19,15 @@
 --   @study_start_date       Earliest admissible visit start date
 --   @study_end_date         Latest admissible visit start date
 --
--- NOTE: SSI-related concept ancestors used in the exclusion window:
---   4201004  = Infection of wound  (SNOMED 76844004)
---   4318887  = Surgical wound infection (SNOMED 433202001)
--- Verify these IDs in your cdm_synthea.concept table with:
---   SELECT concept_id, concept_name FROM cdm_synthea.concept
---   WHERE concept_name LIKE '%surgical%infection%'
+-- NOTE: Concept ancestors used in this query:
+--   4159960  = Open lower extremity revascularization (procedure inclusion)
+--              Covers descendants: 4012936 (fem-pop bypass), 4166196 (femo-tibial
+--              bypass), 4231680 (aorto-femoral bypass), 4040974 (fem endarterectomy)
+--   4201004  = Infection of wound  (SSI washout exclusion — SNOMED 76844004)
+--   4318887  = Surgical wound infection (SSI washout exclusion — SNOMED 433202001)
+-- Verify IDs in your omop_vocab.concept table with:
+--   SELECT concept_id, concept_name FROM omop_vocab.concept
+--   WHERE concept_name LIKE '%lower extremity revasc%'
 --     AND standard_concept = 'S';
 -- =============================================================================
 
@@ -77,14 +80,19 @@ FROM (
         ) >= 18
 
     -- Open lower extremity revascularization during the qualifying visit.
-    -- In this synthetic ETL, procedure_source_value is the most stable identifier.
+    -- Uses concept_ancestor rollup under 4159960 (Open lower extremity
+    -- revascularization) to match all four procedure subtypes in the module
+    -- (femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass,
+    -- femoral endarterectomy) via their standard OMOP concept IDs.
     AND EXISTS (
       SELECT 1
       FROM @cdm_database_schema.procedure_occurrence po
-      WHERE po.person_id    = vo.person_id
+      INNER JOIN @cdm_database_schema.concept_ancestor ca
+        ON ca.descendant_concept_id = po.procedure_concept_id
+      WHERE ca.ancestor_concept_id = 4159960
+        AND po.person_id    = vo.person_id
         AND po.procedure_date BETWEEN vo.visit_start_date
                                   AND ISNULL(vo.visit_end_date, vo.visit_start_date)
-        AND po.procedure_source_value = '232723009'
     )
 
     -- Washout: no wound / SSI diagnosis in the 365 days before index
