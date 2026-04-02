@@ -613,6 +613,18 @@ run_synthea_full_csv_builder_etl <- function(
       sql <- paste0(prep, sql)
     }
 
+    # insert_payer_plan_period.sql wraps a multi-table join in an outer SELECT that
+    # uses ROW_NUMBER() OVER (ORDER BY person_id, ...) for ID generation.  SQL Server
+    # picks a parallel plan for the window function that stalls on CXSYNC_PORT.
+    # Fix: append OPTION(MAXDOP 1) before the final semicolon.
+    if (tolower(basename(file_path)) == "insert_payer_plan_period.sql") {
+      sql <- sub(
+        "\\)\\s*person_payer_windows\\s*;",
+        ") person_payer_windows\nOPTION (MAXDOP 1);",
+        sql, perl = TRUE, ignore.case = TRUE
+      )
+    }
+
     # insert_condition_era.sql uses a gap-and-island CTE chain with nested window
     # functions (ROW_NUMBER, MAX OVER UNBOUNDED PRECEDING) and a cross-join
     # between start/end events.  SQL Server picks a parallel plan that stalls
@@ -1541,7 +1553,30 @@ run_synthea_full_csv_builder_etl <- function(
     targetDialect = config$dbms
   )
   execute_sql_with_retry(conn_indices_pre, co_index_sql)
-  message("[PERF] Pre-era indexes ready (concept_ancestor + condition_occurrence).")
+
+  # Index on synthea.payer_transitions(patient) to speed up the payer_plan_period
+  # join against synthea.patients and omop.person.
+  ppt_index_sql <- SqlRender::translate(
+    SqlRender::render(
+      "IF OBJECT_ID('synthea.payer_transitions', 'U') IS NOT NULL
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM sys.indexes
+           WHERE object_id = OBJECT_ID('synthea.payer_transitions')
+             AND name = 'IX_payer_transitions_patient'
+         )
+         BEGIN
+           CREATE INDEX IX_payer_transitions_patient
+             ON synthea.payer_transitions (patient)
+             INCLUDE (payer, start_date, end_date);
+         END;
+       END;",
+      cdm_schema = config$cdm_schema
+    ),
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, ppt_index_sql)
+  message("[PERF] Pre-era indexes ready (concept_ancestor + condition_occurrence + payer_transitions).")
   progress$tick("concept_ancestor indexes verified")
   
   load_event_tables_sql_server(progress)
