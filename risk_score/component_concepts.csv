@@ -43,9 +43,12 @@ abi_35,40489833,TRUE,
 abi_35,46237026,TRUE,
 prrevasc_any,4159960,TRUE,
 prolong_abx,21603553,TRUE,
-# optime4h: use procedure_end_datetime - procedure_datetime >= 240 min
-# for any descendant of 4159960. Synthea data will not show valid signal
-# (day-level granularity only); correct for real EHR data.
+# optime4h: DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
+# on any procedure descended from 4159960.
+# Synthea generates sub-day procedure timestamps via the module's duration field
+# (confirmed: Femoro-popliteal 2-5h, Endarterectomy 1-3h, Aorto-femoral 2-4h,
+# Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
+# Valid synthetic signal is produced after re-running Steps 4 and 5.
 optime4h,4159960,TRUE,
 # WARNING — concept_id 4215267 is not a valid functional status concept; see note above
 mFI_high,201820,TRUE,diabetes
