@@ -1,4 +1,4 @@
-component_id,concept_id,include_descendants,concept_role
+component_id,concept_id,include_descendants,concept_role,value_concept_ids
 # Standard OMOP concept IDs per component (verified against omop_vocab.concept).
 # All concept IDs with include_descendants = TRUE use concept_ancestor rollup.
 #
@@ -38,30 +38,57 @@ component_id,concept_id,include_descendants,concept_role
 #   NOTE: 36712925 (Decline in functional status) was evaluated and excluded —
 #   its descendant hierarchy contains 280+ unrelated concepts (syncope,
 #   hypoparathyroidism, ovarian failure, etc.).
-female,8532,FALSE,
-overweight,3025315,FALSE,weight
-overweight,3036277,FALSE,height
-obese,3025315,FALSE,weight
-obese,3036277,FALSE,height
-urgnt,4158569,TRUE,
-urgnt,4250892,TRUE,
-abi_35,40489833,TRUE,
-abi_35,46237026,TRUE,
-prrevasc_any,4159960,TRUE,
-prolong_abx,21603553,TRUE,
+#
+# Barthel sub-items (observation table, value_concept_ids column) [vocab query]:
+#   Three LOINC panel items (LOINC 96762-0) are also included under functional_status.
+#   These are queried from observation WHERE value_as_concept_id is in the impaired
+#   answer set (all answers EXCEPT Independent / No problems / Mobility not observed).
+#   The value_concept_ids column lists the qualifying (impaired) answer concept_ids,
+#   semicolon-separated.  The pipeline uses observation.value_as_concept_id IN (...)
+#   instead of a simple concept presence lookup.
+#
+#   42529379  Transferring - functional ability   (LOINC 83185-9)
+#     Impaired answers: 45885227 Dependent, 1620353 Major help, 1620433 Minor help,
+#       1620749 Unable no sitting balance, 45882405 Needed some help
+#   42529380  Ambulation - functional ability     (LOINC 83186-7)
+#     Impaired answers: 3968781 Ambulates with assistive device/assistance,
+#       3968689 Ambulates with unsteady gait, 45885227 Dependent, 1621081 Immobile/<50yds,
+#       45882405 Needed some help, 3968837 Unable to ambulate/transfer,
+#       1620501 Walks with help of one person >50yds, 1621102 Wheelchair independent >50yds,
+#       3968806 Mobility impairment observed
+#   1616510   Stairs - functional ability         (LOINC 96758-8)
+#     Impaired answers: 1989937 Impossible, 1620720 Needs help, 1990215 One step at a time,
+#       1989914 Slightly impaired, 21498877 Unable
+#
+#   NOTE: Synthea does not generate Barthel assessment observations; these rows will
+#   produce no synthetic signal but are correct for real EHR data.
+female,8532,FALSE,,
+overweight,3025315,FALSE,weight,
+overweight,3036277,FALSE,height,
+obese,3025315,FALSE,weight,
+obese,3036277,FALSE,height,
+urgnt,4158569,TRUE,,
+urgnt,4250892,TRUE,,
+abi_35,40489833,TRUE,,
+abi_35,46237026,TRUE,,
+prrevasc_any,4159960,TRUE,,
+prolong_abx,21603553,TRUE,,
 # optime4h: DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
 # on any procedure descended from 4159960.
 # Synthea generates sub-day procedure timestamps via the module's duration field
 # (confirmed: Femoro-popliteal 2-5h, Endarterectomy 1-3h, Aorto-femoral 2-4h,
 # Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
 # Valid synthetic signal is produced after re-running Steps 4 and 5.
-optime4h,4159960,TRUE,
-mFI_high,201820,TRUE,diabetes
-mFI_high,255573,TRUE,copd
-mFI_high,316139,TRUE,chf
-mFI_high,316866,TRUE,hypertension
-mFI_high,4086506,TRUE,functional_status
-mFI_high,4159704,FALSE,functional_status
-mFI_high,4167605,TRUE,functional_status
-mFI_high,4306934,TRUE,functional_status
-indicationClaudication,442774,TRUE,
+optime4h,4159960,TRUE,,
+mFI_high,201820,TRUE,diabetes,
+mFI_high,255573,TRUE,copd,
+mFI_high,316139,TRUE,chf,
+mFI_high,316866,TRUE,hypertension,
+mFI_high,4086506,TRUE,functional_status,
+mFI_high,4159704,FALSE,functional_status,
+mFI_high,4167605,TRUE,functional_status,
+mFI_high,4306934,TRUE,functional_status,
+mFI_high,42529379,FALSE,functional_status,45885227;1620353;1620433;1620749;45882405
+mFI_high,42529380,FALSE,functional_status,3968781;3968689;45885227;1621081;45882405;3968837;1620501;1621102;3968806
+mFI_high,1616510,FALSE,functional_status,1989937;1620720;1990215;1989914;21498877
+indicationClaudication,442774,TRUE,,

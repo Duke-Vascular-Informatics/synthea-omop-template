@@ -52,6 +52,15 @@ read_score_specs <- function(config) {
   concepts$concept_role <- tolower(trimws(as.character(concepts$concept_role)))
   concepts$concept_role[concepts$concept_role == ""] <- NA_character_
 
+  # value_concept_ids: optional semicolon-separated list of value_as_concept_id values
+  # that qualify as a positive hit (used by mFI observation sub-components).
+  # Empty / NA means any occurrence of the concept counts as positive.
+  if (!"value_concept_ids" %in% names(concepts)) {
+    concepts$value_concept_ids <- NA_character_
+  }
+  concepts$value_concept_ids <- trimws(as.character(concepts$value_concept_ids))
+  concepts$value_concept_ids[concepts$value_concept_ids %in% c("", "NA")] <- NA_character_
+
   if (any(is.na(concepts$concept_id))) {
     stop("component_concepts.csv contains non-integer concept_id values.")
   }
@@ -536,29 +545,62 @@ query_mfi_component_counts <- function(connection, config, component, component_
     ids  <- paste(unique(sc$concept_id), collapse = ", ")
     desc <- if (any(sc$include_descendants)) 1L else 0L
 
-    concept_filter <- sprintf(
-      paste0("(co.condition_concept_id IN (%s)\n",
-             "         OR (%d = 1 AND co.condition_concept_id IN (\n",
-             "               SELECT ca.descendant_concept_id\n",
-             "               FROM %s.concept_ancestor ca\n",
-             "               WHERE ca.ancestor_concept_id IN (%s)\n",
-             "             )))"),
-      ids, desc, config$cdm_schema, ids
-    )
+    # Rows with value_concept_ids use the observation table with value filtering;
+    # rows without use condition_occurrence (standard diagnosis lookup).
+    value_ids_raw <- sc$value_concept_ids[!is.na(sc$value_concept_ids)]
+    value_ids <- unique(unlist(strsplit(value_ids_raw, ";")))
+    value_ids <- trimws(value_ids[nzchar(trimws(value_ids))])
+    use_observation <- length(value_ids) > 0
 
-    sprintf(
-      paste0("%s AS (\n",
-             "  SELECT DISTINCT t.subject_id\n",
-             "  FROM target_population t\n",
-             "  JOIN %s.condition_occurrence co ON co.person_id = t.subject_id\n",
-             "  WHERE %s\n",
-             "    AND CAST(co.condition_start_date AS DATE) >= DATEADD(DAY, %d, t.index_date)\n",
-             "    AND CAST(co.condition_start_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
-             ")"),
-      cte_name, config$cdm_schema, concept_filter,
-      as.integer(component$lookback_start_day),
-      as.integer(component$lookback_end_day)
-    )
+    if (use_observation) {
+      concept_filter <- sprintf(
+        paste0("(o.observation_concept_id IN (%s)\n",
+               "         OR (%d = 1 AND o.observation_concept_id IN (\n",
+               "               SELECT ca.descendant_concept_id\n",
+               "               FROM %s.concept_ancestor ca\n",
+               "               WHERE ca.ancestor_concept_id IN (%s)\n",
+               "             )))\n",
+               "    AND o.value_as_concept_id IN (%s)"),
+        ids, desc, config$cdm_schema, ids,
+        paste(value_ids, collapse = ", ")
+      )
+      sprintf(
+        paste0("%s AS (\n",
+               "  SELECT DISTINCT t.subject_id\n",
+               "  FROM target_population t\n",
+               "  JOIN %s.observation o ON o.person_id = t.subject_id\n",
+               "  WHERE %s\n",
+               "    AND CAST(o.observation_date AS DATE) >= DATEADD(DAY, %d, t.index_date)\n",
+               "    AND CAST(o.observation_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
+               ")"),
+        cte_name, config$cdm_schema, concept_filter,
+        as.integer(component$lookback_start_day),
+        as.integer(component$lookback_end_day)
+      )
+    } else {
+      concept_filter <- sprintf(
+        paste0("(co.condition_concept_id IN (%s)\n",
+               "         OR (%d = 1 AND co.condition_concept_id IN (\n",
+               "               SELECT ca.descendant_concept_id\n",
+               "               FROM %s.concept_ancestor ca\n",
+               "               WHERE ca.ancestor_concept_id IN (%s)\n",
+               "             )))"),
+        ids, desc, config$cdm_schema, ids
+      )
+      sprintf(
+        paste0("%s AS (\n",
+               "  SELECT DISTINCT t.subject_id\n",
+               "  FROM target_population t\n",
+               "  JOIN %s.condition_occurrence co ON co.person_id = t.subject_id\n",
+               "  WHERE %s\n",
+               "    AND CAST(co.condition_start_date AS DATE) >= DATEADD(DAY, %d, t.index_date)\n",
+               "    AND CAST(co.condition_start_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
+               ")"),
+        cte_name, config$cdm_schema, concept_filter,
+        as.integer(component$lookback_start_day),
+        as.integer(component$lookback_end_day)
+      )
+    }
   }, roles, sub_cte_names, SIMPLIFY = TRUE)
 
   # CTE that sums sub-component flags per patient
