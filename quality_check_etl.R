@@ -300,7 +300,7 @@ summary_sql <- SqlRender::translate(SqlRender::render(
     "   )) AS procedure_rows,\n",
     "  (SELECT COUNT(*) FROM @cdm_schema.procedure_occurrence po WHERE po.person_id IN (\n",
     "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
-    "   ) AND po.procedure_source_value = '232723009') AS open_revascularization_rows,\n",
+    "   ) AND po.procedure_source_value IN ('112828007','16589005','405482000','47575002')) AS open_revascularization_rows,\n",
     "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
     "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
     "   )) AS condition_rows,\n",
@@ -389,7 +389,7 @@ cat("\n")
 ssi_person_sql <- SqlRender::translate(SqlRender::render(
   paste0(
     "SELECT\n",
-    "  COUNT(DISTINCT CASE WHEN po.procedure_source_value = '232723009' THEN p.person_id END) AS people_with_open_revascularization,\n",
+    "  COUNT(DISTINCT CASE WHEN po.procedure_source_value IN ('112828007','16589005','405482000','47575002') THEN p.person_id END) AS people_with_open_revascularization,\n",
     "  COUNT(DISTINCT CASE WHEN co.condition_source_value = '399957001' THEN p.person_id END) AS people_with_pad,\n",
     "  COUNT(DISTINCT CASE WHEN co.condition_source_value = '76844004' THEN p.person_id END) AS people_with_ssi\n",
     "FROM @cdm_schema.person p\n",
@@ -399,7 +399,7 @@ ssi_person_sql <- SqlRender::translate(SqlRender::render(
     "  ON co.person_id = p.person_id\n",
     "WHERE ", person_filter, "\n",
     "  AND (\n",
-    "    po.procedure_source_value = '232723009'\n",
+    "    po.procedure_source_value IN ('112828007','16589005','405482000','47575002')\n",
     "    OR co.condition_source_value IN ('399957001', '76844004')\n",
     "  );"
   ),
