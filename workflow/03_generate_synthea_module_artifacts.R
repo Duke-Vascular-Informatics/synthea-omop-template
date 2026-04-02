@@ -232,7 +232,7 @@ required_concepts <- data.frame(
     "Index procedure: aortobifemoral bypass",
     "Index procedure: femoro-tibial bypass",
     # --- Outcome cohort ---
-    "Outcome: SSI / infection of surgical wound",
+    "Outcome: SSI / surgical site infection",
     # --- Covariates: BMI / anthropometrics ---
     "BMI observation (obese / overweight covariate)",
     "Height observation (BMI calculation)",
@@ -251,6 +251,8 @@ required_concepts <- data.frame(
     "mFI: CHF / heart failure",
     "mFI: hypertension",
     "mFI: functional impairment / impaired mobility",
+    "mFI: Barthel transferring observation",
+    "mFI: Barthel ambulation observation",
     # --- Covariates: claudication indication ---
     "Indication: intermittent claudication",
     # --- Covariates: smoking (risk factor) ---
@@ -265,16 +267,18 @@ required_concepts <- data.frame(
     "SNOMED-CT",
     "RxNorm",
     "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
+    "LOINC", "LOINC",
     "SNOMED-CT",
     "LOINC"
   ),
   code = c(
-    "112828007", "16589005", "405482000", "47575002", "76844004",
+    "112828007", "16589005", "405482000", "47575002", "433202001",
     "39156-5", "8302-2", "29463-7",
     "25876001",
     "59574-4",
     "112828007", "2673",
     "44054006", "13645005", "84114007", "38341003", "129839007",
+    "83185-9", "83186-7",
     "266261006",
     "72166-2"
   )
