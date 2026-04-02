@@ -88,6 +88,19 @@ Root-level `setup_renv.R` and `install_packages.R` remain as compatibility wrapp
 
 Validates SQL cohort and outcome definitions and OMOP concept-based covariate artifact files.
 
+> **Vocabulary note:** Cohort SQL files (`cohorts/target_surgery.sql`,
+> `cohorts/outcome_ssi.sql`) use ancestor concept IDs verified against the
+> OMOP vocabulary loaded in `omop_vocab`. Key ancestors:
+>
+> | Ancestor concept_id | Concept name | SNOMED-CT | Role |
+> |---|---|---|---|
+> | 4159960 | Procedure on blood vessel of lower extremity | 397441004 | Target cohort procedure inclusion |
+> | 4334801 | Surgical site infection | 433202001 | Outcome inclusion; target cohort washout exclusion |
+>
+> Previously documented ancestor IDs 4201004, 4318887, 40480632, and 4110523
+> do not exist or map to unrelated concepts in the current vocabulary version
+> and have been removed.
+
 ```powershell
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
 ```
@@ -157,16 +170,26 @@ Key clinical parameters:
 
 Primary concept codes (OMOP-mappable):
 
-| Concept | Vocabulary | Code |
-|---------|-----------|------|
-| Peripheral arterial occlusive disease | SNOMED-CT | 399957001 |
-| Bypass of femoral artery to popliteal artery | SNOMED-CT | 232723009 |
-| Infection of surgical wound | SNOMED-CT | 76844004 |
-| Debridement (reoperation) | SNOMED-CT | 118294005 |
-| Ankle-brachial index | LOINC | 59574-4 |
-| Wound culture | LOINC | 6463-4 |
-| Cefazolin (perioperative prophylaxis) | RxNorm | 20496 |
-| Cephalexin (SSI treatment) | RxNorm | 2673 |
+| Concept | Vocabulary | Code | OMOP concept_id |
+|---------|-----------|------|----------------|
+| Peripheral arterial disease | SNOMED-CT | 399957001 | 317309 |
+| Femoro-popliteal bypass | SNOMED-CT | 112828007 | 4012936 |
+| Femoro-tibial bypass | SNOMED-CT | 16589005 | 4166196 |
+| Aortobifemoral bypass | SNOMED-CT | 405482000 | 4231680 |
+| Femoral endarterectomy | SNOMED-CT | 47575002 | 4040974 |
+| **Surgical site infection** | SNOMED-CT | **433202001** | **4334801** |
+| Debridement (reoperation) | SNOMED-CT | 118294005 | — |
+| Ankle-brachial index | LOINC | 59574-4 | — |
+| Wound culture | LOINC | 6463-4 | — |
+| Cefazolin (perioperative prophylaxis) | RxNorm | 20496 | — |
+| Cephalexin (SSI treatment) | RxNorm | 2673 | — |
+
+> **SSI concept change (2026-04):** The module previously used SNOMED-CT `76844004`
+> ("Local infection of wound" → OMOP 4297984), which is not a descendant of any
+> standard SSI ancestor in the current OMOP vocabulary. It has been updated to
+> `433202001` ("Surgical site infection" → OMOP 4334801), which is the correct
+> hierarchical ancestor used by `outcome_ssi.sql` and `target_surgery.sql`.
+> Re-run Steps 4 and 5 after this change.
 
 ### Visualize the Module
 
@@ -330,8 +353,8 @@ All components are fully mapped:
 | `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
 | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
 | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
-| `optime4h` | procedure_end_datetime (primary) | Operative time > 240 minutes; measurement table used if concept present |
-| `mFI_high` | 201820, 255573, 316139, 316866, 4215267 | Composite modified Frailty Index > 0.25 (≥2/5 conditions: diabetes, COPD, CHF, hypertension, functional status) |
+| `optime4h` | ⚠️ **UNMAPPED** (concept_id = 0) | Operative time ≥ 240 min requires value-based logic against LOINC 89875-9 (concept_id 1175267, "Procedure duration"); a simple concept presence lookup is insufficient. Not scored until implemented. |
+| `mFI_high` | 201820, 255573, 316139, 316866, ⚠️ **4215267 invalid** | Composite modified Frailty Index ≥ 2/5: diabetes, COPD, CHF, hypertension, functional status. concept_id 4215267 maps to "Agent relationship" (non-standard) — functional dependence has no reliable single OMOP concept; see `component_concepts.csv` for options. |
 | `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
 
 Output files (written to `output/risk_score_eval/`):

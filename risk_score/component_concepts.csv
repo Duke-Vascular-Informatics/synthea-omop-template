@@ -1,11 +1,30 @@
 component_id,concept_id,include_descendants,concept_role
-# Add one or more standard OMOP concept IDs per component.
-# Example:
-# diabetes,201820,TRUE
-# prior_antibiotic,21602796,TRUE
-# reoperation,2105440,TRUE
-# Placeholder mappings for PAD SSI score components.
-# Replace concept_id = 0 with validated standard OMOP concept IDs from your CDM vocabulary.
+# Standard OMOP concept IDs per component (verified against omop_vocab.concept).
+# All concept IDs with include_descendants = TRUE use concept_ancestor rollup.
+#
+# KNOWN GAPS — require clinical/informatics review before final analysis:
+#
+# optime4h (concept_id = 0):
+#   Operative time >= 4 hours cannot be captured by concept presence alone.
+#   It requires a VALUE-BASED measurement check against LOINC 89875-9
+#   ("Procedure duration", concept_id 1175267, Observation domain).
+#   The scoring pipeline must be extended to query measurement.value_as_number
+#   >= 240 (minutes) for this concept rather than using a simple concept lookup.
+#   concept_id is left as 0 (placeholder) until that logic is implemented.
+#
+# mFI_high / functional_status (concept_id = 4215267):
+#   concept_id 4215267 ("Agent relationship") is NOT a valid functional status
+#   concept — it is a non-standard SNOMED relationship concept in the Observation
+#   domain. Functional dependence/impairment (the mFI component) has no single
+#   standard OMOP concept that reliably captures it across CDMs. Options:
+#     a) Use ADL-inability concepts (e.g. 4108019 "Unable to perform personal
+#        care activity") if your CDM captures functional assessments.
+#     b) Derive from structured survey instruments (LOINC panel concepts) if
+#        available in your Observation table.
+#     c) Proxy via diagnosis codes for frailty (SNOMED 248279007 / concept_id
+#        4059172) if direct ADL documentation is absent.
+#   Until a validated mapping is confirmed, this concept_id should be treated
+#   as a placeholder and the mFI_high component result interpreted with caution.
 female,8532,FALSE,
 overweight,3025315,FALSE,weight
 overweight,3036277,FALSE,height
@@ -17,7 +36,9 @@ abi_35,40489833,TRUE,
 abi_35,46237026,TRUE,
 prrevasc_any,4159960,TRUE,
 prolong_abx,21603553,TRUE,
+# PLACEHOLDER — see note above: optime4h requires value-based measurement logic
 optime4h,0,TRUE,
+# WARNING — concept_id 4215267 is not a valid functional status concept; see note above
 mFI_high,201820,TRUE,diabetes
 mFI_high,255573,TRUE,copd
 mFI_high,316139,TRUE,chf

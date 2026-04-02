@@ -20,15 +20,17 @@
 --   @study_end_date         Latest admissible visit start date
 --
 -- NOTE: Concept ancestors used in this query:
---   4159960  = Open lower extremity revascularization (procedure inclusion)
+--   4159960  = Procedure on blood vessel of lower extremity (procedure inclusion)
 --              Covers descendants: 4012936 (fem-pop bypass), 4166196 (femo-tibial
 --              bypass), 4231680 (aorto-femoral bypass), 4040974 (fem endarterectomy)
---   4201004  = Infection of wound  (SSI washout exclusion — SNOMED 76844004)
---   4318887  = Surgical wound infection (SSI washout exclusion — SNOMED 433202001)
--- Verify IDs in your omop_vocab.concept table with:
+--   4334801  = Surgical site infection (SSI washout exclusion — SNOMED-CT 433202001)
+--              Covers: postoperative wound infection, superficial/deep/organ-space SSI
+--
+--   Previously used IDs 4201004 and 4318887 are absent or map to unrelated concepts
+--   in the current OMOP vocabulary and have been replaced by 4334801.
+-- Verify in your omop_vocab.concept table with:
 --   SELECT concept_id, concept_name FROM omop_vocab.concept
---   WHERE concept_name LIKE '%lower extremity revasc%'
---     AND standard_concept = 'S';
+--   WHERE concept_id IN (4159960, 4334801);
 -- =============================================================================
 
 DELETE FROM @target_database_schema.@target_cohort_table
@@ -102,7 +104,7 @@ FROM (
       INNER JOIN @cdm_database_schema.concept_ancestor ca
         ON ca.descendant_concept_id = prior_ssi.condition_concept_id
       WHERE
-        ca.ancestor_concept_id IN (4201004, 4318887)
+        ca.ancestor_concept_id = 4334801   -- Surgical site infection (SNOMED 433202001)
         AND prior_ssi.person_id = vo.person_id
         AND prior_ssi.condition_start_date
               BETWEEN DATEADD(DAY, -365, vo.visit_start_date)

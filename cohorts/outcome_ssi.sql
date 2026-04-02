@@ -4,35 +4,37 @@
 --
 -- Index date  : first SSI condition occurrence date per person
 -- Cohort end  : condition end date (or index + 1 day if absent)
--- Inclusion   : any condition concept that is a descendant of the SSI /
---               wound-infection ancestor concepts listed below
+-- Inclusion   : any condition concept that is a descendant of the SSI
+--               ancestor concept listed below
 -- Study window: @study_start_date – @study_end_date
 --
 -- Parameters (SqlRender):
---   @cdm_database_schema    CDM schema, e.g. cdm_synthea
+--   @cdm_database_schema    CDM schema, e.g. omop_synth_pad_oler_ssi_02
 --   @target_database_schema Results schema, e.g. plp_results
 --   @target_cohort_table    Cohort table name, e.g. ssi_val_cohort
 --   @outcome_cohort_id      Cohort definition id for the outcome (e.g. 2)
 --   @study_start_date       Earliest admissible condition start date
 --   @study_end_date         Latest admissible condition start date
 --
--- Ancestor concept IDs used (verify against your concept table):
---   4201004  Infection of wound            (SNOMED: 76844004)
---   4318887  Surgical wound infection      (SNOMED: 433202001)
---   40480632 Infected wound                (SNOMED: 444948002, if present)
---   4110523  Complication of procedure     (SNOMED: 116223007, broader parent
---            – included to catch ICD-10-coded SSI records T81.4 that may map
---            here in some vocabularies)
+-- Ancestor concept ID used (verified against omop_vocab.concept):
+--   4334801  Surgical site infection  (SNOMED-CT 433202001, standard Condition)
 --
--- Tip: run the query below against cdm_synthea to confirm concept coverage
--- before running the pipeline:
---   SELECT c.concept_id, c.concept_name, c.vocabulary_id
---   FROM   cdm_synthea.concept c
---   INNER JOIN cdm_synthea.concept_ancestor ca
---     ON ca.descendant_concept_id = c.concept_id
---   WHERE ca.ancestor_concept_id IN (4201004, 4318887, 40480632, 4110523)
---     AND c.standard_concept = 'S'
---   ORDER BY c.concept_name;
+--   Descendants include (min_levels_of_separation shown):
+--     4237450  Postoperative wound infection                           (1)
+--     43530818 Superficial incisional surgical site infection          (2)
+--     4308542  Postoperative wound infection - deep                    (2)
+--     4308837  Postoperative wound infection - superficial             (2)
+--     4145549  MRSA infection of postoperative wound                   (2)
+--     43530819 Deep incisional surgical site infection                 (3)
+--     43530820 Organ-space surgical site infection                     (3)
+--     42538804 Organ surgical site infection                           (3)
+--
+-- NOTE: Previously used ancestor IDs (4201004, 4318887, 40480632, 4110523)
+--   are NOT present or map to unrelated concepts in the current OMOP vocabulary
+--   (v5.0 2024-10-01 and later). They have been replaced by 4334801.
+--   Verify with:
+--     SELECT concept_id, concept_name FROM omop_vocab.concept
+--     WHERE concept_id IN (4201004, 4318887, 40480632, 4110523, 4334801);
 -- =============================================================================
 
 DELETE FROM @target_database_schema.@target_cohort_table
@@ -67,15 +69,7 @@ FROM (
     ON ca.descendant_concept_id = co.condition_concept_id
 
   WHERE
-    (
-      ca.ancestor_concept_id IN (
-        4201004,   -- Infection of wound
-        4318887,   -- Surgical wound infection
-        40480632,  -- Infected wound
-        4110523    -- Complication of procedure (broader; catches T81.4 mappings)
-      )
-      OR co.condition_source_value = '76844004'
-    )
+    ca.ancestor_concept_id = 4334801   -- Surgical site infection (SNOMED 433202001)
     AND co.condition_start_date >= CAST('@study_start_date' AS DATE)
     AND co.condition_start_date <= CAST('@study_end_date'   AS DATE)
 ) first_ssi

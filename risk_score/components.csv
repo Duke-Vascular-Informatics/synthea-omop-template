@@ -6,6 +6,10 @@ urgnt,Urgent case,observation,-30,0,1,1
 abi_35,ABI <=0.35,measurement,-365,-1,1,1
 prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1
 prolong_abx,Prolonged antibiotic exposure,drug,-90,-1,1,2
+# PLACEHOLDER: optime4h requires value-based logic (measurement.value_as_number >= 240 min
+# for LOINC 89875-9 / concept_id 1175267). concept_concepts.csv concept_id is 0 until implemented.
 optime4h,Operative time >=4h,procedure,-30,0,1,1
+# WARNING: mFI_high functional_status component (concept_id 4215267) is unmapped.
+# See component_concepts.csv for options. Treat mFI_high scores with caution until resolved.
 mFI_high,High modified frailty index,observation,-365,-1,1,1
 indicationClaudication,Indication: claudication,condition,-365,-1,1,-1

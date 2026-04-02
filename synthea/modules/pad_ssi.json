@@ -61,7 +61,7 @@
     "  Femoral endarterectomy     : SNOMED-CT 16589005",
     "  Aortobifemoral bypass      : SNOMED-CT 405482000",
     "  Femoro-tibial bypass       : SNOMED-CT 47575002",
-    "  SSI condition          : SNOMED-CT 76844004",
+    "  SSI condition          : SNOMED-CT 433202001",
     "  Debridement (re-op)    : SNOMED-CT 118294005",
     "  Ankle-brachial index   : LOINC     59574-4",
     "  Wound culture          : LOINC     6463-4",
@@ -873,8 +873,8 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "76844004",
-          "display": "Infection of surgical wound"
+          "code": "433202001",
+          "display": "Surgical site infection"
         }
       ],
       "direct_transition": "SSI_Encounter"
