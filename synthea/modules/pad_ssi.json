@@ -42,7 +42,10 @@
     "  Hypertension                         : 60%",
     "  COPD                                 : 20%",
     "  CHF                                  : 15%",
-    "  Functional impairment                : 20%",
+    "  Functional status (Barthel survey):",
+    "    Independent transfers and ambulation : 75%",
+    "    Ambulation with 1-person help        : 15%",
+    "    Wheelchair bound                     : 10%",
     "",
     "Presenting symptom distribution (Rutherford-aligned):",
     "  Asymptomatic (Rutherford 0)          : 10%",
@@ -67,6 +70,8 @@
     "  Wound culture          : LOINC     6463-4",
     "  Tobacco smoking status : LOINC     72166-2",
     "  BMI                    : LOINC     39156-5",
+    "  Transferring (Barthel) : LOINC     83185-9",
+    "  Ambulation (Barthel)   : LOINC     83186-7",
     "  Cefazolin (ppx)        : RxNorm    20496",
     "  Cephalexin (SSI tx)    : RxNorm    2673",
     "",
@@ -373,10 +378,125 @@
 
     "Functional_Impairment_Chance": {
       "type": "Simple",
+      "remarks": [
+        "Barthel functional status assessment recorded for all patients.",
+        "  75% independent on both transfers and ambulation",
+        "  15% transfer independently but need 1-person help to ambulate",
+        "  10% wheelchair bound (major help transferring)"
+      ],
       "distributed_transition": [
-        { "distribution": 0.20, "transition": "Functional_Impairment_Onset" },
-        { "distribution": 0.80, "transition": "BMI_Chance" }
+        { "distribution": 0.75, "transition": "Barthel_Independent_Transferring" },
+        { "distribution": 0.15, "transition": "Barthel_One_Person_Help_Transferring" },
+        { "distribution": 0.10, "transition": "Barthel_Wheelchair_Transferring" }
       ]
+    },
+
+    "Barthel_Independent_Transferring": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83185-9",
+          "display": "Transferring - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA12302-8",
+        "display": "Independent"
+      },
+      "direct_transition": "Barthel_Independent_Ambulation"
+    },
+
+    "Barthel_Independent_Ambulation": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83186-7",
+          "display": "Ambulation - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA12302-8",
+        "display": "Independent"
+      },
+      "direct_transition": "BMI_Chance"
+    },
+
+    "Barthel_One_Person_Help_Transferring": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83185-9",
+          "display": "Transferring - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA12302-8",
+        "display": "Independent"
+      },
+      "direct_transition": "Barthel_One_Person_Help_Ambulation"
+    },
+
+    "Barthel_One_Person_Help_Ambulation": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83186-7",
+          "display": "Ambulation - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA31641-6",
+        "display": "Walks with help of one person (verbal or physical) >50 yards"
+      },
+      "direct_transition": "Functional_Impairment_Onset"
+    },
+
+    "Barthel_Wheelchair_Transferring": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83185-9",
+          "display": "Transferring - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA31634-1",
+        "display": "Major help (one or two people, physical), can sit"
+      },
+      "direct_transition": "Barthel_Wheelchair_Ambulation"
+    },
+
+    "Barthel_Wheelchair_Ambulation": {
+      "type": "Observation",
+      "category": "survey",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "83186-7",
+          "display": "Ambulation - functional ability"
+        }
+      ],
+      "value_code": {
+        "system": "LOINC",
+        "code": "LA31640-8",
+        "display": "Wheelchair independent, including corners, >50 yards"
+      },
+      "direct_transition": "Functional_Impairment_Onset"
     },
 
     "Functional_Impairment_Onset": {
