@@ -91,27 +91,20 @@ try {
   $usedModuleRestriction = $false
 
   foreach ($args in $attempts) {
-    $argumentLine = (($args | ForEach-Object { & $quoteArg $_ }) -join " ")
-    Write-Host ("Attempt: .\\run_synthea.bat " + $argumentLine) -ForegroundColor Yellow
-
-    $stdoutFile = [System.IO.Path]::GetTempFileName()
-    $stderrFile = [System.IO.Path]::GetTempFileName()
-    try {
-      $proc = Start-Process -FilePath $syntheaBat -ArgumentList $argumentLine -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
-
-      if (Test-Path $stdoutFile) {
-        Get-Content -Path $stdoutFile | ForEach-Object { Write-Host $_ }
-      }
-      if (Test-Path $stderrFile) {
-        # Treat stderr as informational log output unless process exit code is non-zero.
-        Get-Content -Path $stderrFile | ForEach-Object { Write-Host $_ }
-      }
-      $exitCode = $proc.ExitCode
+    # Build Groovy-style params array: each token single-quoted, comma-separated.
+    # run_synthea.bat passes this directly to gradlew as -Params=[...], so tokens
+    # must be valid Groovy string literals (single quotes survive cmd.exe expansion).
+    $groovyTokens = $args | ForEach-Object {
+      $tok = $_ -replace "'", "''"   # escape any embedded single quotes
+      "'$tok'"
     }
-    finally {
-      if (Test-Path $stdoutFile) { Remove-Item -Path $stdoutFile -Force -ErrorAction SilentlyContinue }
-      if (Test-Path $stderrFile) { Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue }
-    }
+    $groovyParams = "[" + ($groovyTokens -join ",") + ",]"
+    $gradlewArgs = "run -Params=$groovyParams"
+
+    Write-Host ("Attempt: .\\gradlew.bat " + $gradlewArgs) -ForegroundColor Yellow
+
+    & '.\gradlew.bat' run "-Params=$groovyParams"
+    $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 0) {
       $success = $true
