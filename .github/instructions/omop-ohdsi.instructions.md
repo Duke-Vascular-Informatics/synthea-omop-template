@@ -111,13 +111,28 @@ For the `R/risk_score_pipeline.R` pipeline:
 
 ## Concept ID Lookup (Live Vocabulary)
 
-Never guess or assume OMOP concept IDs from training knowledge. Always verify against
-the actual vocabulary loaded in `cdm_synthea` by running the `/concept-lookup` prompt.
+**AI source transparency rule:** When suggesting or using any OMOP concept ID,
+always explicitly state whether it comes from:
+- **[pretraining]** — derived from AI training data; treat as a starting hypothesis
+  only, must be verified before use in any code or CSV file.
+- **[vocab query]** — confirmed by a live query against `omop_vocab` or `cdm_synthea`
+  in this SQL Server instance; trustworthy for this vocabulary version.
+
+Never write a concept ID into code, SQL, or CSV without first running a live
+vocabulary query and labelling it **[vocab query]**. Pretraining concept IDs are
+vocabulary-version-dependent and have been observed to map to completely wrong
+concepts in this project (e.g., ancestor IDs 4201004 and 4318887, cited in OHDSI
+documentation, mapped to a urological procedure and a pathology observation
+respectively in this vocabulary version).
+
+Always verify against the actual vocabulary loaded in `omop_vocab` by running the
+`/concept-lookup` prompt or an explicit `sqlcmd` query before writing concept IDs
+into code or CSV files.
 
 When building clinical concept sets, validate with all three vocabulary tables:
-- `cdm_synthea.concept` for candidate and standard concept status.
-- `cdm_synthea.concept_relationship` for source-to-standard mapping semantics.
-- `cdm_synthea.concept_ancestor` for descendant/ancestor expansion.
+- `omop_vocab.concept` for candidate and standard concept status.
+- `omop_vocab.concept_relationship` for source-to-standard mapping semantics.
+- `omop_vocab.concept_ancestor` for descendant/ancestor expansion.
 
 Invoke it in chat before writing any concept ID into code or CSV files:
 

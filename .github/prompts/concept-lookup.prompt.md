@@ -84,6 +84,18 @@ After the table, provide a **Recommended concept_id** — the single best match 
 a one-sentence rationale (e.g., most specific standard concept, preferred vocabulary
 for this domain).
 
+Always label the result explicitly:
+
+> **[vocab query]** — confirmed against `omop_vocab` in this SQL Server instance.
+> Safe to use in code and CSV files for this vocabulary version.
+
+This label is required so the user knows the concept ID was verified by a live
+database query, not inferred from AI training data. If you are ever unable to run
+the query (e.g., no database connection), state:
+
+> **[pretraining]** — not verified against the live vocabulary. Run `/concept-lookup`
+> before using this concept ID in any code or CSV file.
+
 If no standard concepts are found, state that clearly and suggest alternative search
 terms or vocabulary (e.g., "Try searching for the ingredient name rather than the
 brand name").
