@@ -1554,6 +1554,32 @@ run_synthea_full_csv_builder_etl <- function(
   )
   execute_sql_with_retry(conn_indices_pre, co_index_sql)
 
+  # Index on drug_exposure(person_id, drug_concept_id, drug_exposure_start_date) to
+  # support the drug_era CTE window functions (PARTITION BY person_id, ingredient_concept_id
+  # ORDER BY drug_exposure_start_date). Without this index the era rollup does a full
+  # table scan + tempdb sort over all 800K+ drug exposure rows, taking hours.
+  de_index_sql <- SqlRender::translate(
+    SqlRender::render(
+      "IF OBJECT_ID('@cdm_schema.drug_exposure', 'U') IS NOT NULL
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM sys.indexes
+           WHERE object_id = OBJECT_ID('@cdm_schema.drug_exposure')
+             AND name = 'IX_drug_exposure_era'
+         )
+         BEGIN
+           CREATE INDEX IX_drug_exposure_era
+             ON @cdm_schema.drug_exposure
+               (person_id, drug_concept_id, drug_exposure_start_date)
+             INCLUDE (drug_exposure_end_date, days_supply, drug_exposure_id);
+         END;
+       END;",
+      cdm_schema = config$cdm_schema
+    ),
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, de_index_sql)
+
   # Index on synthea.payer_transitions(patient) to speed up the payer_plan_period
   # join against synthea.patients and omop.person.
   ppt_index_sql <- SqlRender::translate(
