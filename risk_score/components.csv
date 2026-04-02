@@ -11,7 +11,7 @@ prolong_abx,Prolonged antibiotic exposure,drug,-90,-1,1,2
 # Synthea generates sub-day timestamps via the module duration field; valid
 # synthetic signal is produced after re-running Steps 4 and 5.
 optime4h,Operative time >=4h,procedure,-30,0,1,1
-# WARNING: mFI_high functional_status component (concept_id 4215267) is unmapped.
-# See component_concepts.csv for options. Treat mFI_high scores with caution until resolved.
+# mFI_high functional_status: mapped to 4 concept sets (frailty, FIM, Barthel,
+# impaired mobility) — OR logic; see component_concepts.csv for details. [vocab query]
 mFI_high,High modified frailty index,observation,-365,-1,1,1
 indicationClaudication,Indication: claudication,condition,-365,-1,1,-1

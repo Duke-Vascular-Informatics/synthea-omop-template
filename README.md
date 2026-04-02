@@ -354,7 +354,7 @@ All components are fully mapped:
 | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
 | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
 | `optime4h` | 4159960 + descendants ⚠️ **datetime-derived** | Operative time ≥ 240 min computed as `DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240` on any revascularization procedure descended from 4159960. Simple concept presence lookup is insufficient; scoring pipeline must use the datetime diff. Synthea generates sub-day timestamps via the module `duration` field (fem-pop 2–5h, endarterectomy 1–3h, aorto-fem 2–4h, fem-tibial 2–5h); valid synthetic signal is available after re-running Steps 4 and 5. |
-| `mFI_high` | 201820, 255573, 316139, 316866, ⚠️ **4215267 invalid** | Composite modified Frailty Index ≥ 2/5: diabetes, COPD, CHF, hypertension, functional status. concept_id 4215267 maps to "Agent relationship" (non-standard) — functional dependence has no reliable single OMOP concept; see `component_concepts.csv` for options. |
+| `mFI_high` | 201820, 255573, 316139, 316866 + functional status OR set | Composite modified Frailty Index ≥ 2/5: diabetes, COPD, CHF, hypertension, functional status. Functional status is satisfied if **any** of the following [vocab query] concept sets is documented: 4086506 Frailty + descendants, 4159704 Functional independence measure (no descendants), 4167605 Barthel index + descendants, 4306934 Impaired mobility + descendants. |
 | `indicationClaudication` | 442774 + descendants | Intermittent claudication as surgical indication |
 
 Output files (written to `output/risk_score_eval/`):

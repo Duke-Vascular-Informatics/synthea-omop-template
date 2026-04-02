@@ -19,19 +19,25 @@ component_id,concept_id,include_descendants,concept_role
 #   synthetic signal in Synthea-generated data, but the approach is correct for
 #   real EHR data where OR start/stop times are recorded.
 #
-# mFI_high / functional_status (concept_id = 4215267):
-#   concept_id 4215267 ("Agent relationship") is NOT a valid functional status
-#   concept — it is a non-standard SNOMED relationship concept in the Observation
-#   domain. Functional dependence/impairment (the mFI component) has no single
-#   standard OMOP concept that reliably captures it across CDMs. Options:
-#     a) Use ADL-inability concepts (e.g. 4108019 "Unable to perform personal
-#        care activity") if your CDM captures functional assessments.
-#     b) Derive from structured survey instruments (LOINC panel concepts) if
-#        available in your Observation table.
-#     c) Proxy via diagnosis codes for frailty (SNOMED 248279007 / concept_id
-#        4059172) if direct ADL documentation is absent.
-#   Until a validated mapping is confirmed, this concept_id should be treated
-#   as a placeholder and the mFI_high component result interpreted with caution.
+# mFI_high / functional_status — multi-concept OR mapping [vocab query]:
+#   The feature is satisfied if ANY of the four concept sets below is documented
+#   for the patient (scoring pipeline evaluates all mFI_high rows as OR logic).
+#   All four concept_ids and their descendant hierarchies were confirmed safe
+#   against omop_vocab on 2026-04-02.
+#
+#   4086506  Frailty (SNOMED-CT)          — descendants: Frail elderly,
+#              Clinical frailty scale, Mild/Moderate/Severe frailty (5 concepts)
+#   4159704  Functional independence measure (SNOMED-CT) — no descendants
+#   4167605  Barthel index (SNOMED-CT)    — descendants: Modified Barthel,
+#              UK Barthel index (2 concepts)
+#   4306934  Impaired mobility (SNOMED-CT) — descendants: Bed-ridden,
+#              Confined to chair, Impaired bed/wheelchair mobility,
+#              Mobile outside with aid, Mobility poor/very poor,
+#              Needs walking aid in home, Reduced mobility (9 concepts)
+#
+#   NOTE: 36712925 (Decline in functional status) was evaluated and excluded —
+#   its descendant hierarchy contains 280+ unrelated concepts (syncope,
+#   hypoparathyroidism, ovarian failure, etc.).
 female,8532,FALSE,
 overweight,3025315,FALSE,weight
 overweight,3036277,FALSE,height
@@ -50,10 +56,12 @@ prolong_abx,21603553,TRUE,
 # Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
 # Valid synthetic signal is produced after re-running Steps 4 and 5.
 optime4h,4159960,TRUE,
-# WARNING — concept_id 4215267 is not a valid functional status concept; see note above
 mFI_high,201820,TRUE,diabetes
 mFI_high,255573,TRUE,copd
 mFI_high,316139,TRUE,chf
 mFI_high,316866,TRUE,hypertension
-mFI_high,4215267,TRUE,functional_status
+mFI_high,4086506,TRUE,functional_status
+mFI_high,4159704,FALSE,functional_status
+mFI_high,4167605,TRUE,functional_status
+mFI_high,4306934,TRUE,functional_status
 indicationClaudication,442774,TRUE,
