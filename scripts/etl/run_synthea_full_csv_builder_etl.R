@@ -777,6 +777,53 @@ run_synthea_full_csv_builder_etl <- function(
       }
     }
 
+    # After creating the vocab map tables, add composite covering indexes so the
+    # 19 domain INSERT SQLs can use index seeks instead of table scans.  Each
+    # INSERT filters on (source_code, source_vocabulary_id, target_domain_id /
+    # target_vocabulary_id) so a composite key on those columns eliminates the
+    # full-table-scan + hash-join pattern that is otherwise required.
+    message("[PERF] Adding composite indexes on source_to_standard_vocab_map and source_to_source_vocab_map...")
+    vocab_map_index_sql <- SqlRender::translate(
+      SqlRender::render(
+        "IF OBJECT_ID('@cdm_schema.source_to_standard_vocab_map', 'U') IS NOT NULL
+         BEGIN
+           IF NOT EXISTS (
+             SELECT 1 FROM sys.indexes
+             WHERE object_id = OBJECT_ID('@cdm_schema.source_to_standard_vocab_map')
+               AND name = 'IX_stdvm_code_vocab_domain'
+           )
+           BEGIN
+             CREATE INDEX IX_stdvm_code_vocab_domain
+               ON @cdm_schema.source_to_standard_vocab_map
+                 (source_code, source_vocabulary_id, target_domain_id)
+               INCLUDE (target_concept_id, target_vocabulary_id,
+                        target_standard_concept, target_invalid_reason,
+                        source_concept_id);
+           END;
+         END;
+
+         IF OBJECT_ID('@cdm_schema.source_to_source_vocab_map', 'U') IS NOT NULL
+         BEGIN
+           IF NOT EXISTS (
+             SELECT 1 FROM sys.indexes
+             WHERE object_id = OBJECT_ID('@cdm_schema.source_to_source_vocab_map')
+               AND name = 'IX_srcvm_code_vocab'
+           )
+           BEGIN
+             CREATE INDEX IX_srcvm_code_vocab
+               ON @cdm_schema.source_to_source_vocab_map
+                 (source_code, source_vocabulary_id)
+               INCLUDE (source_concept_id, source_domain_id,
+                        target_concept_id, target_vocabulary_id);
+           END;
+         END;",
+        cdm_schema = config$cdm_schema
+      ),
+      targetDialect = config$dbms
+    )
+    execute_sql_with_retry(conn_events, vocab_map_index_sql)
+    message("[PERF] Vocab map composite indexes ready.")
+
     event_sql_files <- c(
       file.path("output", "insert_location.sql"),
       file.path("output", "insert_care_site.sql"),
@@ -1487,46 +1534,86 @@ run_synthea_full_csv_builder_etl <- function(
   
   # Create supporting indexes BEFORE load_event_tables_sql_server.
   #
-  # 1. concept_ancestor indexes: support the drug_era ingredient mapping query.
-  # 2. condition_occurrence covering index: support the condition_era gap-and-island
-  #    CTE which scans condition_occurrence twice (start events + end events UNION ALL)
-  #    partitioned by (person_id, condition_concept_id).  Without this index SQL Server
-  #    performs two full table scans, compounding the CXSYNC_PORT stall risk.
-  message("[PERF] Creating pre-era indexes (concept_ancestor + condition_occurrence)...")
+  # 1. concept_ancestor indexes (on omop_vocab — the physical table):
+  #    Support the drug_era ingredient mapping query and any cohort SQL that
+  #    traverses the concept hierarchy.  IMPORTANT: the CDM schema exposes
+  #    concept_ancestor via a SQL Server SYNONYM, not a real table, so
+  #    OBJECT_ID(..., 'U') on the CDM schema always returns NULL.  Indexes
+  #    must be created on the shared omop_vocab schema's physical table.
+  # 2. concept_relationship covering index: support the source-to-standard
+  #    vocab map build which joins concept_relationship on concept_id_1 and
+  #    filters by relationship_id.  Without an index this is a 39M-row scan.
+  # 3. condition_occurrence covering index: support the condition_era gap-and-
+  #    island CTE which scans condition_occurrence twice (start + end events
+  #    UNION ALL) partitioned by (person_id, condition_concept_id).
+  message("[PERF] Creating pre-era indexes (omop_vocab concept_ancestor + concept_relationship + condition_occurrence)...")
   conn_indices_pre <- connect_with_retry(connection_details)
   on.exit(DatabaseConnector::disconnect(conn_indices_pre), add = TRUE)
-  
+
+  # concept_ancestor indexes — target the real table in omop_vocab, not the synonym.
+  # vocab_schema is read from config (default: "omop_vocab").
+  vocab_schema <- if (!is.null(config$vocab_schema) && nzchar(config$vocab_schema)) {
+    config$vocab_schema
+  } else {
+    "omop_vocab"
+  }
+
   index_sql_pre <- SqlRender::translate(
     SqlRender::render(
-      "IF OBJECT_ID('@cdm_schema.concept_ancestor', 'U') IS NOT NULL
+      "IF OBJECT_ID('@vocab_schema.concept_ancestor', 'U') IS NOT NULL
        BEGIN
          IF NOT EXISTS (
            SELECT 1 FROM sys.indexes
-           WHERE object_id = OBJECT_ID('@cdm_schema.concept_ancestor')
+           WHERE object_id = OBJECT_ID('@vocab_schema.concept_ancestor')
              AND name = 'IX_concept_ancestor_ancestor'
          )
          BEGIN
            CREATE INDEX IX_concept_ancestor_ancestor
-             ON @cdm_schema.concept_ancestor (ancestor_concept_id)
+             ON @vocab_schema.concept_ancestor (ancestor_concept_id)
              INCLUDE (descendant_concept_id, min_levels_of_separation, max_levels_of_separation);
          END;
 
          IF NOT EXISTS (
            SELECT 1 FROM sys.indexes
-           WHERE object_id = OBJECT_ID('@cdm_schema.concept_ancestor')
+           WHERE object_id = OBJECT_ID('@vocab_schema.concept_ancestor')
              AND name = 'IX_concept_ancestor_descendant'
          )
          BEGIN
            CREATE INDEX IX_concept_ancestor_descendant
-             ON @cdm_schema.concept_ancestor (descendant_concept_id)
+             ON @vocab_schema.concept_ancestor (descendant_concept_id)
              INCLUDE (ancestor_concept_id);
          END;
        END;",
-      cdm_schema = config$cdm_schema
+      vocab_schema = vocab_schema
     ),
     targetDialect = config$dbms
   )
   execute_sql_with_retry(conn_indices_pre, index_sql_pre)
+
+  # concept_relationship covering index — supports the source-to-standard
+  # vocab map CTE: WHERE cr.concept_id_1 = c.concept_id
+  #                  AND cr.invalid_reason IS NULL
+  #                  AND lower(cr.relationship_id) = 'maps to'
+  cr_index_sql <- SqlRender::translate(
+    SqlRender::render(
+      "IF OBJECT_ID('@vocab_schema.concept_relationship', 'U') IS NOT NULL
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM sys.indexes
+           WHERE object_id = OBJECT_ID('@vocab_schema.concept_relationship')
+             AND name = 'IX_concept_relationship_id1_rel'
+         )
+         BEGIN
+           CREATE INDEX IX_concept_relationship_id1_rel
+             ON @vocab_schema.concept_relationship (concept_id_1, relationship_id)
+             INCLUDE (concept_id_2, invalid_reason);
+         END;
+       END;",
+      vocab_schema = vocab_schema
+    ),
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, cr_index_sql)
 
   # Covering index on condition_occurrence for condition_era CTE performance.
   # The gap-and-island algorithm partitions by (person_id, condition_concept_id)
@@ -1602,8 +1689,8 @@ run_synthea_full_csv_builder_etl <- function(
     targetDialect = config$dbms
   )
   execute_sql_with_retry(conn_indices_pre, ppt_index_sql)
-  message("[PERF] Pre-era indexes ready (concept_ancestor + condition_occurrence + payer_transitions).")
-  progress$tick("concept_ancestor indexes verified")
+  message("[PERF] Pre-era indexes ready (omop_vocab concept_ancestor + concept_relationship + condition_occurrence + payer_transitions).")
+  progress$tick("Pre-era indexes verified")
   
   load_event_tables_sql_server(progress)
 
