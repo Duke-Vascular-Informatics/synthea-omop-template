@@ -558,59 +558,144 @@ run_synthea_full_csv_builder_etl <- function(
       }
     }
 
-    # insert_drug_era.sql joins drug_exposure directly against concept_ancestor
-    # (75M rows), causing CXSYNC_PORT parallelism stalls that never complete.
-    # Fix: pre-materialize the ~300-row drug→ingredient mapping into a temp table,
-    # then rewrite ctePreDrugTarget to join that instead.
+    # insert_drug_era.sql: the standard ETLSyntheaBuilder CTE chain references
+    # ctePreDrugTarget FOUR times in a single WITH statement, and cteSubExposureEndDates
+    # is used in cteDrugExposureEnds via a non-equi join (end_date >= start_date).
+    # SQL Server cannot hash-join on the inequality predicate and falls back to
+    # nested loops that re-evaluate the entire CTE tree for every row, causing
+    # O(n^2) to O(n^3) complexity that stalls for 8+ hours on 800K drug exposures.
+    #
+    # Fix: bypass the generated SQL entirely and execute a fully materialized
+    # step-by-step version that:
+    #   1. Builds #drug_ingredient_map (~400 rows, concept_ancestor join once)
+    #   2. Materializes #pre_drug_target (drug_exposure × dim_map) with index
+    #   3. Materializes #sub_exposure_end_dates (gap-and-island first pass) with index
+    #   4. Materializes #final_target (sub-exposure grouping) with index
+    #   5. Computes final era into #tmp_de and inserts into drug_era
+    # Each step reads its input exactly once; total runtime ~1-2 minutes.
     if (tolower(basename(file_path)) == "insert_drug_era.sql") {
-      schema <- config$cdm_schema
-      schema_esc <- gsub("\\.", "\\\\.", schema)
-
-      # Replace c.concept_id alias in ctePreDrugTarget SELECT list
-      sql <- gsub(
-        "c\\.concept_id\\s+AS\\s+ingredient_concept_id",
-        "dim.ingredient_concept_id",
-        sql, ignore.case = TRUE
-      )
-
-      # Replace the expensive 3-table JOIN+WHERE block with a join to the pre-computed map.
-      # The (?si) flags make . match newlines and the pattern case-insensitive.
-      # We consume through "AND c.concept_class_id = 'Ingredient'..." and replace
-      # with the map join + "WHERE 1=1" so the remaining AND clauses stay valid.
-      sql <- gsub(
-        paste0("(?si)JOIN\\s+", schema_esc, "\\.concept_ancestor\\s+ca",
-               ".*?AND\\s+c\\.concept_class_id\\s*=\\s*'Ingredient'[^\n]*"),
-        paste0("JOIN #drug_ingredient_map dim ON dim.drug_concept_id = d.drug_concept_id\n",
-               "\t\tWHERE 1=1"),
-        sql, perl = TRUE
-      )
-
-      # Add OPTION(MAXDOP 1) to the final SELECT INTO to prevent parallel stalls
-      # on the window functions over the (now small) intermediate dataset.
-      sql <- sub(
-        "GROUP BY person_id, drug_concept_id, drug_era_end_date;",
-        "GROUP BY person_id, drug_concept_id, drug_era_end_date\nOPTION (MAXDOP 1);",
-        sql, ignore.case = TRUE
-      )
-
-      # Prepend temp table pre-computation (runs in seconds: 257 distinct concepts)
-      prep <- paste0(
-        "IF OBJECT_ID('tempdb..#drug_ingredient_map', 'U') IS NOT NULL\n",
-        "  DROP TABLE #drug_ingredient_map;\n\n",
+      s <- config$cdm_schema
+      sql <- paste0(
+        # Step 1: drug->ingredient map
+        "IF OBJECT_ID('tempdb..#drug_ingredient_map','U') IS NOT NULL DROP TABLE #drug_ingredient_map;\n",
         "SELECT DISTINCT d.drug_concept_id, c.concept_id AS ingredient_concept_id\n",
         "INTO #drug_ingredient_map\n",
-        "FROM ", schema, ".drug_exposure d\n",
-        "  JOIN ", schema, ".concept_ancestor ca\n",
-        "    ON ca.descendant_concept_id = d.drug_concept_id\n",
-        "  JOIN ", schema, ".concept c\n",
-        "    ON ca.ancestor_concept_id = c.concept_id\n",
-        "WHERE c.vocabulary_id = 'RxNorm'\n",
-        "  AND c.concept_class_id = 'Ingredient'\n",
-        "  AND d.drug_concept_id != 0\n",
-        "OPTION (MAXDOP 1);\n\n",
-        "CREATE INDEX IX_dim_dc ON #drug_ingredient_map (drug_concept_id);\n\n"
+        "FROM ", s, ".drug_exposure d\n",
+        "  JOIN ", s, ".concept_ancestor ca ON ca.descendant_concept_id = d.drug_concept_id\n",
+        "  JOIN ", s, ".concept c ON ca.ancestor_concept_id = c.concept_id\n",
+        "WHERE c.vocabulary_id = 'RxNorm' AND c.concept_class_id = 'Ingredient'\n",
+        "  AND d.drug_concept_id != 0;\n",
+        "CREATE INDEX IX_dim_dc ON #drug_ingredient_map (drug_concept_id);\n\n",
+
+        # Step 2: pre_drug_target (drug_exposure x dim_map)
+        "IF OBJECT_ID('tempdb..#pre_drug_target','U') IS NOT NULL DROP TABLE #pre_drug_target;\n",
+        "SELECT d.drug_exposure_id, d.person_id, dim.ingredient_concept_id,\n",
+        "  d.drug_exposure_start_date, d.days_supply,\n",
+        "  COALESCE(NULLIF(d.drug_exposure_end_date,NULL),\n",
+        "           NULLIF(DATEADD(day,d.days_supply,d.drug_exposure_start_date),d.drug_exposure_start_date),\n",
+        "           DATEADD(day,1,d.drug_exposure_start_date)) AS drug_exposure_end_date\n",
+        "INTO #pre_drug_target\n",
+        "FROM ", s, ".drug_exposure d\n",
+        "  JOIN #drug_ingredient_map dim ON dim.drug_concept_id = d.drug_concept_id\n",
+        "WHERE d.drug_concept_id != 0 AND COALESCE(d.days_supply,0) >= 0;\n",
+        "CREATE INDEX IX_pdt ON #pre_drug_target\n",
+        "  (person_id, ingredient_concept_id, drug_exposure_start_date)\n",
+        "  INCLUDE (drug_exposure_end_date, drug_exposure_id, days_supply);\n\n",
+
+        # Step 3: sub_exposure_end_dates (gap-and-island, avoids non-equi CTE re-scan)
+        "IF OBJECT_ID('tempdb..#sub_exposure_end_dates','U') IS NOT NULL DROP TABLE #sub_exposure_end_dates;\n",
+        "SELECT person_id, ingredient_concept_id, event_date AS end_date\n",
+        "INTO #sub_exposure_end_dates\n",
+        "FROM (\n",
+        "  SELECT person_id, ingredient_concept_id, event_date, event_type,\n",
+        "    MAX(start_ordinal) OVER (PARTITION BY person_id, ingredient_concept_id\n",
+        "      ORDER BY event_date, event_type ROWS UNBOUNDED PRECEDING) AS start_ordinal,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY person_id, ingredient_concept_id\n",
+        "      ORDER BY event_date, event_type) AS overall_ord\n",
+        "  FROM (\n",
+        "    SELECT person_id, ingredient_concept_id, drug_exposure_start_date AS event_date,\n",
+        "      -1 AS event_type,\n",
+        "      ROW_NUMBER() OVER (PARTITION BY person_id, ingredient_concept_id\n",
+        "        ORDER BY drug_exposure_start_date) AS start_ordinal\n",
+        "    FROM #pre_drug_target\n",
+        "    UNION ALL\n",
+        "    SELECT person_id, ingredient_concept_id, drug_exposure_end_date, 1 AS event_type, NULL\n",
+        "    FROM #pre_drug_target\n",
+        "  ) RAWDATA\n",
+        ") e WHERE (2 * e.start_ordinal) - e.overall_ord = 0;\n",
+        "CREATE INDEX IX_sed ON #sub_exposure_end_dates (person_id, ingredient_concept_id, end_date);\n\n",
+
+        # Step 4: final_target (sub-exposure grouping)
+        "IF OBJECT_ID('tempdb..#final_target','U') IS NOT NULL DROP TABLE #final_target;\n",
+        "WITH cteDrugExposureEnds AS (\n",
+        "  SELECT dt.person_id, dt.ingredient_concept_id, dt.drug_exposure_start_date,\n",
+        "    MIN(e.end_date) AS drug_sub_exposure_end_date\n",
+        "  FROM #pre_drug_target dt\n",
+        "  JOIN #sub_exposure_end_dates e ON dt.person_id = e.person_id\n",
+        "    AND dt.ingredient_concept_id = e.ingredient_concept_id\n",
+        "    AND e.end_date >= dt.drug_exposure_start_date\n",
+        "  GROUP BY dt.drug_exposure_id, dt.person_id, dt.ingredient_concept_id, dt.drug_exposure_start_date\n",
+        "),\n",
+        "cteSubExposures AS (\n",
+        "  SELECT ROW_NUMBER() OVER (PARTITION BY person_id, drug_concept_id, drug_sub_exposure_end_date ORDER BY person_id) AS row_number,\n",
+        "    person_id, drug_concept_id, MIN(drug_exposure_start_date) AS drug_sub_exposure_start_date,\n",
+        "    drug_sub_exposure_end_date, COUNT(*) AS drug_exposure_count\n",
+        "  FROM cteDrugExposureEnds\n",
+        "  GROUP BY person_id, drug_concept_id, drug_sub_exposure_end_date\n",
+        ")\n",
+        "SELECT row_number, person_id, drug_concept_id,\n",
+        "  drug_sub_exposure_start_date, drug_sub_exposure_end_date, drug_exposure_count,\n",
+        "  DATEDIFF(day,drug_sub_exposure_start_date,drug_sub_exposure_end_date) AS days_exposed\n",
+        "INTO #final_target FROM cteSubExposures;\n",
+        "CREATE INDEX IX_ft ON #final_target\n",
+        "  (person_id, drug_concept_id, drug_sub_exposure_start_date)\n",
+        "  INCLUDE (drug_sub_exposure_end_date, drug_exposure_count, days_exposed);\n\n",
+
+        # Step 5: final era into #tmp_de
+        "IF OBJECT_ID('tempdb..#tmp_de','U') IS NOT NULL DROP TABLE #tmp_de;\n",
+        "WITH cteEndDates AS (\n",
+        "  SELECT person_id, ingredient_concept_id, DATEADD(day,-30,event_date) AS end_date\n",
+        "  FROM (\n",
+        "    SELECT person_id, ingredient_concept_id, event_date, event_type,\n",
+        "      MAX(start_ordinal) OVER (PARTITION BY person_id, ingredient_concept_id\n",
+        "        ORDER BY event_date, event_type ROWS UNBOUNDED PRECEDING) AS start_ordinal,\n",
+        "      ROW_NUMBER() OVER (PARTITION BY person_id, ingredient_concept_id\n",
+        "        ORDER BY event_date, event_type) AS overall_ord\n",
+        "    FROM (\n",
+        "      SELECT person_id, drug_concept_id AS ingredient_concept_id, drug_sub_exposure_start_date AS event_date,\n",
+        "        -1 AS event_type,\n",
+        "        ROW_NUMBER() OVER (PARTITION BY person_id, drug_concept_id\n",
+        "          ORDER BY drug_sub_exposure_start_date) AS start_ordinal\n",
+        "      FROM #final_target\n",
+        "      UNION ALL\n",
+        "      SELECT person_id, drug_concept_id AS ingredient_concept_id, DATEADD(day,30,drug_sub_exposure_end_date), 1 AS event_type, NULL\n",
+        "      FROM #final_target\n",
+        "    ) RAWDATA\n",
+        "  ) e WHERE (2 * e.start_ordinal) - e.overall_ord = 0\n",
+        "),\n",
+        "cteDrugEraEnds AS (\n",
+        "  SELECT ft.person_id, ft.drug_concept_id, ft.drug_sub_exposure_start_date,\n",
+        "    MIN(e.end_date) AS era_end_date, ft.drug_exposure_count, ft.days_exposed\n",
+        "  FROM #final_target ft\n",
+        "  JOIN cteEndDates e ON ft.person_id = e.person_id\n",
+        "    AND ft.drug_concept_id = e.ingredient_concept_id\n",
+        "    AND e.end_date >= ft.drug_sub_exposure_start_date\n",
+        "  GROUP BY ft.person_id, ft.drug_concept_id, ft.drug_sub_exposure_start_date,\n",
+        "    ft.drug_exposure_count, ft.days_exposed\n",
+        ")\n",
+        "SELECT ROW_NUMBER() OVER (ORDER BY person_id) AS drug_era_id,\n",
+        "  person_id, drug_concept_id,\n",
+        "  MIN(drug_sub_exposure_start_date) AS drug_era_start_date,\n",
+        "  era_end_date,\n",
+        "  SUM(drug_exposure_count) AS drug_exposure_count,\n",
+        "  DATEDIFF(day,MIN(drug_sub_exposure_start_date),era_end_date) - SUM(days_exposed) AS gap_days\n",
+        "INTO #tmp_de FROM cteDrugEraEnds dee GROUP BY person_id, drug_concept_id, era_end_date;\n\n",
+
+        # Step 6: insert into drug_era table
+        "INSERT INTO ", s, ".drug_era\n",
+        "  (drug_era_id,person_id,drug_concept_id,drug_era_start_date,drug_era_end_date,drug_exposure_count,gap_days)\n",
+        "SELECT * FROM #tmp_de;\n"
       )
-      sql <- paste0(prep, sql)
     }
 
     # insert_payer_plan_period.sql wraps a multi-table join in an outer SELECT that
