@@ -525,8 +525,8 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
         "This validation study evaluated the external performance of a previously developed ",
         "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
         "disease (PAD) undergoing lower-extremity vascular surgery. The analysis was performed on ",
-        "a Synthea-derived OMOP CDM dataset containing ", n_patients, " unique patients with ",
-        n_procedures, " eligible procedures. Overall SSI incidence was ", n_ssi_events, 
+        "an OMOP CDM dataset containing ", n_patients, " unique patients with ",
+        n_procedures, " eligible procedures. Overall SSI incidence was ", n_ssi_events,
         " events (", ssi_rate, "%). The mean risk score was ", mean_score, "."
       ),
       style = "Normal"
@@ -536,7 +536,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       paste0(
         "This validation study evaluated the external performance of a previously developed ",
         "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
-        "disease (PAD) undergoing lower-extremity vascular surgery on a Synthea-derived OMOP CDM dataset."
+        "disease (PAD) undergoing lower-extremity vascular surgery."
       ),
       style = "Normal"
     )
@@ -569,11 +569,9 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "consistent with CDC/NHSN classification. An SSI event was attributed to the target cohort ",
       "if the condition onset occurred within 30 days of the index date (prediction_window_days = 30). ",
       "Both cohort definitions are implemented as SqlRender-parameterised SQL templates stored ",
-      "under 'cohorts/' and are compatible with OMOP CDM v5.4. Data were sourced from the ",
-      "'omop_synth' SQL Server 2019 database, active schema 'omop_synth_pad_oler_ssi_02', a ",
-      "Synthea-generated synthetic OMOP CDM v5.4 dataset containing ",
-      if (!is.null(person_level)) length(unique(person_level$subject_id)) else "12,672",
-      " patients."
+      "under 'cohorts/' and are compatible with OMOP CDM v5.4. The dataset contained ",
+      if (!is.null(person_level)) length(unique(person_level$subject_id)) else "N",
+      " patients with at least one qualifying procedure within the study window."
     ),
     style = "Normal"
   )
@@ -829,10 +827,8 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
           else "modest discriminative properties that warrant further investigation"
         } else "good performance"
       } else "reasonable",
-      ", supporting its continued evaluation as a perioperative clinical decision-support tool. ",
-      "These results are based on Synthea-generated synthetic data (omop_synth_pad_oler_ssi_02) and ",
-      "are intended to validate the OMOP mapping pipeline and analytic workflow prior to application ",
-      "to real-world clinical registry data."
+      ", supporting its continued evaluation as a perioperative clinical decision-support tool for ",
+      "patients undergoing open lower-extremity vascular surgery."
     ),
     style = "Normal"
   )
@@ -1426,10 +1422,10 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
 
   doc <- body_add_par(doc, "Methods", style = "heading 2")
   doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
-  doc <- body_add_par(doc, "Synthetic patient-level data were generated with a custom Synthea module representing peripheral arterial disease, open lower extremity revascularization, and 30-day surgical site infection outcomes. CSV outputs were loaded into an OMOP CDM v5 SQL Server database using the project CSV-to-OMOP ETL workflow.", style = "Normal")
+  doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, "The target cohort was defined as adults aged 18 years or older with an open lower extremity revascularization procedure recorded during a qualifying visit within the study window. The procedure was identified using procedure_source_value 232723009, and only the earliest qualifying event per person was retained. Patients with wound or surgical site infection diagnoses during the 365 days before index were excluded.", style = "Normal")
-  doc <- body_add_par(doc, "The outcome cohort was defined as the first surgical site infection diagnosis during follow-up using either OMOP concept-ancestor logic for wound infection concepts or a direct source-code fallback of condition_source_value 76844004.", style = "Normal")
+  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity revascularization (OMOP concept 4159960 and descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy). The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
+  doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 30 days of the index date.", style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
   doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
   doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
