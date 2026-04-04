@@ -628,7 +628,7 @@ run_synthea_full_csv_builder_etl <- function(
         # Step 4: final_target (sub-exposure grouping)
         "IF OBJECT_ID('tempdb..#final_target','U') IS NOT NULL DROP TABLE #final_target;\n",
         "WITH cteDrugExposureEnds AS (\n",
-        "  SELECT dt.person_id, dt.ingredient_concept_id, dt.drug_exposure_start_date,\n",
+        "  SELECT dt.person_id, dt.ingredient_concept_id AS drug_concept_id, dt.drug_exposure_start_date,\n",
         "    MIN(e.end_date) AS drug_sub_exposure_end_date\n",
         "  FROM #pre_drug_target dt\n",
         "  JOIN #sub_exposure_end_dates e ON dt.person_id = e.person_id\n",
