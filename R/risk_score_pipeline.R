@@ -779,6 +779,11 @@ calculate_scores <- function(connection, config, specs) {
       count_names[count_names == "subjectid"] <- "subject_id"
       count_names[count_names == "eventcount"] <- "event_count"
       names(counts) <- count_names
+      # Deduplicate counts by subject_id (keep max event_count) to prevent
+      # Cartesian-product inflation when a query returns multiple rows per person
+      if (any(duplicated(counts$subject_id))) {
+        counts <- aggregate(event_count ~ subject_id, data = counts, FUN = max)
+      }
     } else {
       counts <- data.frame(subject_id = numeric(), event_count = numeric())
     }
@@ -795,6 +800,8 @@ calculate_scores <- function(connection, config, specs) {
     df[[score_col]] <- ifelse(df$event_count >= comp$min_count, comp$points, 0)
 
     component_matrix <- merge(component_matrix, df[, c("subject_id", score_col)], by = "subject_id", all.x = TRUE)
+    # Prevent cascading duplication: keep first row per subject after each merge
+    component_matrix <- component_matrix[!duplicated(component_matrix$subject_id), ]
 
     is_activated <- df$event_count >= comp$min_count
 
