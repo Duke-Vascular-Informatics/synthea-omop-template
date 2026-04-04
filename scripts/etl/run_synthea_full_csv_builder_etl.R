@@ -806,6 +806,85 @@ run_synthea_full_csv_builder_etl <- function(
     execute_sql_with_retry(conn_rollup, final_visit_sql)
   }
 
+  # ---------------------------------------------------------------------------
+  # truncate_cdm_event_tables_sql_server()
+  #
+  # Clears every OMOP CDM domain table, the ETL vocab-map working tables, and
+  # the visit-rollup working tables BEFORE any data are inserted.  This ensures
+  # re-running the ETL always produces a clean dataset from the most recent
+  # Synthea CSV files, with no rows carried over from previous runs.
+  #
+  # All statements are guarded with IF OBJECT_ID ... IS NOT NULL so the first
+  # run (tables may not yet exist) succeeds without error.  TRUNCATE TABLE is
+  # used (not DELETE) for speed — no per-row log entries — and is safe here
+  # because OMOP CDM implementations typically do not enforce foreign-key
+  # constraints.
+  #
+  # Tables truncated (25 total):
+  #   19 CDM domain tables   : location, care_site, person, observation_period,
+  #                            provider, visit_occurrence, visit_detail,
+  #                            condition_occurrence, observation, measurement,
+  #                            procedure_occurrence, drug_exposure,
+  #                            condition_era, drug_era, cdm_source,
+  #                            device_exposure, death, payer_plan_period, cost
+  #   3 ETL map tables       : source_to_standard_vocab_map,
+  #                            source_to_source_vocab_map, states_map
+  #   3 visit rollup tables  : all_visits, ASSIGN_ALL_VISIT_IDS, FINAL_VISIT_IDS
+  # ---------------------------------------------------------------------------
+  truncate_cdm_event_tables_sql_server <- function() {
+    message("[ETL] Truncating CDM event tables, map tables, and visit rollup tables ...")
+
+    truncate_sql <- SqlRender::translate(
+      SqlRender::render(
+        "-- CDM domain tables
+         IF OBJECT_ID('@cdm_schema.location',             'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.location;
+         IF OBJECT_ID('@cdm_schema.care_site',            'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.care_site;
+         IF OBJECT_ID('@cdm_schema.person',               'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.person;
+         IF OBJECT_ID('@cdm_schema.observation_period',   'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.observation_period;
+         IF OBJECT_ID('@cdm_schema.provider',             'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.provider;
+         IF OBJECT_ID('@cdm_schema.visit_occurrence',     'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.visit_occurrence;
+         IF OBJECT_ID('@cdm_schema.visit_detail',         'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.visit_detail;
+         IF OBJECT_ID('@cdm_schema.condition_occurrence', 'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.condition_occurrence;
+         IF OBJECT_ID('@cdm_schema.observation',          'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.observation;
+         IF OBJECT_ID('@cdm_schema.measurement',          'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.measurement;
+         IF OBJECT_ID('@cdm_schema.procedure_occurrence', 'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.procedure_occurrence;
+         IF OBJECT_ID('@cdm_schema.drug_exposure',        'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.drug_exposure;
+         IF OBJECT_ID('@cdm_schema.condition_era',        'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.condition_era;
+         IF OBJECT_ID('@cdm_schema.drug_era',             'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.drug_era;
+         IF OBJECT_ID('@cdm_schema.cdm_source',           'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.cdm_source;
+         IF OBJECT_ID('@cdm_schema.device_exposure',      'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.device_exposure;
+         IF OBJECT_ID('@cdm_schema.death',                'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.death;
+         IF OBJECT_ID('@cdm_schema.payer_plan_period',    'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.payer_plan_period;
+         IF OBJECT_ID('@cdm_schema.cost',                 'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.cost;
+         -- ETL vocab-map working tables
+         IF OBJECT_ID('@cdm_schema.source_to_standard_vocab_map', 'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.source_to_standard_vocab_map;
+         IF OBJECT_ID('@cdm_schema.source_to_source_vocab_map',   'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.source_to_source_vocab_map;
+         IF OBJECT_ID('@cdm_schema.states_map',                   'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.states_map;
+         -- Visit rollup working tables
+         IF OBJECT_ID('@cdm_schema.all_visits',           'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.all_visits;
+         IF OBJECT_ID('@cdm_schema.ASSIGN_ALL_VISIT_IDS', 'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.ASSIGN_ALL_VISIT_IDS;
+         IF OBJECT_ID('@cdm_schema.FINAL_VISIT_IDS',      'U') IS NOT NULL TRUNCATE TABLE @cdm_schema.FINAL_VISIT_IDS;",
+        cdm_schema = config$cdm_schema
+      ),
+      targetDialect = config$dbms
+    )
+
+    conn_trunc <- connect_with_retry(connection_details)
+    on.exit(DatabaseConnector::disconnect(conn_trunc), add = TRUE)
+
+    # Execute each statement individually (SQL Server does not allow TRUNCATE
+    # and IF-blocks to be batched as a single executeSQL call via JDBC in all
+    # driver versions).
+    stmts <- strsplit(truncate_sql, ";\\s*\\n", perl = TRUE)[[1]]
+    stmts <- trimws(stmts)
+    stmts <- stmts[nchar(stmts) > 0]
+    for (stmt in stmts) {
+      execute_sql_with_retry(conn_trunc, paste0(stmt, ";"))
+    }
+
+    message("[ETL] Truncation complete — all CDM event tables are empty and ready for reload.")
+  }
+
   # load_event_tables_sql_server() drives the full domain INSERT workload:
   #   Phase A — Map SQL (3 files):
   #     create_source_to_standard_vocab_map.sql  — maps source codes (SNOMED,
@@ -1613,6 +1692,14 @@ run_synthea_full_csv_builder_etl <- function(
     load_synthea_tables_with_mitigations(FALSE)
   }
   progress$tick("Synthea CSV staging loaded")
+
+  # ---------------------------------------------------------------------------
+  # Truncate all CDM event tables before loading new data.
+  # This runs unconditionally so every ETL execution produces a clean dataset
+  # from the current Synthea CSV files, with no rows carried over from prior runs.
+  # ---------------------------------------------------------------------------
+  truncate_cdm_event_tables_sql_server()
+  progress$tick("CDM event tables truncated")
 
   create_visit_rollup_tables_sql_server()
   progress$tick("Visit rollup tables materialized")
