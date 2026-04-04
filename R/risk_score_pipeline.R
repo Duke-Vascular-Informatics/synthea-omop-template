@@ -14,7 +14,7 @@
 # =============================================================================
 
 read_score_specs <- function(config) {
-  components <- read.csv(config$risk_score_components_file, stringsAsFactors = FALSE)
+  components <- read.csv(config$risk_score_components_file, stringsAsFactors = FALSE, comment.char = "#")
   concepts <- read.csv(config$risk_score_concepts_file, stringsAsFactors = FALSE, comment.char = "#")
 
   required_component_cols <- c(
