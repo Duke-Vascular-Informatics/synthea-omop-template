@@ -1024,16 +1024,43 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
     try({
       conn <- DatabaseConnector::connect(connection_details)
 
+      # Defensive deduplication: one row per person_id in case of ETL re-runs.
+      # Uses the row with the most-frequent person_source_value (= most recent run)
+      # and breaks ties by taking the first row per person_id within that group.
+      dedup_person_cte <-
+        "dedup_person AS (
+           SELECT p2.*
+           FROM (
+             SELECT p3.*,
+               ROW_NUMBER() OVER (
+                 PARTITION BY p3.person_id
+                 ORDER BY src_freq.n DESC, p3.person_source_value DESC, p3.year_of_birth DESC
+               ) AS _rn
+             FROM @cdm_schema.person p3
+             INNER JOIN (
+               SELECT person_id, person_source_value, COUNT(*) AS n
+               FROM @cdm_schema.person
+               GROUP BY person_id, person_source_value
+             ) src_freq
+               ON src_freq.person_id      = p3.person_id
+              AND src_freq.person_source_value = p3.person_source_value
+           ) p2
+           WHERE p2._rn = 1
+         )"
+
       sql_age <- SqlRender::render(
-        "SELECT
-            CAST(DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date) AS FLOAT) AS age_at_index
-         FROM @results_schema.@cohort_table t
-         INNER JOIN @cdm_schema.person p ON p.person_id = t.subject_id
-         WHERE t.cohort_definition_id = @target_id",
+        paste0(
+          "WITH ", dedup_person_cte, "
+           SELECT
+             CAST(DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date) AS FLOAT) AS age_at_index
+           FROM @results_schema.@cohort_table t
+           INNER JOIN dedup_person p ON p.person_id = t.subject_id
+           WHERE t.cohort_definition_id = @target_id"
+        ),
         results_schema = config$results_schema,
-        cohort_table = config$cohort_table,
-        cdm_schema = config$cdm_schema,
-        target_id = config$target_cohort_id
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id
       )
       age_df <- DatabaseConnector::querySql(
         conn,
@@ -1042,20 +1069,23 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
 
       distribution_sql <- function(concept_col) {
         SqlRender::render(
-          "SELECT
-              COALESCE(NULLIF(c.concept_name, ''), 'Unknown') AS category,
-              COUNT(DISTINCT t.subject_id) AS n
-           FROM @results_schema.@cohort_table t
-           INNER JOIN @cdm_schema.person p ON p.person_id = t.subject_id
-           LEFT JOIN @cdm_schema.concept c ON c.concept_id = p.@concept_col
-           WHERE t.cohort_definition_id = @target_id
-           GROUP BY COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
-           ORDER BY n DESC, category",
+          paste0(
+            "WITH ", dedup_person_cte, "
+             SELECT
+               COALESCE(NULLIF(c.concept_name, ''), 'Unknown') AS category,
+               COUNT(DISTINCT t.subject_id) AS n
+             FROM @results_schema.@cohort_table t
+             INNER JOIN dedup_person p ON p.person_id = t.subject_id
+             LEFT  JOIN @cdm_schema.concept c ON c.concept_id = p.@concept_col
+             WHERE t.cohort_definition_id = @target_id
+             GROUP BY COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
+             ORDER BY n DESC, category"
+          ),
           results_schema = config$results_schema,
-          cohort_table = config$cohort_table,
-          cdm_schema = config$cdm_schema,
-          concept_col = concept_col,
-          target_id = config$target_cohort_id
+          cohort_table   = config$cohort_table,
+          cdm_schema     = config$cdm_schema,
+          concept_col    = concept_col,
+          target_id      = config$target_cohort_id
         )
       }
 
