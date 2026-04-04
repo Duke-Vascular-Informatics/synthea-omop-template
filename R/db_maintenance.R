@@ -168,6 +168,111 @@ prepare_txlog_for_bulk_etl <- function(cfg,
   cat("[txlog] \u2713 Ready for bulk ETL\n")
   cat("[txlog] ──────────────────────────────────────────────────────────────\n\n")
 
+  # ---------------------------------------------------------------------------
+  # 6. Pre-grow tempdb data files to prevent auto-growth stalls during era ETL.
+  # ---------------------------------------------------------------------------
+  # The drug_era and condition_era CTEs produce multi-million-row intermediate
+  # result sets that spill to tempdb when they exceed the memory grant.  If
+  # tempdb files are tiny (SQL Server default: 8 MB), each spill triggers
+  # thousands of auto-growth events that stall the workload for hours.
+  # Pre-growing data files to 2 GB each (with 512 MB increments) is safe:
+  # tempdb is always recreated at instance restart, so the space is never
+  # permanently wasted.
+  prepare_tempdb_for_era_etl(cfg)
+
+  invisible(TRUE)
+}
+
+
+# -----------------------------------------------------------------------------
+# prepare_tempdb_for_era_etl
+#
+# Pre-grow tempdb data files to prevent auto-growth stalls during the era ETL
+# CTEs (drug_era, condition_era) which spill large intermediate result sets.
+#
+# SQL Server recreates tempdb at every restart, so auto-growth events are not
+# persisted and each run starts from the initial file sizes configured in
+# sys.master_files.  This function ensures each data file is at least
+# target_data_mb (default 2048 MB) with a generous autogrowth increment.
+# -----------------------------------------------------------------------------
+prepare_tempdb_for_era_etl <- function(cfg,
+                                       target_data_mb   = 2048L,
+                                       autogrowth_data_mb = 512L,
+                                       target_log_mb    = 1024L) {
+
+  cat("[tempdb] Pre-growing tempdb to suppress era-CTE auto-growth stalls...\n")
+
+  connection_details <- DatabaseConnector::createConnectionDetails(
+    dbms     = cfg$dbms,
+    server   = cfg$server,
+    user     = "",
+    password = "",
+    pathToDriver = cfg$jdbc_runtime_dir,
+    extraSettings = paste0(
+      "database=master",           # ALTER DATABASE tempdb requires master context
+      ";integratedSecurity=true",
+      ";authenticationScheme=NativeAuthentication",
+      ";trustServerCertificate=true",
+      ";portNumber=", cfg$sql_server_port
+    )
+  )
+
+  conn_tempdb <- tryCatch(
+    DatabaseConnector::connect(connection_details),
+    error = function(e) {
+      cat("[tempdb] WARNING: could not connect to master to pre-grow tempdb: ",
+          conditionMessage(e), "\n")
+      return(NULL)
+    }
+  )
+  if (is.null(conn_tempdb)) return(invisible(FALSE))
+  on.exit(DatabaseConnector::disconnect(conn_tempdb), add = TRUE)
+
+  # Retrieve all tempdb file names and current sizes.
+  files_sql <- paste0(
+    "SELECT name, type_desc, size * 8.0 / 1024 AS size_mb ",
+    "FROM sys.master_files WHERE database_id = DB_ID('tempdb') ORDER BY type_desc, name;"
+  )
+  files_df <- tryCatch(
+    DatabaseConnector::querySql(conn_tempdb, files_sql),
+    error = function(e) {
+      cat("[tempdb] WARNING: could not query tempdb files: ", conditionMessage(e), "\n")
+      return(data.frame())
+    }
+  )
+  if (nrow(files_df) == 0L) return(invisible(FALSE))
+  colnames(files_df) <- tolower(colnames(files_df))
+
+  for (i in seq_len(nrow(files_df))) {
+    fname     <- files_df$name[[i]]
+    ftype     <- files_df$type_desc[[i]]
+    fsize_mb  <- round(files_df$size_mb[[i]], 1)
+    target_mb <- if (tolower(ftype) == "rows") target_data_mb else target_log_mb
+    grow_mb   <- if (tolower(ftype) == "rows") autogrowth_data_mb else 256L
+
+    if (fsize_mb < target_mb) {
+      cat("[tempdb]   Growing '", fname, "' from ", fsize_mb, " MB to ",
+          target_mb, " MB ...\n", sep = "")
+      tryCatch(
+        DatabaseConnector::executeSql(
+          conn_tempdb,
+          paste0(
+            "ALTER DATABASE tempdb MODIFY FILE (",
+            "NAME = N'", fname, "', ",
+            "SIZE = ", as.integer(target_mb), "MB, ",
+            "FILEGROWTH = ", as.integer(grow_mb), "MB);"
+          )
+        ),
+        error = function(e) {
+          cat("[tempdb]   Note (non-fatal): ", conditionMessage(e), "\n")
+        }
+      )
+    } else {
+      cat("[tempdb]   '", fname, "': already ", fsize_mb, " MB \u2713\n", sep = "")
+    }
+  }
+
+  cat("[tempdb] \u2713 tempdb pre-growth complete (era-CTE spills will not stall)\n")
   invisible(TRUE)
 }
 

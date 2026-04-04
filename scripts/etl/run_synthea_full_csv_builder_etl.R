@@ -1615,6 +1615,33 @@ run_synthea_full_csv_builder_etl <- function(
   )
   execute_sql_with_retry(conn_indices_pre, cr_index_sql)
 
+  # Covering index on concept(concept_id) INCLUDE (vocabulary_id, concept_class_id, ...):
+  # The drug_era CTE joins concept_ancestor → concept on ancestor_concept_id = concept_id
+  # then filters WHERE vocabulary_id='RxNorm' AND concept_class_id='Ingredient'.
+  # Without INCLUDE columns the optimizer does a key lookup to the heap for every
+  # matched row; with this covering index the filter resolves from the index leaf.
+  concept_index_sql <- SqlRender::translate(
+    SqlRender::render(
+      "IF OBJECT_ID('@vocab_schema.concept', 'U') IS NOT NULL
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM sys.indexes
+           WHERE object_id = OBJECT_ID('@vocab_schema.concept')
+             AND name = 'IX_concept_id_incl_vocab_class'
+         )
+         BEGIN
+           CREATE INDEX IX_concept_id_incl_vocab_class
+             ON @vocab_schema.concept (concept_id)
+             INCLUDE (vocabulary_id, concept_class_id,
+                      standard_concept, invalid_reason);
+         END;
+       END;",
+      vocab_schema = vocab_schema
+    ),
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, concept_index_sql)
+
   # Covering index on condition_occurrence for condition_era CTE performance.
   # The gap-and-island algorithm partitions by (person_id, condition_concept_id)
   # and orders by condition_start_date, so this index satisfies both scans
