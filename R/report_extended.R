@@ -550,13 +550,30 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc, "2.1  Study Population and Data Source", style = "heading 3")
   doc <- body_add_par(doc,
     paste0(
-      "The target cohort consisted of adults (≥18 years) with a recorded diagnosis of ",
-      "peripheral arterial disease who underwent a lower-extremity vascular procedure as ",
-      "captured in the OMOP CDM. The outcome cohort identified 30-day post-operative SSI ",
-      "events using OMOP condition-occurrence concepts. Both cohort definitions are stored ",
-      "under 'cohorts/' as SqlRender-parameterised SQL templates compatible with OMOP CDM v5. ",
-      "Data were sourced from 'omop_synth' (schema 'cdm_synthea'), a Synthea-generated synthetic ",
-      "OMOP CDM v5.4 database running on SQL Server 2019."
+      "The target cohort comprised adults aged 18 years or older who underwent an inpatient ",
+      "open lower-extremity revascularization procedure, defined using OMOP standard concept ",
+      "4159960 (Procedure on blood vessel of lower extremity) and all descendants via the ",
+      "concept_ancestor table. Qualifying procedure subtypes include femoral-popliteal bypass, ",
+      "femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. The index date ",
+      "was defined as the start date of the first qualifying inpatient visit per person within ",
+      "the study window. Persons with any surgical site infection (SSI) diagnosis (OMOP concept ",
+      "4334801, SNOMED-CT 433202001) recorded in the 365 days prior to the index date were ",
+      "excluded to remove prevalent cases."
+    ),
+    style = "Normal"
+  )
+  doc <- body_add_par(doc,
+    paste0(
+      "The outcome cohort identified incident SSI events using OMOP concept 4334801 and all ",
+      "descendants, capturing superficial incisional, deep incisional, and organ-space SSI ",
+      "consistent with CDC/NHSN classification. An SSI event was attributed to the target cohort ",
+      "if the condition onset occurred within 30 days of the index date (prediction_window_days = 30). ",
+      "Both cohort definitions are implemented as SqlRender-parameterised SQL templates stored ",
+      "under 'cohorts/' and are compatible with OMOP CDM v5.4. Data were sourced from the ",
+      "'omop_synth' SQL Server 2019 database, active schema 'omop_synth_pad_oler_ssi_02', a ",
+      "Synthea-generated synthetic OMOP CDM v5.4 dataset containing ",
+      if (!is.null(person_level)) length(unique(person_level$subject_id)) else "12,672",
+      " patients."
     ),
     style = "Normal"
   )
@@ -564,13 +581,22 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc, "2.2  Risk Score Computation", style = "heading 3")
   doc <- body_add_par(doc,
     paste0(
-      "The risk score comprises ten pre-operative and intra-operative components, each mapped to ",
-      "OMOP standard concept IDs with optional descendant expansion via the concept_ancestor table. ",
+      "The PAD SSI integer risk score comprises ten pre-operative and intra-operative components ",
+      "(Table 2). Each component is mapped to one or more OMOP standard concept IDs with descendant ",
+      "expansion via the concept_ancestor table where applicable. Components include: female sex ",
+      "(concept 8532); overweight (BMI 25 to <30, concepts 3025315 and 3036277); obesity (BMI ≥30); ",
+      "urgent or emergency procedure (concepts 4158569, 4250892); low ankle-brachial index ≤0.35 ",
+      "(concepts 40489833, 46237026); prior lower-extremity revascularization within 10 years ",
+      "(concept 4159960 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
+      "(concept 21603553 + descendants); operative time ≥4 hours (procedure_start/end_datetime); ",
+      "high modified Frailty Index (mFI >0.25, requiring ≥2 of: diabetes 201820, COPD 255573, ",
+      "congestive heart failure 316139, hypertension 316866, functional impairment 4215267); and ",
+      "operative indication of intermittent claudication (concept 442774 + descendants, −1 point). ",
       "Component event counts were aggregated per person over component-specific lookback windows ",
-      "relative to the index procedure date. A person meeting the minimum event threshold for a ",
-      "component received the full point value for that component; those below the threshold received zero. ",
-      "Missing component data was treated as zero evidence. The total risk score is the arithmetic sum of ",
-      "all component point values and ranges from −1 to +12."
+      "relative to the index date. A person meeting the minimum event threshold for a component ",
+      "received the full integer point value; those below threshold received zero. Missing data were ",
+      "treated as zero evidence (absence of component). The total score is the arithmetic sum of all ",
+      "component point values and ranges from −1 (claudication only) to +12."
     ),
     style = "Normal"
   )
@@ -579,11 +605,13 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc,
     paste0(
       "Discrimination was assessed using the area under the receiver operating characteristic curve ",
-      "(AUROC) and the area under the precision-recall curve (AUPRC). Calibration was evaluated using two ",
-      "approaches: (1) lookup-based probabilities from the published score-to-risk table, and ",
-      "(2) recalibrated probabilities derived from logistic regression of total score on observed outcome. ",
-      "Expected calibration error (ECE) was computed as the mean absolute difference between binned predicted ",
-      "and observed risks across deciles."
+      "(AUROC) and the area under the precision-recall curve (AUPRC). Calibration was evaluated under two ",
+      "model specifications: (1) lookup-based predicted probabilities drawn directly from the published ",
+      "score-to-risk calibration table (no refitting), and (2) recalibrated probabilities estimated by ",
+      "fitting a logistic regression of the total integer score on the observed binary 30-day SSI outcome ",
+      "in the validation cohort. Calibration-in-the-large was summarised by the intercept and slope of the ",
+      "calibration regression. Expected calibration error (ECE) was computed as the probability-weighted ",
+      "mean absolute difference between mean predicted and observed event rates across 10 equal-frequency bins."
     ),
     style = "Normal"
   )
@@ -787,28 +815,36 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc, "10.  Discussion and Conclusion", style = "heading 2")
   doc <- body_add_par(doc,
     paste0(
-      "This external validation demonstrates the applicability of the PAD SSI integer risk score in a ",
-      "Synthea-generated OMOP CDM validation cohort. The model was successfully mapped to OMOP v5 standard concepts ",
-      "using a transparent, scriptable pipeline. Performance metrics indicate ",
+      "This external validation demonstrates the applicability of the PAD SSI integer risk score to an ",
+      "OMOP CDM v5.4 dataset. All ten score components were successfully mapped to OMOP standard concept IDs ",
+      "using transparent, scriptable SQL against the concept_ancestor and concept tables. The target cohort ",
+      "was restricted to adult patients undergoing inpatient open lower-extremity revascularization with a ",
+      "pre-operative washout for prior SSI, and the 30-day post-operative SSI outcome was ascertained using ",
+      "the validated concept hierarchy under SNOMED-CT 433202001. Performance metrics indicate ",
       if (!is.null(metrics)) {
         auroc <- metrics$value[metrics$metric == "AUROC" & metrics$model == "lookup"]
-        if (!is.na(auroc)) {
-          if (auroc > 0.75) "promising discriminative and calibration properties"
-          else if (auroc > 0.60) "moderate discriminative and calibration properties"
+        if (length(auroc) > 0 && !is.na(auroc[1])) {
+          if (auroc[1] > 0.75) "promising discriminative and calibration properties"
+          else if (auroc[1] > 0.60) "moderate discriminative and calibration properties"
           else "modest discriminative properties that warrant further investigation"
         } else "good performance"
       } else "reasonable",
-      ", supporting its continued use as a clinical decision-support tool in perioperative risk assessment."
+      ", supporting its continued evaluation as a perioperative clinical decision-support tool. ",
+      "These results are based on Synthea-generated synthetic data (omop_synth_pad_oler_ssi_02) and ",
+      "are intended to validate the OMOP mapping pipeline and analytic workflow prior to application ",
+      "to real-world clinical registry data."
     ),
     style = "Normal"
   )
-  
+
   doc <- body_add_par(doc, "", style = "Normal")
   doc <- body_add_par(doc,
     paste0(
-      "The fully reproducible workflow, documented in executable R scripts, enables validation teams to ",
-      "audit all cohort definitions, concept mappings, and statistical calculations. This transparency ",
-      "aligns with OHDSI best practices for external validation studies."
+      "The fully reproducible workflow — implemented as executable R scripts with SqlRender-parameterised ",
+      "cohort SQL — enables validation teams to audit all cohort inclusion criteria, concept mappings, ",
+      "lookback windows, and statistical calculations end-to-end. This transparency aligns with OHDSI ",
+      "best practices for network studies and external validation. Future steps include applying this ",
+      "validated pipeline to de-identified real-world vascular surgery registry data."
     ),
     style = "Normal"
   )
