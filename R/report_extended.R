@@ -1072,7 +1072,146 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
         SqlRender::translate(distribution_sql("ethnicity_concept_id"), targetDialect = "sql server")
       )
 
-      out <- list(age = age_df, sex = sex_df, race = race_df, ethnicity = ethnicity_df)
+      # ---- Indication categories (condition_ancestor rollup, 365d pre-index) ----
+      # Claudication : ancestor 442774  (Intermittent claudication)
+      # Rest pain    : ancestor 4325344 (Peripheral vascular disease with rest pain)
+      # Tissue loss  : ancestor 319835  (Gangrene) — covers lower-limb gangrene descendants
+      # Asymptomatic : target patients with no claudication / rest pain / tissue loss code
+      sql_indication <- SqlRender::render(
+        "WITH target AS (
+           SELECT subject_id, cohort_start_date
+           FROM @results_schema.@cohort_table
+           WHERE cohort_definition_id = @target_id
+         ),
+         claud AS (
+           SELECT DISTINCT co.person_id
+           FROM @cdm_schema.condition_occurrence co
+           INNER JOIN @cdm_schema.concept_ancestor ca
+             ON ca.descendant_concept_id = co.condition_concept_id
+            AND ca.ancestor_concept_id   = 442774
+           INNER JOIN target t ON t.subject_id = co.person_id
+             AND co.condition_start_date BETWEEN DATEADD(DAY,-365,t.cohort_start_date)
+                                             AND t.cohort_start_date
+         ),
+         rest_pain AS (
+           SELECT DISTINCT co.person_id
+           FROM @cdm_schema.condition_occurrence co
+           INNER JOIN @cdm_schema.concept_ancestor ca
+             ON ca.descendant_concept_id = co.condition_concept_id
+            AND ca.ancestor_concept_id   = 4325344
+           INNER JOIN target t ON t.subject_id = co.person_id
+             AND co.condition_start_date BETWEEN DATEADD(DAY,-365,t.cohort_start_date)
+                                             AND t.cohort_start_date
+         ),
+         tissue_loss AS (
+           SELECT DISTINCT co.person_id
+           FROM @cdm_schema.condition_occurrence co
+           INNER JOIN @cdm_schema.concept_ancestor ca
+             ON ca.descendant_concept_id = co.condition_concept_id
+            AND ca.ancestor_concept_id   = 319835
+           INNER JOIN target t ON t.subject_id = co.person_id
+             AND co.condition_start_date BETWEEN DATEADD(DAY,-365,t.cohort_start_date)
+                                             AND t.cohort_start_date
+         ),
+         any_specific AS (
+           SELECT person_id FROM claud
+           UNION SELECT person_id FROM rest_pain
+           UNION SELECT person_id FROM tissue_loss
+         )
+         SELECT 'Claudication' AS category, COUNT(*)               AS n FROM claud
+         UNION ALL
+         SELECT 'Rest pain',                COUNT(*)                    FROM rest_pain
+         UNION ALL
+         SELECT 'Tissue loss',              COUNT(*)                    FROM tissue_loss
+         UNION ALL
+         SELECT 'Asymptomatic',             COUNT(DISTINCT t.subject_id)
+           FROM target t
+           LEFT JOIN any_specific sp ON sp.person_id = t.subject_id
+           WHERE sp.person_id IS NULL",
+        results_schema = config$results_schema,
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id
+      )
+      indication_df <- tryCatch(
+        DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_indication, targetDialect = "sql server")
+        ),
+        error = function(e) NULL
+      )
+
+      # ---- Procedure type (qualifying procedure at index visit) ---------------
+      # Concept ancestor rollup per procedure type (not mutually exclusive;
+      # counts distinct patients with each procedure type at the index visit).
+      # Ancestor IDs:
+      #   4231680 = Aorto-femoral arterial bypass  → aortobifemoral
+      #   4259121 = Femoral-femoral artery vascular bypass → fem-fem
+      #   4012936 = Femoral-popliteal artery bypass graft  → fem-pop
+      #   4166196 = Femorotibial vascular bypass           → fem-tibial
+      sql_proc_type <- SqlRender::render(
+        "WITH target AS (
+           SELECT subject_id,
+                  cohort_start_date,
+                  ISNULL(cohort_end_date, cohort_start_date) AS cohort_end_date
+           FROM @results_schema.@cohort_table
+           WHERE cohort_definition_id = @target_id
+         )
+         SELECT 'Aortobifemoral bypass'   AS category,
+                COUNT(DISTINCT t.subject_id) AS n
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4231680
+         UNION ALL
+         SELECT 'Femoral endarterectomy', COUNT(DISTINCT t.subject_id)
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4040974
+         UNION ALL
+         SELECT 'Femoral-popliteal bypass', COUNT(DISTINCT t.subject_id)
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4012936
+         UNION ALL
+         SELECT 'Femorotibial bypass',      COUNT(DISTINCT t.subject_id)
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4166196",
+        results_schema = config$results_schema,
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id
+      )
+      proc_type_df <- tryCatch(
+        DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_proc_type, targetDialect = "sql server")
+        ),
+        error = function(e) NULL
+      )
+
+      out <- list(
+        age            = age_df,
+        sex            = sex_df,
+        race           = race_df,
+        ethnicity      = ethnicity_df,
+        indication     = indication_df,
+        procedure_type = proc_type_df
+      )
     }, silent = TRUE)
 
     if (!is.null(conn)) {
@@ -1131,135 +1270,127 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
   }
 
   build_table1_cohort <- function(person_level, config, connection_details) {
-    n_target <- nrow(person_level)
+    n_target  <- nrow(person_level)
     n_outcome <- sum(as.numeric(person_level$outcome), na.rm = TRUE)
 
-    tbl <- data.frame(
-      Item = c(
-        "Target cohort (eligible procedures)",
-        "SSI outcome within 30 days"
-      ),
-      Value = c(
-        fmt_n_pct(n_target, n_target),
-        fmt_n_pct(n_outcome, n_target)
-      ),
-      Definition = c(
-        "Adults aged >=18 years with open lower extremity revascularization meeting cohort entry criteria.",
-        "First qualifying post-operative SSI event in follow-up."
-      ),
-      stringsAsFactors = FALSE
-    )
+    # Helper: build one row; is_header=TRUE makes the row a section label
+    row1 <- function(char, val = "", header = FALSE) {
+      data.frame(
+        Characteristic = char,
+        Value          = val,
+        is_header      = header,
+        stringsAsFactors = FALSE
+      )
+    }
+    sub_row <- function(label, n, denom) {
+      row1(paste0("    ", label), fmt_n_pct(n, denom))
+    }
+    lookup_n <- function(df, category_value) {
+      # df has columns CATEGORY and N (DatabaseConnector returns upper-case names)
+      if (is.null(df) || nrow(df) == 0) return(0L)
+      n_col  <- names(df)[toupper(names(df)) == "N"][1]
+      cat_col <- names(df)[toupper(names(df)) == "CATEGORY"][1]
+      if (is.na(n_col) || is.na(cat_col)) return(0L)
+      idx <- which(trimws(df[[cat_col]]) == category_value)
+      if (length(idx) == 0) return(0L)
+      as.integer(df[[n_col]][idx[1]])
+    }
+    lookup_sex <- function(df, gender_name) {
+      if (is.null(df) || nrow(df) == 0) return(0L)
+      n_col  <- names(df)[toupper(names(df)) == "N"][1]
+      cat_col <- names(df)[toupper(names(df)) %in% c("CATEGORY","GENDER","CONCEPT_NAME")][1]
+      if (is.na(n_col) || is.na(cat_col)) return(0L)
+      idx <- which(grepl(gender_name, df[[cat_col]], ignore.case = TRUE))
+      if (length(idx) == 0) return(0L)
+      as.integer(df[[n_col]][idx[1]])
+    }
+    lookup_race <- function(df, race_pattern) {
+      if (is.null(df) || nrow(df) == 0) return(0L)
+      n_col  <- names(df)[toupper(names(df)) == "N"][1]
+      cat_col <- names(df)[toupper(names(df)) %in% c("CATEGORY","CONCEPT_NAME")][1]
+      if (is.na(n_col) || is.na(cat_col)) return(0L)
+      idx <- which(grepl(race_pattern, df[[cat_col]], ignore.case = TRUE))
+      if (length(idx) == 0) return(0L)
+      sum(as.integer(df[[n_col]][idx]), na.rm = TRUE)
+    }
 
     demog <- fetch_demographics_from_omop(config, connection_details)
 
-    if (!is.null(demog) && !is.null(demog$age) && nrow(demog$age) > 0) {
+    # ---- Age ------------------------------------------------------------------
+    age_row <- row1("Age, median (IQR), years", "N/A")
+    if (!is.null(demog$age) && nrow(demog$age) > 0) {
       ages <- as.numeric(demog$age$AGE_AT_INDEX)
       ages <- ages[!is.na(ages)]
       if (length(ages) > 0) {
-        age_iqr <- stats::quantile(ages, probs = c(0.25, 0.75), na.rm = TRUE)
-        tbl <- rbind(
-          tbl,
-          data.frame(
-            Item = "Age, mean (SD), years",
-            Value = paste0(format(round(mean(ages), 1), nsmall = 1), " (", format(round(stats::sd(ages), 1), nsmall = 1), ")"),
-            Definition = "Age at target cohort index date.",
-            stringsAsFactors = FALSE
-          ),
-          data.frame(
-            Item = "Age, median (IQR), years",
-            Value = paste0(
-              format(round(stats::median(ages), 1), nsmall = 1),
-              " (",
-              format(round(age_iqr[[1]], 1), nsmall = 1),
-              "-",
-              format(round(age_iqr[[2]], 1), nsmall = 1),
-              ")"
-            ),
-            Definition = "Age distribution summarized with median and interquartile range.",
-            stringsAsFactors = FALSE
+        q <- stats::quantile(ages, probs = c(0.25, 0.75), na.rm = TRUE)
+        age_row <- row1(
+          "Age, median (IQR), years",
+          paste0(
+            format(round(stats::median(ages), 1), nsmall = 1),
+            " (",
+            format(round(q[[1]], 1), nsmall = 1),
+            "\u2013",
+            format(round(q[[2]], 1), nsmall = 1),
+            ")"
           )
         )
-
-        age_bands <- list(
-          "Age 18-44" = sum(ages >= 18 & ages <= 44, na.rm = TRUE),
-          "Age 45-64" = sum(ages >= 45 & ages <= 64, na.rm = TRUE),
-          "Age 65-74" = sum(ages >= 65 & ages <= 74, na.rm = TRUE),
-          "Age >=75" = sum(ages >= 75, na.rm = TRUE)
-        )
-        for (nm in names(age_bands)) {
-          tbl <- rbind(
-            tbl,
-            data.frame(
-              Item = paste0(nm, ", n (%)"),
-              Value = fmt_n_pct(age_bands[[nm]], n_target),
-              Definition = "Age-band frequency in the target cohort.",
-              stringsAsFactors = FALSE
-            )
-          )
-        }
       }
     }
 
-    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$sex else NULL, "Sex", n_target, max_rows = 4L)
-    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$race else NULL, "Race", n_target, max_rows = 6L)
-    tbl <- append_distribution_rows(tbl, if (!is.null(demog)) demog$ethnicity else NULL, "Ethnicity", n_target, max_rows = 4L)
+    # ---- Sex ------------------------------------------------------------------
+    male_n   <- lookup_sex(demog$sex, "male")
+    female_n <- lookup_sex(demog$sex, "female")
 
-    score_flag <- function(col, positive = function(x) x > 0) {
-      if (!(col %in% names(person_level))) return(NA_real_)
-      x <- suppressWarnings(as.numeric(person_level[[col]]))
-      sum(positive(x), na.rm = TRUE)
-    }
+    # ---- Race (four requested categories) ------------------------------------
+    white_n   <- lookup_race(demog$race, "white")
+    black_n   <- lookup_race(demog$race, "black|african")
+    asian_n   <- lookup_race(demog$race, "asian")
+    latino_n  <- lookup_race(demog$ethnicity, "hispanic|latino")
 
-    claud_n <- score_flag("score_indicationClaudication", positive = function(x) x < 0)
-    urg_n <- score_flag("score_urgnt")
-    prrevasc_n <- score_flag("score_prrevasc_any")
-    optime_n <- score_flag("score_optime4h")
-    abx_n <- score_flag("score_prolong_abx")
+    # ---- Indication (OMOP concept_ancestor rollup, returned by fetch_demographics) -----
+    ind_df   <- demog$indication
+    claud_n  <- lookup_n(ind_df, "Claudication")
+    rest_n   <- lookup_n(ind_df, "Rest pain")
+    tissue_n <- lookup_n(ind_df, "Tissue loss")
+    asymp_n  <- lookup_n(ind_df, "Asymptomatic")
 
+    # ---- Procedure type -------------------------------------------------------
+    pt_df      <- demog$procedure_type
+    aortobif_n <- lookup_n(pt_df, "Aortobifemoral bypass")
+    endar_n    <- lookup_n(pt_df, "Femoral endarterectomy")
+    fempop_n   <- lookup_n(pt_df, "Femoral-popliteal bypass")
+    femtib_n   <- lookup_n(pt_df, "Femorotibial bypass")
+
+    # ---- Assemble table -------------------------------------------------------
     tbl <- rbind(
-      tbl,
-      data.frame(
-        Item = "Presenting symptom - Claudication, n (%)",
-        Value = fmt_n_pct(claud_n, n_target),
-        Definition = "From score_indicationClaudication activation in person-level score output.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Presenting symptom - Non-claudication, n (%)",
-        Value = fmt_n_pct(n_target - claud_n, n_target),
-        Definition = "Complement of claudication indicator.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Procedure grouping - Urgent/emergency, n (%)",
-        Value = fmt_n_pct(urg_n, n_target),
-        Definition = "From score_urgnt component activation.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Procedure grouping - Prior revascularization, n (%)",
-        Value = fmt_n_pct(prrevasc_n, n_target),
-        Definition = "From score_prrevasc_any component activation.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Procedure grouping - Operative time >=4h, n (%)",
-        Value = fmt_n_pct(optime_n, n_target),
-        Definition = "From score_optime4h component activation.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Procedure grouping - Prolonged antibiotics, n (%)",
-        Value = fmt_n_pct(abx_n, n_target),
-        Definition = "From score_prolong_abx component activation.",
-        stringsAsFactors = FALSE
-      ),
-      data.frame(
-        Item = "Unique patients represented",
-        Value = fmt_n_pct(length(unique(person_level$subject_id)), n_target),
-        Definition = "Unique patient count represented in procedure-level target cohort records.",
-        stringsAsFactors = FALSE
-      )
+      age_row,
+      # Sex
+      row1("Sex", header = TRUE),
+      sub_row("Male",   male_n,   n_target),
+      sub_row("Female", female_n, n_target),
+      # Race
+      row1("Race", header = TRUE),
+      sub_row("White",             white_n,  n_target),
+      sub_row("Black",             black_n,  n_target),
+      sub_row("Asian",             asian_n,  n_target),
+      sub_row("Hispanic / Latino", latino_n, n_target),
+      # Indication
+      row1("Indication", header = TRUE),
+      sub_row("Asymptomatic", asymp_n,  n_target),
+      sub_row("Claudication", claud_n,  n_target),
+      sub_row("Rest pain",    rest_n,   n_target),
+      sub_row("Tissue loss",  tissue_n, n_target),
+      # Procedure
+      row1("Procedure", header = TRUE),
+      sub_row("Aortobifemoral bypass",    aortobif_n, n_target),
+      sub_row("Femoral endarterectomy",   endar_n,    n_target),
+      sub_row("Femoral-popliteal bypass", fempop_n,   n_target),
+      sub_row("Femorotibial bypass",      femtib_n,   n_target),
+      # 30-day outcome
+      row1("30-day outcome", header = TRUE),
+      sub_row("Surgical site infection", n_outcome, n_target),
+      # Total (last row)
+      row1("Total cohort", fmt_n_pct(n_target, n_target))
     )
 
     tbl
@@ -1280,6 +1411,46 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
       color(part = "header", color = "white") |>
       padding(padding = 4, part = "all") |>
       autofit()
+  }
+
+  # Two-column Table 1 formatter.
+  # Expects df with columns: Characteristic, Value, is_header (logical).
+  # is_header rows are rendered bold with no indentation; sub-rows are indented.
+  # The is_header column is dropped before the flextable is built.
+  table1_ft <- function(df) {
+    if (is.null(df) || nrow(df) == 0) {
+      return(flextable(data.frame(Characteristic = character(), Value = character())))
+    }
+
+    header_rows <- which(df$is_header)
+    sub_rows    <- which(!df$is_header)
+    total_row   <- nrow(df)   # last row is always "Total cohort"
+
+    # Strip the helper column before passing to flextable
+    display_df <- df[, c("Characteristic", "Value"), drop = FALSE]
+
+    ft <- flextable(display_df) |>
+      bold(part = "header") |>
+      fontsize(size = 10, part = "all") |>
+      font(fontname = "Calibri", part = "all") |>
+      bg(part = "header", bg = "#1F3864") |>
+      color(part = "header", color = "white") |>
+      align(align = "left",  part = "all") |>
+      valign(valign = "top", part = "all") |>
+      padding(padding = 3, part = "all") |>
+      # Section-label rows: bold, no left indent, light grey background
+      bold(i = header_rows, part = "body") |>
+      bg(i = header_rows, bg = "#F2F2F2", part = "body") |>
+      # Sub-rows: extra left padding to simulate indent
+      padding(i = sub_rows, j = "Characteristic", padding.left = 18, part = "body") |>
+      # Total row: bold
+      bold(i = total_row, part = "body") |>
+      # Column widths
+      width(j = "Characteristic", width = 2.8) |>
+      width(j = "Value",          width = 1.4) |>
+      set_table_properties(layout = "fixed")
+
+    ft
   }
 
   wrapped_definition_ft <- function(df) {
@@ -1433,9 +1604,9 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_par(doc, "Results", style = "heading 2")
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 30 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
-  doc <- body_add_par(doc, "Table 1. Cohort summary for the external validation sample.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: The second column reports frequency as n (%) for categorical variables and summary estimates for continuous variables; table includes demographics (age, sex, race, ethnicity), presenting symptom profile, and procedure groupings.", style = "Normal")
-  doc <- body_add_flextable(doc, wrapped_definition_ft(cohort_tbl))
+  doc <- body_add_par(doc, "Table 1. Baseline characteristics of the external validation cohort.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup (claudication: 442774; rest pain: 4325344; tissue loss/gangrene: 319835; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
+  doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
