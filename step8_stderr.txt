@@ -1,0 +1,81 @@
+Type 'citation("pROC")' for a citation.
+
+Attaching package: 'pROC'
+
+The following objects are masked from 'package:stats':
+
+    cov, smooth, var
+
+Warning messages:
+1: package 'officer' was built under R version 4.5.3 
+2: package 'flextable' was built under R version 4.5.3 
+Warning message:
+package 'PatientLevelPrediction' was built under R version 4.5.3 
+[Step 8] Loading config ...
+[Step 8] Preparing cohorts ...
+Connecting using SQL Server driver
+[Step 8] Using CDM schema: omop_synth_pad_oler_ssi_02
+[Step 8] Verifying standard OMOP concept IDs ...
+Connecting using SQL Server driver
+
+  OMOP Concept Verification
+  ------------------------------------------------------------------------------------------
+  [  OK ]    8532  Gender          S         FEMALE
+  [  OK ]  201820  SNOMED          S         Diabetes mellitus
+  [  OK ]  255573  SNOMED          S         Chronic obstructive pulmonary disease
+  [  OK ]  316139  SNOMED          S         Heart failure
+  [  OK ]  316866  SNOMED          S         Hypertensive disorder
+  [  OK ]  442774  SNOMED          S         Intermittent claudication
+  [  OK ] 1616510  LOINC           S         Stairs - functional ability
+  [  OK ] 3025315  LOINC           S         Body weight
+  [  OK ] 3036277  LOINC           S         Body height
+  [  OK ] 4012936  SNOMED          S         Femoral-popliteal artery bypass graft
+  [  OK ] 4029926  SNOMED          S         Ischemic ulcer
+  [  OK ] 4040974  SNOMED          S         Femoral endarterectomy
+  [  OK ] 4086506  SNOMED          S         Frailty
+  [  OK ] 4158569  SNOMED          S         Emergency procedure
+  [  OK ] 4159704  SNOMED          S         Functional independence measure
+  [  OK ] 4159960  SNOMED          S         Procedure on blood vessel of lower extremity
+  [  OK ] 4166196  SNOMED          S         Femorotibial vascular bypass, anterior or posterior
+  [  OK ] 4167605  SNOMED          S         Barthel index
+  [  OK ] 4231680  SNOMED          S         Aorto-femoral arterial bypass
+  [  OK ] 4250892  SNOMED          S         Emergency operation
+  [  OK ] 4306934  SNOMED          S         Impaired mobility
+  [  OK ] 4325344  SNOMED          S         Peripheral vascular disease with rest pain
+  [  OK ] 4334801  SNOMED          S         Surgical site infection
+  [  OK ] 21603553  ATC             C         Antibiotics
+  [  OK ] 40489833  SNOMED          S         Ankle brachial pressure index
+  [  OK ] 42529379  LOINC           S         Transferring - functional ability
+  [  OK ] 42529380  LOINC           S         Ambulation - functional ability
+  [  OK ] 46237026  LOINC           S         Ankle-brachial index
+  ------------------------------------------------------------------------------------------
+  All 28 concept IDs verified as standard and active.
+
+Connecting using SQL Server driver
+Results schema and cohort table are ready: plp_results.ssi_val_cohort
+Results schema and cohort table are ready: plp_results.ssi_val_cohort
+Instantiating cohort: Target – Inpatient surgical procedure ...
+Done: Target – Inpatient surgical procedure
+Instantiating cohort: Outcome – Surgical site infection ...
+Done: Outcome – Surgical site infection
+  Surgery target cohort           n = 466
+  SSI outcome cohort              n = 59
+[Step 8] Running integer risk score analysis ...
+
+=== Integer risk score pipeline ===
+Reading score specification files ...
+Connecting using SQL Server driver
+Checking concept_ancestor indexes ...
+Executing SQL took 0.0116 secs
+concept_ancestor indexes verified/created.
+Calculating person-level score components ...
+Evaluating discrimination and calibration ...
+Output folder: C:/Users/rapiduser/pad-oler-ssi-val/output/risk_score_eval
+Wrote: person_level_scores.csv, component_summary.csv, metrics.csv, calibration tables, calibration plots
+[Step 8] Generating manuscript report ...
+Connecting using SQL Server driver
+Manuscript report written to: C:\Users\rapiduser\pad-oler-ssi-val\output\risk_score_eval\pad-oler-ssi-val_report_20260404_11.docx
+Warning message:
+Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+ℹ Please use `linewidth` instead. 
+[Step 8] Report written to: C:/Users/rapiduser/pad-oler-ssi-val/output/risk_score_eval/pad-oler-ssi-val_report_20260404_11.docx

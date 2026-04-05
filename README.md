@@ -291,7 +291,7 @@ Rscript workflow/06_quality_check_defined_phenotypes.R `
   --min_mapped_condition_pct=50
 ```
 
-Parameters accepted by `quality_check_etl.R` (passed through):
+Parameters accepted by `scripts/quality_check_etl.R` (passed through):
 
 | Arg | Description |
 |-----|-------------|

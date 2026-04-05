@@ -2,7 +2,7 @@
 # Step 6: Data quality check against defined cohort, outcome, and covariates.
 
 # This wrapper script intentionally stays thin and delegates all SQL-heavy
-# validation logic to quality_check_etl.R. Its responsibilities are:
+# validation logic to scripts/quality_check_etl.R. Its responsibilities are:
 #  1) locate workflow bootstrap reliably across invocation contexts,
 #  2) normalize working directory to project root,
 #  3) initialize Java variables needed by DatabaseConnector/rJava,
@@ -63,8 +63,8 @@ if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home
 # gates or run-name overrides directly at Step 6 entrypoint.
 args <- commandArgs(trailingOnly = TRUE)
 
-# Default execution target is quality_check_etl.R in the project root.
-cmd <- c("quality_check_etl.R")
+# Default execution target is scripts/quality_check_etl.R.
+cmd <- c("scripts/quality_check_etl.R")
 if (length(args) > 0) {
   cmd <- c(cmd, args)
 }

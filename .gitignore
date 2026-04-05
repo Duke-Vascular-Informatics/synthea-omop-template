@@ -40,5 +40,4 @@ dist/*.zip
 .claude/
 
 # Step execution diagnostic logs (machine-local, regenerated on each run)
-step8_stdout.txt
-step8_stderr.txt
+logs/
