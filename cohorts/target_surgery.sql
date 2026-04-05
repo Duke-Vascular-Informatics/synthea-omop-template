@@ -59,15 +59,24 @@ FROM (
     )                                  AS visit_end_date,
     ROW_NUMBER() OVER (
       PARTITION BY vo.person_id
-      ORDER BY vo.visit_start_date
+      ORDER BY vo.visit_start_date DESC   -- most recent qualifying admission
     ) AS rn
   FROM @cdm_database_schema.visit_occurrence  vo
   INNER JOIN @cdm_database_schema.person       p
     ON p.person_id = vo.person_id
 
   WHERE
+    -- Inpatient admissions only (visit_concept_id 9201).
+    -- The prior revascularization component of the PAD module records the
+    -- procedure in an outpatient PAD evaluation encounter using the same SNOMED
+    -- code as the index surgery.  Without this filter the cohort SQL would
+    -- select the earlier outpatient encounter as the index date, causing the
+    -- actual inpatient surgery to appear after the index and the prior
+    -- revascularization to be invisible in the lookback window.
+    vo.visit_concept_id = 9201
+
     -- Study date window
-    vo.visit_start_date >= CAST('@study_start_date' AS DATE)
+    AND vo.visit_start_date >= CAST('@study_start_date' AS DATE)
     AND vo.visit_start_date <= CAST('@study_end_date'   AS DATE)
 
     -- Age >= 18 at visit start (use mid-year birthday when day unknown)

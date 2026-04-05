@@ -66,7 +66,7 @@
     "  Femoro-tibial bypass       : SNOMED-CT 47575002",
     "  SSI condition          : SNOMED-CT 433202001",
     "  Debridement (re-op)    : SNOMED-CT 225148005",
-    "  Ankle-brachial index   : LOINC     59574-4",
+    "  Ankle-brachial index   : LOINC     77194-9",
     "  Wound culture          : LOINC     6463-4",
     "  Tobacco smoking status : LOINC     72166-2",
     "  BMI                    : LOINC     39156-5",
@@ -293,8 +293,8 @@
       ],
       "value_code": {
         "system": "SNOMED-CT",
-        "code": "449868002",
-        "display": "Current every day smoker"
+        "code": "881661000124108",
+        "display": "Smokes cigarette daily"
       },
       "direct_transition": "Diabetes_Chance"
     },
@@ -311,8 +311,8 @@
       ],
       "value_code": {
         "system": "SNOMED-CT",
-        "code": "266919005",
-        "display": "Never smoked tobacco"
+        "code": "221000119102",
+        "display": "Never smoked any substance"
       },
       "direct_transition": "Diabetes_Chance"
     },
@@ -528,7 +528,7 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "129839007",
+          "code": "82971005",
           "display": "Impaired mobility"
         }
       ],
@@ -661,14 +661,16 @@
       "codes": [
         {
           "system": "LOINC",
-          "code": "59574-4",
+          "code": "77194-9",
           "display": "Ankle-brachial index"
         }
       ],
       "remarks": [
         "ABI < 0.9 confirms PAD; < 0.5 indicates severe/critical limb ischemia.",
         "Range reflects the spectrum from moderate PAD to critical limb ischemia.",
-        "Recorded as the final step of the PAD diagnostic encounter."
+        "Recorded as the final step of the PAD diagnostic encounter.",
+        "LOINC 77194-9 -> OMOP concept_id 46237026 (Ankle-brachial index, domain: Measurement).",
+        "Previous code 59574-4 incorrectly mapped to concept 40762636 (BMI Percentile) in OMOP."
       ],
       "range": { "low": 0.3, "high": 0.85 },
       "direct_transition": "End_PAD_Diagnosis_Encounter"
@@ -750,8 +752,8 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "233258006",
-          "display": "Percutaneous transluminal angioplasty of peripheral artery"
+          "code": "8990000",
+          "display": "Fluoroscopy guided percutaneous transluminal angioplasty of peripheral artery with contrast"
         }
       ],
       "remarks": [
@@ -811,7 +813,7 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "25876001",
+          "code": "73994005",
           "display": "Emergency operation"
         }
       ],
@@ -821,12 +823,14 @@
     "Admission_Antibiotic_Chance": {
       "type": "Simple",
       "remarks": [
-        "Antibiotic orders occur during surgical admission.",
-        "30% receive an additional non-prophylactic cephalexin order before the index procedure."
+        "20% of admitted patients start a non-prophylactic cephalexin course at the time of",
+        "admission (e.g. pre-operative treatment of a concurrent skin/soft-tissue infection).",
+        "The course runs 3-7 days and precedes the perioperative cefazolin prophylaxis.",
+        "The remaining 80% proceed directly to the pre-operative delay and then cefazolin."
       ],
       "distributed_transition": [
-        { "distribution": 0.30, "transition": "Admission_Cephalexin_Order" },
-        { "distribution": 0.70, "transition": "Pre_Op_Antibiotic" }
+        { "distribution": 0.20, "transition": "Admission_Cephalexin_Order" },
+        { "distribution": 0.80, "transition": "Pre_Op_Delay" }
       ]
     },
 
@@ -837,7 +841,7 @@
       "codes": [
         {
           "system": "RxNorm",
-          "code": "2673",
+          "code": "2231",
           "display": "cephalexin"
         }
       ],
@@ -846,14 +850,28 @@
 
     "Admission_Cephalexin_Delay": {
       "type": "Delay",
-      "remarks": ["In-admission pre-procedure antibiotic duration: 1-2 days."],
-      "range": { "low": 1, "high": 2, "unit": "days" },
+      "remarks": [
+        "Treatment-length antibiotic course started at admission: 3-7 days.",
+        "Duration > 2 days satisfies the pipeline prolonged-antibiotic criterion."
+      ],
+      "range": { "low": 3, "high": 7, "unit": "days" },
       "direct_transition": "Admission_Cephalexin_End"
     },
 
     "Admission_Cephalexin_End": {
       "type": "MedicationEnd",
       "referenced_by_attribute": "admission_nonprophylaxis_antibiotic",
+      "direct_transition": "Pre_Op_Delay"
+    },
+
+    "Pre_Op_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Pre-operative optimisation window between admission and surgery: 0-7 days.",
+        "All admission paths (with or without cephalexin) merge here before the",
+        "perioperative prophylactic antibiotic and revascularisation procedure."
+      ],
+      "range": { "low": 0, "high": 7, "unit": "days" },
       "direct_transition": "Pre_Op_Antibiotic"
     },
 
@@ -868,7 +886,7 @@
       "codes": [
         {
           "system": "RxNorm",
-          "code": "20496",
+          "code": "2180",
           "display": "cefazolin"
         }
       ],

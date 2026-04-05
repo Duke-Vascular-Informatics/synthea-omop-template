@@ -1054,7 +1054,26 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         paste0(
           "WITH ", dedup_person_cte, "
            SELECT
-             CAST(DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date) AS FLOAT) AS age_at_index
+             -- Accurate completed-years age at index date.
+             -- DATEDIFF(YEAR, ...) counts calendar-year boundaries crossed, which
+             -- over-estimates by 1 for patients whose birthday has not yet occurred
+             -- in the index year.  The CASE subtracts 1 when that is true.
+             -- Falls back to year_of_birth when birth_datetime is NULL (OMOP allows
+             -- birth_datetime to be NULL when only year_of_birth is available).
+             CAST(
+               CASE
+                 WHEN p.birth_datetime IS NOT NULL THEN
+                   DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date)
+                   - CASE
+                       WHEN DATEADD(YEAR,
+                                    DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date),
+                                    p.birth_datetime) > t.cohort_start_date
+                       THEN 1 ELSE 0
+                     END
+                 ELSE
+                   YEAR(t.cohort_start_date) - p.year_of_birth
+               END
+             AS FLOAT) AS age_at_index
            FROM @results_schema.@cohort_table t
            INNER JOIN dedup_person p ON p.person_id = t.subject_id
            WHERE t.cohort_definition_id = @target_id"
@@ -1069,18 +1088,23 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         SqlRender::translate(sql_age, targetDialect = "sql server")
       )
 
+      # Returns concept_id, category (concept_name), and n per group so that
+      # downstream lookups can match on concept_id rather than on concept_name
+      # strings (which are fragile to vocabulary version changes and regex errors).
       distribution_sql <- function(concept_col) {
         SqlRender::render(
           paste0(
             "WITH ", dedup_person_cte, "
              SELECT
-               COALESCE(NULLIF(c.concept_name, ''), 'Unknown') AS category,
-               COUNT(DISTINCT t.subject_id) AS n
+               COALESCE(p.@concept_col, 0)                        AS concept_id,
+               COALESCE(NULLIF(c.concept_name, ''), 'Unknown')    AS category,
+               COUNT(DISTINCT t.subject_id)                       AS n
              FROM @results_schema.@cohort_table t
              INNER JOIN dedup_person p ON p.person_id = t.subject_id
              LEFT  JOIN @cdm_schema.concept c ON c.concept_id = p.@concept_col
              WHERE t.cohort_definition_id = @target_id
-             GROUP BY COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
+             GROUP BY COALESCE(p.@concept_col, 0),
+                      COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
              ORDER BY n DESC, category"
           ),
           results_schema = config$results_schema,
@@ -1323,33 +1347,28 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     sub_row <- function(label, n, denom) {
       row1(paste0("    ", label), fmt_n_pct(n, denom))
     }
-    lookup_n <- function(df, category_value) {
-      # df has columns CATEGORY and N (DatabaseConnector returns upper-case names)
+    # Look up count for a fixed OMOP concept_id in a distribution data frame
+    # returned by distribution_sql() (columns: CONCEPT_ID, CATEGORY, N).
+    # All matching is done on the integer concept_id — no string/regex logic.
+    lookup_concept <- function(df, cid) {
       if (is.null(df) || nrow(df) == 0) return(0L)
       n_col  <- names(df)[toupper(names(df)) == "N"][1]
+      id_col <- names(df)[toupper(names(df)) == "CONCEPT_ID"][1]
+      if (is.na(n_col) || is.na(id_col)) return(0L)
+      idx <- which(as.integer(df[[id_col]]) == as.integer(cid))
+      if (length(idx) == 0) return(0L)
+      sum(as.integer(df[[n_col]][idx]), na.rm = TRUE)
+    }
+    # Look up count by exact category label (used for indication/procedure rows
+    # where the SQL itself sets the category string, so it is stable).
+    lookup_n <- function(df, category_value) {
+      if (is.null(df) || nrow(df) == 0) return(0L)
+      n_col   <- names(df)[toupper(names(df)) == "N"][1]
       cat_col <- names(df)[toupper(names(df)) == "CATEGORY"][1]
       if (is.na(n_col) || is.na(cat_col)) return(0L)
       idx <- which(trimws(df[[cat_col]]) == category_value)
       if (length(idx) == 0) return(0L)
       as.integer(df[[n_col]][idx[1]])
-    }
-    lookup_sex <- function(df, gender_name) {
-      if (is.null(df) || nrow(df) == 0) return(0L)
-      n_col  <- names(df)[toupper(names(df)) == "N"][1]
-      cat_col <- names(df)[toupper(names(df)) %in% c("CATEGORY","GENDER","CONCEPT_NAME")][1]
-      if (is.na(n_col) || is.na(cat_col)) return(0L)
-      idx <- which(grepl(gender_name, df[[cat_col]], ignore.case = TRUE))
-      if (length(idx) == 0) return(0L)
-      as.integer(df[[n_col]][idx[1]])
-    }
-    lookup_race <- function(df, race_pattern) {
-      if (is.null(df) || nrow(df) == 0) return(0L)
-      n_col  <- names(df)[toupper(names(df)) == "N"][1]
-      cat_col <- names(df)[toupper(names(df)) %in% c("CATEGORY","CONCEPT_NAME")][1]
-      if (is.na(n_col) || is.na(cat_col)) return(0L)
-      idx <- which(grepl(race_pattern, df[[cat_col]], ignore.case = TRUE))
-      if (length(idx) == 0) return(0L)
-      sum(as.integer(df[[n_col]][idx]), na.rm = TRUE)
     }
 
     demog <- fetch_demographics_from_omop(config, connection_details)
@@ -1376,14 +1395,24 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     }
 
     # ---- Sex ------------------------------------------------------------------
-    male_n   <- lookup_sex(demog$sex, "male")
-    female_n <- lookup_sex(demog$sex, "female")
+    # Standard OMOP Gender domain concept IDs (vocabulary_id = 'Gender'):
+    #   8507 = MALE
+    #   8532 = FEMALE
+    male_n   <- lookup_concept(demog$sex, 8507L)
+    female_n <- lookup_concept(demog$sex, 8532L)
 
-    # ---- Race (four requested categories) ------------------------------------
-    white_n   <- lookup_race(demog$race, "white")
-    black_n   <- lookup_race(demog$race, "black|african")
-    asian_n   <- lookup_race(demog$race, "asian")
-    latino_n  <- lookup_race(demog$ethnicity, "hispanic|latino")
+    # ---- Race / Ethnicity (four requested categories) ------------------------
+    # Standard OMOP Race domain concept IDs (vocabulary_id = 'Race'):
+    #   8527 = White
+    #   8516 = Black or African American
+    #   8515 = Asian
+    # Standard OMOP Ethnicity domain concept IDs (vocabulary_id = 'Ethnicity'):
+    #   38003563 = Hispanic or Latino
+    #   38003564 = Not Hispanic or Latino
+    white_n   <- lookup_concept(demog$race,      8527L)
+    black_n   <- lookup_concept(demog$race,      8516L)
+    asian_n   <- lookup_concept(demog$race,      8515L)
+    latino_n  <- lookup_concept(demog$ethnicity, 38003563L)
 
     # ---- Indication (OMOP concept_ancestor rollup, returned by fetch_demographics) -----
     ind_df   <- demog$indication

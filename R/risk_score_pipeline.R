@@ -424,7 +424,7 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
     include_descendants = ifelse(include_desc, 1, 0),
     lookback_start = as.integer(component$lookback_start_day),
     lookback_end = as.integer(component$lookback_end_day),
-    non_prophylaxis_buffer_days = 1,
+    non_prophylaxis_buffer_days = 0,
     min_treatment_days = 2
   )
 

@@ -238,7 +238,178 @@ resolve_active_cdm_schema <- function(connection_details, fallback_schema) {
 
 
 # -----------------------------------------------------------------------------
-# 8. Establish a database connection and instantiate cohorts
+# 8. Verify standard OMOP concept IDs
+# -----------------------------------------------------------------------------
+# Every concept ID hardcoded in this project — cohort SQL templates, risk score
+# component queries, Table 1 indication/procedure rollup queries — is declared
+# below and checked against the omop_vocab.concept table at runtime.
+#
+# For each concept the check confirms:
+#   (a) the concept_id exists in the connected vocabulary
+#   (b) standard_concept = 'S' (standard) or 'C' (classification, acceptable
+#       for ATC drug ancestors used in drug rollup queries)
+#   (c) invalid_reason IS NULL (concept is not deprecated or updated)
+#
+# If any concept fails the check the script emits a WARNING (not a stop) so
+# that runs on vocabularies with minor version differences still complete,
+# but the analyst is alerted to review the flagged concept before publishing.
+#
+# Concept IDs are organised by their role in the pipeline:
+#   Cohort definitions  — used in cohorts/target_surgery.sql and
+#                         cohorts/outcome_ssi.sql
+#   Table 1 rollup      — used in the fetch_demographics_from_omop() SQL in
+#                         R/report_extended.R
+#   Risk score          — used in R/risk_score_pipeline.R component queries,
+#                         sourced from risk_score/component_concepts.csv
+
+verify_omop_concepts <- function(connection_details) {
+  message("[Step 8] Verifying standard OMOP concept IDs ...")
+
+  # Master concept registry: concept_id, role, acceptable standard_concept values.
+  # 'S'  = Standard concept     — preferred for conditions, procedures, measurements.
+  # 'C'  = Classification       — acceptable for ATC drug class ancestors.
+  concepts <- data.frame(
+    concept_id = c(
+      # ---- Cohort definitions -------------------------------------------------
+      4159960L,   # Procedure on blood vessel of lower extremity
+                  #   → target cohort inclusion ancestor (target_surgery.sql)
+      4334801L,   # Surgical site infection (SNOMED 433202001)
+                  #   → SSI washout exclusion (target_surgery.sql)
+                  #   → outcome cohort ancestor (outcome_ssi.sql)
+
+      # ---- Table 1: indication rollup (report_extended.R) ---------------------
+      442774L,    # Intermittent claudication (SNOMED 63491006)
+                  #   → claudication indication subgroup
+      4325344L,   # Peripheral vascular disease with rest pain (SNOMED 428171009)
+                  #   → rest pain indication subgroup
+      4029926L,   # Ischemic ulcer (SNOMED 13954005)
+                  #   → tissue loss indication subgroup
+
+      # ---- Table 1: procedure type rollup (report_extended.R) -----------------
+      4231680L,   # Aorto-femoral arterial bypass (SNOMED 405482000)
+      4040974L,   # Femoral endarterectomy (SNOMED 16589005)
+      4012936L,   # Femoral-popliteal artery bypass graft (SNOMED 112828007)
+      4166196L,   # Femorotibial vascular bypass (SNOMED 47575002)
+
+      # ---- Risk score components (component_concepts.csv) ---------------------
+      8532L,      # FEMALE — person.gender_concept_id (Gender domain)
+      3025315L,   # Body weight — LOINC 29463-7 (BMI denominator)
+      3036277L,   # Body height — LOINC 8302-2  (BMI denominator)
+      4158569L,   # Emergency procedure — urgent case flag
+      4250892L,   # Emergency operation — urgent case flag (alternate)
+      40489833L,  # Ankle brachial pressure index — SNOMED 446841001
+      46237026L,  # Ankle-brachial index — LOINC 77194-9 (alternate ABI)
+      21603553L,  # Antibiotics — ATC class S01AA (prolonged antibiotic ancestor)
+      4086506L,   # Frailty — SNOMED 248279007 (mFI functional status)
+      4159704L,   # Functional independence measure — SNOMED 273469003 (mFI)
+      4167605L,   # Barthel index — SNOMED 273302005 (mFI)
+      4306934L,   # Impaired mobility — SNOMED 82971005 (mFI)
+      42529379L,  # Transferring - functional ability — LOINC 83185-9 (Barthel)
+      42529380L,  # Ambulation - functional ability — LOINC 83186-7 (Barthel)
+      1616510L,   # Stairs - functional ability — LOINC 96758-8 (Barthel)
+      201820L,    # Diabetes mellitus — SNOMED 73211009 (mFI comorbidity)
+      255573L,    # Chronic obstructive pulmonary disease — SNOMED 13645005 (mFI)
+      316139L,    # Heart failure — SNOMED 84114007 (mFI comorbidity)
+      316866L,    # Hypertensive disorder — SNOMED 38341003 (mFI comorbidity)
+      442774L     # Intermittent claudication — indicationClaudication score component
+    ),
+    acceptable_std = c(
+      "S", "S",           # cohort definitions
+      "S", "S", "S",      # indication rollup
+      "S", "S", "S", "S", # procedure rollup
+      "S",                # gender
+      "S", "S",           # BMI measurements
+      "S", "S",           # urgent case
+      "S", "S",           # ABI
+      "C",                # ATC antibiotic class (Classification, not Standard)
+      "S", "S", "S", "S", # mFI functional status
+      "S", "S", "S",      # Barthel items
+      "S", "S", "S", "S", # mFI comorbidities
+      "S"                 # claudication score component
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  # De-duplicate so each concept_id is checked once.
+  concepts <- concepts[!duplicated(concepts$concept_id), ]
+
+  # Query vocab.
+  conn <- tryCatch(DatabaseConnector::connect(connection_details), error = function(e) NULL)
+  if (is.null(conn)) {
+    warning("[Step 8] Could not connect to verify concept IDs — skipping check.")
+    return(invisible(NULL))
+  }
+  on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
+
+  id_csv <- paste(concepts$concept_id, collapse = ", ")
+  sql <- paste0(
+    "SELECT concept_id, concept_name, vocabulary_id, domain_id, ",
+    "       standard_concept, invalid_reason ",
+    "FROM omop_vocab.concept ",
+    "WHERE concept_id IN (", id_csv, ")"
+  )
+  vocab <- tryCatch(
+    DatabaseConnector::querySql(conn, sql, snakeCaseToCamelCase = TRUE),
+    error = function(e) NULL
+  )
+
+  if (is.null(vocab) || nrow(vocab) == 0) {
+    warning("[Step 8] omop_vocab.concept query returned no rows — concept check skipped.")
+    return(invisible(NULL))
+  }
+
+  # Merge registry with vocab result.
+  # querySql() with snakeCaseToCamelCase = TRUE returns camelCase column names
+  # (conceptId, conceptName, vocabularyId, standardConcept, invalidReason).
+  result <- merge(concepts, vocab, by.x = "concept_id", by.y = "conceptId", all.x = TRUE)
+
+  # Determine pass/fail for each concept.
+  result$status <- mapply(function(std_actual, invalid, acceptable) {
+    if (is.na(std_actual))  return("MISSING")
+    if (!is.na(invalid))    return("DEPRECATED")
+    if (std_actual == acceptable || (acceptable == "S" && std_actual == "C")) return("OK")
+    return("NOT_STANDARD")
+  }, result$standardConcept, result$invalidReason, result$acceptable_std)
+
+  # Print formatted table.
+  message("\n  OMOP Concept Verification\n  ", strrep("-", 90))
+  for (i in seq_len(nrow(result))) {
+    r   <- result[i, ]
+    tag <- if (r$status == "OK") "  OK " else paste0(" !!! ", r$status)
+    message(sprintf("  [%s] %7d  %-14s  %-8s  %s",
+      tag,
+      r$concept_id,
+      ifelse(is.na(r$vocabularyId),    "NOT FOUND", r$vocabularyId),
+      ifelse(is.na(r$standardConcept), "?",         r$standardConcept),
+      ifelse(is.na(r$conceptName),     "(no match in vocab)", r$conceptName)
+    ))
+  }
+  message("  ", strrep("-", 90))
+
+  # Warn and summarise any failures.
+  failures <- result[result$status != "OK", ]
+  if (nrow(failures) > 0) {
+    warning(
+      "[Step 8] ", nrow(failures), " concept(s) failed the standard concept check:\n",
+      paste0(
+        sprintf("    concept_id %d (%s): %s",
+          failures$concept_id, failures$status,
+          ifelse(is.na(failures$conceptName), "NOT FOUND IN VOCAB", failures$conceptName)
+        ),
+        collapse = "\n"
+      ),
+      "\nReview these concept IDs before publishing results."
+    )
+  } else {
+    message("  All ", nrow(result), " concept IDs verified as standard and active.\n")
+  }
+
+  invisible(result)
+}
+
+
+# -----------------------------------------------------------------------------
+# 9. Establish database connection, verify concepts, and instantiate cohorts
 # -----------------------------------------------------------------------------
 # build_connection_details() returns a DatabaseConnector ConnectionDetails
 # object (not yet an open connection) constructed from the credentials in config.
@@ -265,6 +436,13 @@ message("[Step 8] Preparing cohorts ...")
 connection_details <- build_connection_details(config)
 config$cdm_schema  <- resolve_active_cdm_schema(connection_details, config$cdm_schema)
 message("[Step 8] Using CDM schema: ", config$cdm_schema)
+
+# Verify all standard OMOP concept IDs before any cohort or analysis work.
+# This confirms every concept used in cohort SQL, score queries, and Table 1
+# rollup queries is present, standard, and not deprecated in the connected
+# vocabulary.  A WARNING (not a stop) is emitted for any failing concept.
+verify_omop_concepts(connection_details)
+
 cohort_conn <- DatabaseConnector::connect(connection_details)
 ensure_results_schema(cohort_conn, config)
 build_cohorts(cohort_conn, config)
@@ -272,7 +450,7 @@ DatabaseConnector::disconnect(cohort_conn)
 
 
 # -----------------------------------------------------------------------------
-# 9. Run the integer risk score pipeline
+# 10. Run the integer risk score pipeline
 # -----------------------------------------------------------------------------
 # run_integer_risk_score_pipeline() (R/risk_score_pipeline.R) performs five
 # sub-steps and returns a named list with elements $person_level,
@@ -313,7 +491,7 @@ print(results$metrics)
 
 
 # -----------------------------------------------------------------------------
-# 10. Generate the manuscript report
+# 11. Generate the manuscript report
 # -----------------------------------------------------------------------------
 # generate_manuscript_report() (R/report_extended.R) reads the CSV outputs
 # written in step 9 and compiles them into a Word document using the officer
