@@ -58,8 +58,8 @@ parse_args <- function(args) {
     min_open_revascularization_rows = 1,
     min_ssi_condition_rows = 1,
     min_mapped_condition_pct = 0,
-    run_achilles = FALSE,
-    run_dqd = FALSE,
+    run_achilles = TRUE,
+    run_dqd = TRUE,
     achilles_threads = 1L
   )
 
