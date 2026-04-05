@@ -8,6 +8,25 @@
 #  3) initialize Java variables needed by DatabaseConnector/rJava,
 #  4) forward any CLI flags to quality_check_etl.R,
 #  5) propagate non-zero exit status as a hard workflow failure.
+#
+# Supported flags (all forwarded to quality_check_etl.R):
+#   --run_name=<name>
+#   --enforce_thresholds=<true|false>
+#   --min_person_rows=<n>
+#   --min_open_revascularization_rows=<n>
+#   --min_ssi_condition_rows=<n>
+#   --min_mapped_condition_pct=<pct>
+#   --run_achilles=<true|false>   Run ACHILLES CDM profiling (default: false)
+#   --run_dqd=<true|false>        Run OHDSI Data Quality Dashboard (default: false)
+#   --achilles_threads=<n>        Parallel threads for ACHILLES (default: 1)
+#
+# Examples:
+#   # Fast path — existing clinical signal checks only
+#   Rscript workflow/06_quality_check_defined_phenotypes.R
+#
+#   # Full profiling before manuscript submission
+#   Rscript workflow/06_quality_check_defined_phenotypes.R \
+#     --run_achilles=true --run_dqd=true --achilles_threads=2
 
 # Resolve the bootstrap file relative to this script path when launched by
 # Rscript, while still supporting interactive/manual execution fallback.

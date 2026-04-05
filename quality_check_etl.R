@@ -47,6 +47,9 @@ source("R/connection.R")
 #   --min_open_revascularization_rows=<n>
 #   --min_ssi_condition_rows=<n>
 #   --min_mapped_condition_pct=<pct>
+#   --run_achilles=<true|false>     Run ACHILLES CDM profiling (default: false)
+#   --run_dqd=<true|false>          Run OHDSI Data Quality Dashboard (default: false)
+#   --achilles_threads=<n>          Parallel threads for ACHILLES (default: 1)
 parse_args <- function(args) {
   opts <- list(
     run_name = "",
@@ -54,7 +57,10 @@ parse_args <- function(args) {
     min_person_rows = 1,
     min_open_revascularization_rows = 1,
     min_ssi_condition_rows = 1,
-    min_mapped_condition_pct = 0
+    min_mapped_condition_pct = 0,
+    run_achilles = FALSE,
+    run_dqd = FALSE,
+    achilles_threads = 1L
   )
 
   parse_bool <- function(x) {
@@ -73,6 +79,9 @@ parse_args <- function(args) {
         if (identical(key, "min_open_revascularization_rows")) opts$min_open_revascularization_rows <- as.numeric(val)
         if (identical(key, "min_ssi_condition_rows")) opts$min_ssi_condition_rows <- as.numeric(val)
         if (identical(key, "min_mapped_condition_pct")) opts$min_mapped_condition_pct <- as.numeric(val)
+        if (identical(key, "run_achilles")) opts$run_achilles <- parse_bool(val)
+        if (identical(key, "run_dqd"))     opts$run_dqd     <- parse_bool(val)
+        if (identical(key, "achilles_threads")) opts$achilles_threads <- as.integer(val)
       }
     } else if (!nzchar(opts$run_name)) {
       opts$run_name <- arg
@@ -454,6 +463,149 @@ if (isTRUE(opts$enforce_thresholds)) {
 
   cat("Threshold gate\n")
   cat("All enforced thresholds passed.\n\n")
+}
+
+# -----------------------------------------------------------------------------
+# 6b. ACHILLES CDM profiling (optional — enable with --run_achilles=true)
+# -----------------------------------------------------------------------------
+# ACHILLES computes 170+ standardised analyses across every CDM domain and
+# writes results to achilles_analysis, achilles_results, and achilles_heel
+# tables in the results schema.  These tables are consumed by the OHDSI Atlas
+# Data Sources viewer and by the DQD layer below.
+#
+# Output folder: output/achilles/   (excluded from git via .gitignore)
+# Runtime: typically 10-30 min on a synthetic CDM of ~5,000 persons.
+if (isTRUE(opts$run_achilles)) {
+  if (!requireNamespace("Achilles", quietly = TRUE)) {
+    warning(
+      "[Step 6b] Package 'Achilles' is not installed.\n",
+      "Install it with: renv::install('OHDSI/Achilles')\n",
+      "Skipping ACHILLES profiling."
+    )
+  } else {
+    message("[Step 6b] Running ACHILLES CDM profiling ...")
+    achilles_output <- file.path(getwd(), "output", "achilles")
+    dir.create(achilles_output, recursive = TRUE, showWarnings = FALSE)
+
+    achilles_result <- tryCatch(
+      Achilles::achilles(
+        connectionDetails     = build_connection_details(config),
+        cdmDatabaseSchema     = cdm_schema_active,
+        resultsDatabaseSchema = config$results_schema,
+        # SQL Server requires a writable scratch schema for intermediate
+        # aggregation tables — reuse the results schema.
+        scratchDatabaseSchema = config$results_schema,
+        sourceName            = config$cdm_database_name,
+        outputFolder          = achilles_output,
+        cdmVersion            = "5.4",
+        numThreads            = opts$achilles_threads,
+        defaultAnalysesOnly   = TRUE,
+        runHeel               = TRUE,
+        createTable           = TRUE
+      ),
+      error = function(e) {
+        warning("[Step 6b] ACHILLES failed: ", conditionMessage(e))
+        NULL
+      }
+    )
+
+    if (!is.null(achilles_result)) {
+      message("[Step 6b] ACHILLES complete. Results in: ", achilles_output)
+
+      # Print Heel warning summary to console so issues are visible in the log.
+      heel_sql <- SqlRender::translate(SqlRender::render(
+        "SELECT TOP 50 analysis_id, achilles_heel_warning
+         FROM @results_schema.achilles_heel_results
+         ORDER BY analysis_id;",
+        results_schema = config$results_schema
+      ), targetDialect = config$dbms)
+
+      heel_df <- tryCatch(run_query(heel_sql), error = function(e) NULL)
+      if (!is.null(heel_df) && nrow(heel_df) > 0) {
+        cat("\n[Step 6b] ACHILLES Heel warnings (top 50)\n")
+        print(heel_df)
+      } else {
+        cat("[Step 6b] No ACHILLES Heel warnings found.\n")
+      }
+      cat("\n")
+    }
+  }
+}
+
+# -----------------------------------------------------------------------------
+# 6c. OHDSI Data Quality Dashboard (optional — enable with --run_dqd=true)
+# -----------------------------------------------------------------------------
+# DQD runs ~3,000 standardised data quality checks across TABLE, FIELD, and
+# CONCEPT levels and writes a JSON report + results table.  It is designed to
+# run after ACHILLES but does not strictly require it.
+#
+# Output folder: output/dqd/   (excluded from git via .gitignore)
+# Output file:   output/dqd/dqd_results.json
+# Results table: <results_schema>.dqdashboard_results
+# Runtime: typically 20-60 min on a synthetic CDM of ~5,000 persons.
+if (isTRUE(opts$run_dqd)) {
+  if (!requireNamespace("DataQualityDashboard", quietly = TRUE)) {
+    warning(
+      "[Step 6c] Package 'DataQualityDashboard' is not installed.\n",
+      "Install it with: renv::install('OHDSI/DataQualityDashboard')\n",
+      "Skipping DQD checks."
+    )
+  } else {
+    message("[Step 6c] Running OHDSI Data Quality Dashboard checks ...")
+    dqd_output <- file.path(getwd(), "output", "dqd")
+    dir.create(dqd_output, recursive = TRUE, showWarnings = FALSE)
+
+    tryCatch(
+      DataQualityDashboard::executeDqChecks(
+        connectionDetails     = build_connection_details(config),
+        cdmDatabaseSchema     = cdm_schema_active,
+        resultsDatabaseSchema = config$results_schema,
+        cdmSourceName         = config$cdm_database_name,
+        numThreads            = 1L,
+        sqlOnly               = FALSE,
+        outputFolder          = dqd_output,
+        outputFile            = "dqd_results.json",
+        verboseMode           = TRUE,
+        writeToTable          = TRUE,
+        writeTableName        = "dqdashboard_results",
+        writeToCsv            = FALSE,
+        writeToFile           = TRUE,
+        checkLevels           = c("TABLE", "FIELD", "CONCEPT"),
+        cdmVersion            = "5.4"
+      ),
+      error = function(e) {
+        warning("[Step 6c] DQD failed: ", conditionMessage(e))
+      }
+    )
+
+    # Print a pass/fail summary from the results table if it was written.
+    dqd_summary_sql <- SqlRender::translate(SqlRender::render(
+      "SELECT
+         failed       AS failed_checks,
+         passed       AS passed_checks,
+         is_error     AS error_checks,
+         not_applicable AS not_applicable_checks,
+         total_checks
+       FROM (
+         SELECT
+           SUM(CASE WHEN numFailedChecks  > 0 THEN 1 ELSE 0 END)  AS failed,
+           SUM(CASE WHEN numFailedChecks  = 0 THEN 1 ELSE 0 END)  AS passed,
+           SUM(CASE WHEN isError          = 1 THEN 1 ELSE 0 END)  AS is_error,
+           SUM(CASE WHEN notApplicable    = 1 THEN 1 ELSE 0 END)  AS not_applicable,
+           COUNT(*)                                                 AS total_checks
+         FROM @results_schema.dqdashboard_results
+       ) s;",
+      results_schema = config$results_schema
+    ), targetDialect = config$dbms)
+
+    dqd_summary <- tryCatch(run_query(dqd_summary_sql), error = function(e) NULL)
+    if (!is.null(dqd_summary) && nrow(dqd_summary) > 0) {
+      cat("\n[Step 6c] DQD summary\n")
+      print(dqd_summary)
+    }
+    message("[Step 6c] DQD complete. Report: ", file.path(dqd_output, "dqd_results.json"))
+    cat("\n")
+  }
 }
 
 cat("=== QUALITY CHECK COMPLETE ===\n")

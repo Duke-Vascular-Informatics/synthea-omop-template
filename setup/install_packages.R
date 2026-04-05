@@ -76,7 +76,9 @@ for (pkg in cran_packages) {
 # Keep this list limited to packages that are not available on CRAN.
 
 github_packages <- list(
-  list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0")
+  list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0"),
+  list(package = "Achilles",               repo = "OHDSI/Achilles",               ref = "main"),
+  list(package = "DataQualityDashboard",   repo = "OHDSI/DataQualityDashboard",   ref = "main")
 )
 
 available_cran <- tryCatch(rownames(available.packages()), error = function(e) character(0))
