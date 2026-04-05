@@ -877,6 +877,10 @@ run_synthea_full_csv_builder_etl <- function(
     # driver versions).
     stmts <- strsplit(truncate_sql, ";\\s*\\n", perl = TRUE)[[1]]
     stmts <- trimws(stmts)
+    # Strip any trailing semicolons left by the split (last statement keeps its ';'
+    # when no newline follows) before appending one — prevents sending ";;" which
+    # causes a NullPointerException in the SQL Server JDBC driver.
+    stmts <- sub(";+$", "", stmts)
     stmts <- stmts[nchar(stmts) > 0]
     for (stmt in stmts) {
       execute_sql_with_retry(conn_trunc, paste0(stmt, ";"))
