@@ -1,0 +1,79 @@
+cff-version: 1.2.0
+message: >
+  If you use this software in your research, please cite it using the
+  metadata below.
+
+title: >
+  PAD/OLER SSI Validation: External Validation of a Surgical Site Infection
+  Risk Score in Peripheral Arterial Disease Using OMOP CDM
+
+authors:
+  - given-names: Adam P.
+    family-names: Johnson
+    name-suffix: MD MPH
+    email: apj20@uke.edu
+    affiliation: "PLACEHOLDER — e.g. University of Hamburg-Eppendorf"
+    orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"
+
+version: "1.0.0"
+date-released: "2026-04-05"
+
+repository-code: "https://github.com/adam-mdmph/pad-oler-ssi-val"
+url: "https://github.com/adam-mdmph/pad-oler-ssi-val"
+
+license: GPL-3.0
+
+abstract: >
+  An end-to-end external validation pipeline for an integer risk score predicting
+  surgical site infection (SSI) following open revascularization for peripheral
+  arterial disease (PAD). The pipeline runs on OMOP CDM v5.4 data (SQL Server),
+  uses OHDSI PatientLevelPrediction for cohort generation and model evaluation,
+  and includes synthetic data generation via a custom Synthea module to support
+  reproducible development and testing. Workflow steps cover environment setup,
+  cohort definition, Synthea-based synthetic data generation, ETL to OMOP,
+  data quality assessment (ACHILLES, OHDSI Data Quality Dashboard), risk score
+  evaluation, and manuscript-format report generation.
+
+keywords:
+  - peripheral arterial disease
+  - surgical site infection
+  - external validation
+  - prediction model
+  - OMOP CDM
+  - OHDSI
+  - PatientLevelPrediction
+  - Synthea
+  - real-world data
+  - clinical informatics
+  - R
+
+references:
+  - type: software
+    title: "OHDSI PatientLevelPrediction"
+    authors:
+      - name: "Observational Health Data Sciences and Informatics (OHDSI)"
+    url: "https://github.com/OHDSI/PatientLevelPrediction"
+
+  - type: software
+    title: "OHDSI ETL-Synthea"
+    authors:
+      - name: "Observational Health Data Sciences and Informatics (OHDSI)"
+    url: "https://github.com/OHDSI/ETL-Synthea"
+
+  - type: software
+    title: "Synthea: Synthetic Patient Population Simulator"
+    authors:
+      - name: "The MITRE Corporation"
+    url: "https://github.com/synthetichealth/synthea"
+
+  - type: software
+    title: "OHDSI Achilles"
+    authors:
+      - name: "Observational Health Data Sciences and Informatics (OHDSI)"
+    url: "https://github.com/OHDSI/Achilles"
+
+  - type: software
+    title: "OHDSI DataQualityDashboard"
+    authors:
+      - name: "Observational Health Data Sciences and Informatics (OHDSI)"
+    url: "https://github.com/OHDSI/DataQualityDashboard"
