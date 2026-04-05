@@ -65,7 +65,7 @@
     "  Aortobifemoral bypass      : SNOMED-CT 405482000",
     "  Femoro-tibial bypass       : SNOMED-CT 47575002",
     "  SSI condition          : SNOMED-CT 433202001",
-    "  Debridement (re-op)    : SNOMED-CT 118294005",
+    "  Debridement (re-op)    : SNOMED-CT 225148005",
     "  Ankle-brachial index   : LOINC     59574-4",
     "  Wound culture          : LOINC     6463-4",
     "  Tobacco smoking status : LOINC     72166-2",
@@ -231,11 +231,19 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "60389000",
-          "display": "Ischemic rest pain"
+          "code": "428171009",
+          "display": "Peripheral vascular disease with rest pain"
         }
       ],
-      "remarks": ["Rutherford category 4 — ischemic rest pain."],
+      "remarks": [
+        "Rutherford category 4 — ischemic rest pain.",
+        "SNOMED-CT 428171009 = Peripheral vascular disease with rest pain",
+        "  (OMOP concept 4325344, standard_concept = S).",
+        "Previous code 60389000 was incorrect: in the current OMOP vocabulary",
+        "  that code maps to Paraplegia (concept 192606), not rest pain.",
+        "Concept 4325344 is also the ancestor used in the Table 1 indication",
+        "  query, so this code maps directly to the query target."
+      ],
       "direct_transition": "Smoking_Status_Chance"
     },
 
@@ -244,11 +252,21 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "400012003",
-          "display": "Ischemic ulcer of foot"
+          "code": "238794007",
+          "display": "Ischemic foot ulcer"
         }
       ],
-      "remarks": ["Rutherford categories 5-6 — tissue loss or non-healing wound."],
+      "remarks": [
+        "Rutherford categories 5-6 — tissue loss or non-healing wound.",
+        "SNOMED-CT 238794007 = Ischemic foot ulcer",
+        "  (OMOP concept 4033352, standard_concept = S).",
+        "Previous code 400012003 was incorrect: in the current OMOP vocabulary",
+        "  that code maps to Abrasion and/or friction burn of skin (concept 4266654).",
+        "Concept 4033352 is a direct descendant of Ischemic ulcer (concept 4029926),",
+        "  which is the ancestor used in the Table 1 tissue loss indication query.",
+        "Note: the indication query ancestor was also corrected from 319835",
+        "  (Congestive heart failure — wrong) to 4029926 (Ischemic ulcer — correct)."
+      ],
       "direct_transition": "Smoking_Status_Chance"
     },
 
@@ -1110,8 +1128,8 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "118294005",
-          "display": "Debridement"
+          "code": "225148005",
+          "display": "Surgical debridement of wound"
         }
       ],
       "duration": { "low": 30, "high": 120, "unit": "minutes" },

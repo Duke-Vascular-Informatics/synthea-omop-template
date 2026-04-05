@@ -1106,8 +1106,14 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
       # ---- Indication categories (condition_ancestor rollup, 365d pre-index) ----
       # Claudication : ancestor 442774  (Intermittent claudication)
-      # Rest pain    : ancestor 4325344 (Peripheral vascular disease with rest pain)
-      # Tissue loss  : ancestor 319835  (Gangrene) — covers lower-limb gangrene descendants
+      #                Synthea module code: SNOMED 63491006
+      # Rest pain    : ancestor 4325344  (Peripheral vascular disease with rest pain)
+      #                Synthea module code: SNOMED 428171009 (maps directly to 4325344)
+      # Tissue loss  : ancestor 4029926  (Ischemic ulcer)
+      #                Synthea module code: SNOMED 238794007 (Ischemic foot ulcer, concept
+      #                4033352), which is a level-1 descendant of 4029926.
+      #                NOTE: ancestor 319835 was previously used here but is incorrect —
+      #                319835 is Congestive Heart Failure, not Gangrene. Corrected to 4029926.
       # Asymptomatic : target patients with no claudication / rest pain / tissue loss code
       sql_indication <- SqlRender::render(
         "WITH target AS (
@@ -1140,7 +1146,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            FROM @cdm_schema.condition_occurrence co
            INNER JOIN @cdm_schema.concept_ancestor ca
              ON ca.descendant_concept_id = co.condition_concept_id
-            AND ca.ancestor_concept_id   = 319835
+            AND ca.ancestor_concept_id   = 4029926
            INNER JOIN target t ON t.subject_id = co.person_id
              AND co.condition_start_date BETWEEN DATEADD(DAY,-365,t.cohort_start_date)
                                              AND t.cohort_start_date
@@ -1642,7 +1648,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 30 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
   doc <- body_add_par(doc, "Table 1. Baseline characteristics of the external validation cohort.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup (claudication: 442774; rest pain: 4325344; tissue loss/gangrene: 319835; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
