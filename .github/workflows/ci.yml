@@ -1,0 +1,81 @@
+name: R CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint all R source files with lintr.
+  # Fails if any lint is found so style and safety issues are caught on every
+  # push before they accumulate.  Configuration is in .lintr at the repo root.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint R source files
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install lintr
+        run: Rscript -e "install.packages('lintr', repos = 'https://cloud.r-project.org')"
+
+      - name: Lint R files
+        run: |
+          Rscript -e "
+            lints <- lintr::lint_dir(
+              '.',
+              pattern = '[.][Rr]\$',
+              exclusions = list('renv', 'portable', 'scripts/archive')
+            )
+            print(lints)
+            if (length(lints) > 0) {
+              message(length(lints), ' lint(s) found. See output above.')
+              quit(status = 1L)
+            }
+            message('No lints found.')
+          "
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Validate renv.lock integrity.
+  # Confirms the lock file is well-formed JSON with the expected renv structure
+  # (R version field, Packages list).  Does NOT attempt a full renv::restore()
+  # — that would require installing all OHDSI packages and take 30+ minutes.
+  # ---------------------------------------------------------------------------
+  renv-validate:
+    name: Validate renv.lock
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install renv
+        run: Rscript -e "install.packages('renv', repos = 'https://cloud.r-project.org')"
+
+      - name: Validate renv.lock structure
+        run: |
+          Rscript -e "
+            lock <- tryCatch(
+              renv::lockfile_read('renv.lock'),
+              error = function(e) stop('renv.lock is invalid: ', conditionMessage(e))
+            )
+            r_ver   <- lock[['R']][['Version']]
+            n_pkgs  <- length(lock[['Packages']])
+            if (is.null(r_ver))  stop('renv.lock missing R\$Version field')
+            if (n_pkgs == 0)     stop('renv.lock Packages list is empty')
+            cat('renv.lock is valid\n')
+            cat('  R version :', r_ver,  '\n')
+            cat('  Packages  :', n_pkgs, '\n')
+          "
