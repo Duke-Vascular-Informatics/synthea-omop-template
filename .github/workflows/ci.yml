@@ -44,6 +44,39 @@ jobs:
           "
 
   # ---------------------------------------------------------------------------
+  # Job 3: Run testthat unit tests.
+  # Tests cover pure/logic functions that do not require a live database:
+  # is_transient_db_error, with_db_retry, clamp_probability, compute_ece,
+  # get_domain_mapping, build_calibration_table, compute_binary_metrics,
+  # score_discrimination_metrics, build_combined_feature_table, read_score_specs.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install test dependencies
+        run: |
+          Rscript -e "
+            pkgs <- c('testthat', 'withr', 'pROC', 'PRROC')
+            install.packages(pkgs, repos = 'https://cloud.r-project.org')
+          "
+
+      - name: Run tests
+        run: |
+          Rscript -e "
+            library(testthat)
+            results <- test_dir('tests/testthat', reporter = 'progress', stop_on_failure = TRUE)
+          "
+
+  # ---------------------------------------------------------------------------
   # Job 2: Validate renv.lock integrity.
   # Confirms the lock file is well-formed JSON with the expected renv structure
   # (R version field, Packages list).  Does NOT attempt a full renv::restore()
