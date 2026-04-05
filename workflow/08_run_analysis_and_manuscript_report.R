@@ -112,9 +112,11 @@ print(results$metrics)
 
 message("[Step 8] Generating manuscript report ...")
 report_path <- generate_manuscript_report(
-  output_dir = config$risk_score_output_folder,
-  score_output_dir = config$risk_score_output_folder,
-  cleanup_old_outputs = FALSE
+  output_dir          = config$risk_score_output_folder,
+  score_output_dir    = config$risk_score_output_folder,
+  cleanup_old_outputs = FALSE,
+  connection_details  = connection_details,
+  config              = config
 )
 
 message("[Step 8] Report written to: ", report_path)

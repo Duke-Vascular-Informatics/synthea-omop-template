@@ -852,9 +852,11 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   invisible(out_path)
 }
 
-generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
-                                       score_output_dir = "output/risk_score_eval",
-                                       cleanup_old_outputs = FALSE) {
+generate_manuscript_report <- function(output_dir        = "output/risk_score_eval",
+                                       score_output_dir   = "output/risk_score_eval",
+                                       cleanup_old_outputs = FALSE,
+                                       connection_details = NULL,
+                                       config             = NULL) {
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
   temp_figure_dir <- tempfile("report_figures_")
@@ -1426,9 +1428,14 @@ generate_manuscript_report <- function(output_dir = "output/risk_score_eval",
     tbl
   }
 
-  config <- NULL
-  if (exists("get_validation_config", mode = "function")) {
+  # Use passed-in config / connection_details; fall back to get_validation_config()
+  # for callers that do not supply them explicitly.
+  if (is.null(config) && exists("get_validation_config", mode = "function")) {
     config <- tryCatch(get_validation_config(), error = function(e) NULL)
+  }
+  if (is.null(connection_details) && !is.null(config) &&
+      exists("build_connection_details", mode = "function")) {
+    connection_details <- tryCatch(build_connection_details(config), error = function(e) NULL)
   }
   cohort_tbl <- build_table1_cohort(person_level, config, connection_details)
 
