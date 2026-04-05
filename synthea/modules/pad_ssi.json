@@ -212,11 +212,17 @@
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "266261006",
+          "code": "63491006",
           "display": "Intermittent claudication"
         }
       ],
-      "remarks": ["Rutherford categories 1-3 — claudication."],
+      "remarks": [
+        "Rutherford categories 1-3 — claudication.",
+        "SNOMED-CT 63491006 = Intermittent claudication (OMOP concept 442774, standard).",
+        "Previous code 266261006 was incorrect: in OMOP vocabulary v5.0 (2024-10-01)",
+        "that code maps to Raynaud's phenomenon (concept 4143972), not claudication.",
+        "The correct standard SNOMED code for Intermittent claudication is 63491006."
+      ],
       "direct_transition": "Smoking_Status_Chance"
     },
 
