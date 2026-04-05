@@ -12,8 +12,11 @@ authors:
     family-names: Johnson
     name-suffix: MD MPH
     email: apj20@uke.edu
-    affiliation: "PLACEHOLDER — e.g. University of Hamburg-Eppendorf"
-    orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"
+    affiliation: >-
+      Duke University School of Medicine, Department of Surgery,
+      Division of Vascular and Endovascular Surgery and
+      Department of Population Health Sciences
+    orcid: "https://orcid.org/0000-0002-3014-6372"
 
 version: "1.0.0"
 date-released: "2026-04-05"
