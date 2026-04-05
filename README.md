@@ -445,7 +445,7 @@ Run only on a machine with GitHub access:
 ```r
 setwd("C:/Users/rapiduser/pad-oler-ssi-val")
 source("renv/activate.R")
-source("scripts/prebuild_github_binaries.R")
+source("scripts/bundle/prebuild_github_binaries.R")
 ```
 
 This generates Windows binaries under `internal_repo/bin/windows/contrib/4.5/`.
