@@ -35,3 +35,10 @@ errorReportR.txt
 
 # Generated portable bundle archives
 dist/*.zip
+
+# Claude Code session files
+.claude/
+
+# Step execution diagnostic logs (machine-local, regenerated on each run)
+step8_stdout.txt
+step8_stderr.txt
