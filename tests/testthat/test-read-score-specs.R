@@ -1,4 +1,4 @@
-source("R/risk_score_pipeline.R")
+source(file.path(.PROJ_ROOT, "R/risk_score_pipeline.R"))
 
 # Helpers to write minimal valid CSV files into a temp directory.
 make_valid_components_csv <- function(path) {

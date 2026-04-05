@@ -1,4 +1,4 @@
-source("R/connection.R")
+source(file.path(.PROJ_ROOT, "R/connection.R"))
 
 # ---------------------------------------------------------------------------
 # is_transient_db_error()

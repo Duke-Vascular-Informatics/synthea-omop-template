@@ -1,4 +1,4 @@
-source("R/cohort_demographics.R")
+source(file.path(.PROJ_ROOT, "R/cohort_demographics.R"))
 
 # ---------------------------------------------------------------------------
 # build_combined_feature_table()

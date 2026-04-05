@@ -1,7 +1,7 @@
-# Ensure working directory is the project root when tests run.
-# testthat changes CWD to the test directory before sourcing files;
-# this helper (auto-sourced first) moves it back to the project root
-# so that source("R/...") calls in test files resolve correctly.
-if (!file.exists("R/connection.R")) {
-  setwd("../..")
-}
+# Compute an absolute path to the project root once.
+# testthat 3 changes CWD to the test directory before each file;
+# test files use .PROJ_ROOT to build absolute source() paths instead
+# of relying on a relative working directory.
+.PROJ_ROOT <- normalizePath(
+  if (file.exists("R/connection.R")) getwd() else file.path(getwd(), "../..")
+)

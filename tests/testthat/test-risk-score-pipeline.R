@@ -1,4 +1,4 @@
-source("R/risk_score_pipeline.R")
+source(file.path(.PROJ_ROOT, "R/risk_score_pipeline.R"))
 
 # ---------------------------------------------------------------------------
 # clamp_probability()
