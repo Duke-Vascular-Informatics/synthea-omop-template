@@ -18,10 +18,23 @@ Sys.setenv(PATH = paste(
   normalizePath(java_bin, winslash = "\\", mustWork = FALSE),
   Sys.getenv("PATH"), sep = .Platform$path.sep
 ))
-options(java.parameters = paste0(
-  "-Djava.home=",
-  normalizePath(JAVA_HOME, winslash = "/", mustWork = FALSE)
-))
+
+# Build java.parameters list. -Djava.library.path must include the JDBC Windows
+# auth DLL directory so the JVM can load it for integrated security.  This must
+# be set before requireNamespace("rJava") starts the JVM.
+auth_dll_dir <- normalizePath(
+  file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64"),
+  winslash = "/", mustWork = FALSE
+)
+java_params <- paste0("-Djava.home=", normalizePath(JAVA_HOME, winslash = "/", mustWork = FALSE))
+if (dir.exists(auth_dll_dir)) {
+  java_params <- c(java_params, paste0("-Djava.library.path=", auth_dll_dir))
+  Sys.setenv(PATH = paste(
+    normalizePath(auth_dll_dir, winslash = "\\", mustWork = FALSE),
+    Sys.getenv("PATH"), sep = .Platform$path.sep
+  ))
+}
+options(java.parameters = java_params)
 
 if (!dir.exists(JAVA_HOME)) {
   stop("Configured JAVA_HOME does not exist: ", JAVA_HOME)
