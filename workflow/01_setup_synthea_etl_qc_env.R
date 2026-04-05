@@ -77,7 +77,27 @@ if (length(missing) > 0) {
 }
 
 # -----------------------------------------------------------------------------
-# Chunk 5: Execute database connectivity preflight.
+# Chunk 5: Run unit tests.
+# Purpose:
+# - Verify pure pipeline logic (scoring maths, domain mappings, spec parsing,
+#   retry classification) before any database work is attempted.
+# - Catch regressions in helper functions introduced since the last run.
+# Outcome:
+# - Hard stop if any test fails; all 43 tests must pass to proceed.
+# -----------------------------------------------------------------------------
+
+if (requireNamespace("testthat", quietly = TRUE) && requireNamespace("withr", quietly = TRUE)) {
+  message("Running unit tests ...")
+  withr::with_dir(getwd(), {
+    results <- testthat::test_dir("tests/testthat", reporter = "progress", stop_on_failure = TRUE)
+  })
+  message("All unit tests passed.")
+} else {
+  message("Skipping unit tests: 'testthat' or 'withr' not installed.")
+}
+
+# -----------------------------------------------------------------------------
+# Chunk 7: Execute database connectivity preflight.
 # Purpose:
 # - Verify JDBC provisioning, Java runtime settings, credentials, and SQL Server
 #   reachability before subsequent workflow steps are attempted.
@@ -96,7 +116,7 @@ run_db_preflight(
 )
 
 # -----------------------------------------------------------------------------
-# Chunk 6: Final completion message.
+# Chunk 8: Final completion message.
 # Purpose:
 # - Provide an explicit success signal for automation logs and interactive users.
 # -----------------------------------------------------------------------------
