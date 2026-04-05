@@ -1,7 +1,0 @@
-cat("WD0=", getwd(), "\n")
-setwd("C:/Users/rapiduser/pad-oler-ssi-val")
-cat("WD1=", getwd(), " exists config=", file.exists("config.R"), "\n")
-source("renv/activate.R")
-cat("WD2=", getwd(), " exists config=", file.exists("config.R"), "\n")
-source("config.R")
-cat("LOADED_CONFIG\n")
