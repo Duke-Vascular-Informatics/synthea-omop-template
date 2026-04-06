@@ -696,26 +696,51 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       style = "Normal"
     )
     
-    # Reshape metrics for display
-    metrics_wide <- metrics[, c("metric", "value", "model")]
+    # Build a formatted "value (95% CI)" string per metric-model cell, then
+    # pivot wide so each model becomes one column.  Falls back to just the
+    # point estimate when ci_lower / ci_upper are absent (legacy CSV format).
+    has_ci <- all(c("ci_lower", "ci_upper") %in% names(metrics)) &&
+              any(!is.na(metrics$ci_lower))
+
+    fmt3 <- function(x) format(round(as.numeric(x), 3), nsmall = 3, trim = TRUE)
+
+    metrics_disp <- metrics
+    metrics_disp$cell <- if (has_ci) {
+      ifelse(
+        !is.na(metrics$ci_lower) & !is.na(metrics$ci_upper),
+        paste0(fmt3(metrics$value),
+               " (", fmt3(metrics$ci_lower), "\u2013", fmt3(metrics$ci_upper), ")"),
+        fmt3(metrics$value)
+      )
+    } else {
+      fmt3(metrics$value)
+    }
+
+    metrics_wide <- metrics_disp[, c("metric", "cell", "model")]
     metrics_wide <- reshape(metrics_wide, idvar = "metric", timevar = "model", direction = "wide")
-    names(metrics_wide) <- gsub("value\\.", "", names(metrics_wide))
-    
+    names(metrics_wide) <- gsub("cell\\.", "", names(metrics_wide))
+
     ft_metrics <- flextable(metrics_wide) |>
       bold(part = "header") |>
       fontsize(size = 10, part = "all") |>
       font(fontname = "Calibri", part = "all") |>
       bg(part = "header", bg = "#1F3864") |>
       color(part = "header", color = "white") |>
-      align(j = !names(metrics_wide) %in% c("metric"), align = "center", part = "all")
-    
-    # Format numeric columns
-    for (col in names(metrics_wide)) {
-      if (col != "metric" && is.numeric(metrics_wide[[col]])) {
-        ft_metrics <- colformat_num(ft_metrics, j = col, digits = 3)
-      }
+      align(j = seq_along(names(metrics_wide))[-1], align = "center", part = "all") |>
+      set_header_labels(
+        metric       = "Metric",
+        score_only   = "Score only",
+        lookup       = "Lookup (published)",
+        recalibrated = "Recalibrated"
+      )
+
+    if (has_ci) {
+      ft_metrics <- add_footer_lines(ft_metrics,
+        "Values shown as point estimate (95% bootstrap percentile CI, B\u2009=\u2009500 resamples).")
+      ft_metrics <- fontsize(ft_metrics, size = 8, part = "footer")
+      ft_metrics <- font(ft_metrics, fontname = "Calibri", part = "footer")
     }
-    
+
     doc <- body_add_flextable(doc, ft_metrics)
     doc <- body_add_par(doc, "", style = "Normal")
     
@@ -907,7 +932,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   }
 
   if (!any(metrics$metric == "ECE")) {
-    ece_rows <- data.frame(metric = character(), value = numeric(), model = character(), stringsAsFactors = FALSE)
+    ece_rows <- data.frame(
+      metric = character(), value = numeric(),
+      ci_lower = numeric(), ci_upper = numeric(),
+      model = character(), stringsAsFactors = FALSE
+    )
 
     if ("predicted_risk_lookup" %in% names(person_level)) {
       keep_lookup <- !is.na(person_level$predicted_risk_lookup)
@@ -915,9 +944,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         ece_rows <- rbind(
           ece_rows,
           data.frame(
-            metric = "ECE",
-            value = compute_ece(person_level$outcome[keep_lookup], person_level$predicted_risk_lookup[keep_lookup]),
-            model = "lookup",
+            metric   = "ECE",
+            value    = compute_ece(person_level$outcome[keep_lookup], person_level$predicted_risk_lookup[keep_lookup]),
+            ci_lower = NA_real_,
+            ci_upper = NA_real_,
+            model    = "lookup",
             stringsAsFactors = FALSE
           )
         )
@@ -928,17 +959,26 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       ece_rows <- rbind(
         ece_rows,
         data.frame(
-          metric = "ECE",
-          value = compute_ece(person_level$outcome, person_level$predicted_risk_recalibrated),
-          model = "recalibrated",
+          metric   = "ECE",
+          value    = compute_ece(person_level$outcome, person_level$predicted_risk_recalibrated),
+          ci_lower = NA_real_,
+          ci_upper = NA_real_,
+          model    = "recalibrated",
           stringsAsFactors = FALSE
         )
       )
     }
 
     if (nrow(ece_rows) > 0) {
+      # Ensure metrics has ci_lower/ci_upper before binding, so column sets match.
+      if (!"ci_lower" %in% names(metrics)) metrics$ci_lower <- NA_real_
+      if (!"ci_upper" %in% names(metrics)) metrics$ci_upper <- NA_real_
       metrics <- rbind(metrics, ece_rows)
     }
+  } else {
+    # Ensure ci_lower/ci_upper exist even when ECE was already present in the CSV.
+    if (!"ci_lower" %in% names(metrics)) metrics$ci_lower <- NA_real_
+    if (!"ci_upper" %in% names(metrics)) metrics$ci_upper <- NA_real_
   }
 
   fmt <- function(x, digits = 3) {

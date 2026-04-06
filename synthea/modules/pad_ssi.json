@@ -774,10 +774,15 @@
       "remarks": [
         "Urgency is determined immediately after the treatment strategy decision.",
         "25% of open surgical procedures are flagged urgent or emergent.",
-        "Urgent branch records an emergency-operation observation before surgical admission."
+        "Urgent branch records an emergency-operation procedure before surgical admission.",
+        "Using type Procedure (not Observation) routes the record to synthea.procedures,",
+        "which the ETL maps into OMOP procedure_occurrence via SNOMED-CT 73994005 →",
+        "standard concept 4158569 (Emergency procedure, Procedure domain).  An Observation",
+        "type would route to synthea.observations, where the ETL only maps LOINC codes,",
+        "causing the record to be silently dropped."
       ],
       "distributed_transition": [
-        { "distribution": 0.25, "transition": "Urgent_Case_Observation" },
+        { "distribution": 0.25, "transition": "Urgent_Case_Procedure" },
         { "distribution": 0.75, "transition": "Pre_Surgical_Workup_Delay" }
       ]
     },
@@ -807,9 +812,8 @@
       "direct_transition": "Admission_Antibiotic_Chance"
     },
 
-    "Urgent_Case_Observation": {
-      "type": "Observation",
-      "category": "survey",
+    "Urgent_Case_Procedure": {
+      "type": "Procedure",
       "codes": [
         {
           "system": "SNOMED-CT",

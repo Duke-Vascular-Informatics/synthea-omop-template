@@ -832,6 +832,73 @@ clamp_probability <- function(p, eps = 1e-6) {
   p
 }
 
+# Bootstrap 95% percentile confidence intervals for all six performance metrics.
+# Uses B = 500 resamples (enough for stable percentile CIs at n ~ 200-500).
+# Each resample fits AUROC, AUPRC, Brier, ECE, calibration intercept, and
+# calibration slope in a single pass to avoid redundant computation.
+# Returns a named list with elements auroc, auprc, brier, ece, cal_int,
+# cal_slope; each a length-2 numeric vector (lower, upper).
+compute_bootstrap_cis <- function(y, p, B = 500, seed = 42) {
+  set.seed(seed)
+  n    <- length(y)
+  y    <- as.numeric(y)
+  p    <- clamp_probability(p)
+
+  boot_vals <- lapply(seq_len(B), function(i) {
+    idx <- sample.int(n, replace = TRUE)
+    yi  <- y[idx]
+    pi  <- clamp_probability(p[idx])
+    lpi <- qlogis(pi)
+
+    if (length(unique(yi)) < 2) return(NULL)
+
+    auroc_i <- tryCatch(
+      as.numeric(pROC::auc(pROC::roc(yi, pi, quiet = TRUE, direction = "<"))),
+      error = function(e) NA_real_
+    )
+    auprc_i <- tryCatch(
+      PRROC::pr.curve(
+        scores.class0 = pi[yi == 1],
+        scores.class1 = pi[yi == 0],
+        curve = FALSE
+      )$auc.integral,
+      error = function(e) NA_real_
+    )
+    brier_i  <- mean((pi - yi)^2)
+    ece_i    <- tryCatch(compute_ece(yi, pi), error = function(e) NA_real_)
+    cal_int_i <- tryCatch(
+      unname(coef(glm(yi ~ 1 + offset(lpi), family = binomial()))[1]),
+      error = function(e) NA_real_
+    )
+    cal_slope_i <- tryCatch(
+      unname(coef(glm(yi ~ lpi, family = binomial()))[2]),
+      error = function(e) NA_real_
+    )
+
+    data.frame(
+      auroc = auroc_i, auprc = auprc_i, brier = brier_i,
+      ece = ece_i, cal_int = cal_int_i, cal_slope = cal_slope_i,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  mat <- do.call(rbind, Filter(Negate(is.null), boot_vals))
+
+  pct_ci <- function(col) {
+    v <- mat[[col]]
+    as.numeric(quantile(v[!is.na(v)], probs = c(0.025, 0.975), names = FALSE))
+  }
+
+  list(
+    auroc     = pct_ci("auroc"),
+    auprc     = pct_ci("auprc"),
+    brier     = pct_ci("brier"),
+    ece       = pct_ci("ece"),
+    cal_int   = pct_ci("cal_int"),
+    cal_slope = pct_ci("cal_slope")
+  )
+}
+
 compute_ece <- function(y, p, n_bins = 10) {
   p <- clamp_probability(p)
   d <- data.frame(y = as.numeric(y), p = as.numeric(p))
@@ -890,47 +957,81 @@ compute_binary_metrics <- function(y, estimate) {
   )
 }
 
-score_discrimination_metrics <- function(y, score) {
-  if (length(unique(y)) < 2) {
-    return(data.frame(metric = c("AUROC", "AUPRC"), value = NA_real_, model = "score_only"))
-  }
-
-  discrim <- compute_binary_metrics(y, score)
-
-  data.frame(
-    metric = c("AUROC", "AUPRC"),
-    value = c(discrim$auroc, discrim$auprc),
-    model = "score_only",
-    stringsAsFactors = FALSE
-  )
-}
-
-probability_metrics <- function(y, p, model_name) {
-  p <- clamp_probability(p)
-  lp <- qlogis(p)
-
+score_discrimination_metrics <- function(y, score, boot_ci = TRUE, B = 500) {
   if (length(unique(y)) < 2) {
     return(data.frame(
-      metric = c("AUROC", "AUPRC", "Brier", "ECE", "CalibrationIntercept", "CalibrationSlope"),
-      value = NA_real_,
-      model = model_name,
+      metric   = c("AUROC", "AUPRC"),
+      value    = NA_real_,
+      ci_lower = NA_real_,
+      ci_upper = NA_real_,
+      model    = "score_only",
       stringsAsFactors = FALSE
     ))
   }
 
-  prob_metrics <- compute_binary_metrics(y, p)
-  ece <- compute_ece(y, p)
+  discrim  <- compute_binary_metrics(y, score)
+  ci_lower <- rep(NA_real_, 2)
+  ci_upper <- rep(NA_real_, 2)
 
-  intercept_fit <- glm(y ~ 1 + offset(lp), family = binomial())
-  calib_intercept <- unname(coef(intercept_fit)[1])
-
-  slope_fit <- glm(y ~ lp, family = binomial())
-  calib_slope <- unname(coef(slope_fit)[2])
+  if (boot_ci) {
+    cis      <- compute_bootstrap_cis(y, score, B = B)
+    ci_lower <- c(cis$auroc[1], cis$auprc[1])
+    ci_upper <- c(cis$auroc[2], cis$auprc[2])
+  }
 
   data.frame(
-    metric = c("AUROC", "AUPRC", "Brier", "ECE", "CalibrationIntercept", "CalibrationSlope"),
-    value = c(prob_metrics$auroc, prob_metrics$auprc, prob_metrics$brier, ece, calib_intercept, calib_slope),
-    model = model_name,
+    metric   = c("AUROC", "AUPRC"),
+    value    = c(discrim$auroc, discrim$auprc),
+    ci_lower = ci_lower,
+    ci_upper = ci_upper,
+    model    = "score_only",
+    stringsAsFactors = FALSE
+  )
+}
+
+probability_metrics <- function(y, p, model_name, boot_ci = TRUE, B = 500) {
+  p  <- clamp_probability(p)
+  lp <- qlogis(p)
+
+  metrics_names <- c("AUROC", "AUPRC", "Brier", "ECE", "CalibrationIntercept", "CalibrationSlope")
+
+  if (length(unique(y)) < 2) {
+    return(data.frame(
+      metric   = metrics_names,
+      value    = NA_real_,
+      ci_lower = NA_real_,
+      ci_upper = NA_real_,
+      model    = model_name,
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  prob_metrics    <- compute_binary_metrics(y, p)
+  ece             <- compute_ece(y, p)
+  intercept_fit   <- glm(y ~ 1 + offset(lp), family = binomial())
+  calib_intercept <- unname(coef(intercept_fit)[1])
+  slope_fit       <- glm(y ~ lp, family = binomial())
+  calib_slope     <- unname(coef(slope_fit)[2])
+
+  values   <- c(prob_metrics$auroc, prob_metrics$auprc, prob_metrics$brier,
+                ece, calib_intercept, calib_slope)
+  ci_lower <- rep(NA_real_, 6)
+  ci_upper <- rep(NA_real_, 6)
+
+  if (boot_ci) {
+    cis      <- compute_bootstrap_cis(y, p, B = B)
+    ci_lower <- c(cis$auroc[1], cis$auprc[1], cis$brier[1],
+                  cis$ece[1],   cis$cal_int[1], cis$cal_slope[1])
+    ci_upper <- c(cis$auroc[2], cis$auprc[2], cis$brier[2],
+                  cis$ece[2],   cis$cal_int[2], cis$cal_slope[2])
+  }
+
+  data.frame(
+    metric   = metrics_names,
+    value    = values,
+    ci_lower = ci_lower,
+    ci_upper = ci_upper,
+    model    = model_name,
     stringsAsFactors = FALSE
   )
 }
