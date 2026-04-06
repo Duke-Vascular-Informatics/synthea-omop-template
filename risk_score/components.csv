@@ -8,4 +8,4 @@ prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1
 prolong_abx,Prolonged antibiotic exposure,drug,-90,0,1,2
 optime4h,Operative time >=4h,procedure,-30,0,1,1
 mFI_high,High modified frailty index,observation,-365,-1,1,1
-indicationClaudication,Indication: claudication,condition,-365,-1,1,-1
+indicationClaudication,Indication: claudication,condition,-365,0,1,-1
