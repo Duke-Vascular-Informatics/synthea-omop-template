@@ -1151,6 +1151,20 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     as.numeric(row$value[1])
   }
 
+  # Returns a formatted "(lower–upper)" CI string for a given metric/model pair.
+  # Pulls ci_lower and ci_upper from the metrics data frame (present when
+  # compute_bootstrap_cis() was run during the pipeline).  Returns "—" when the
+  # columns are absent or the values are NA (e.g. legacy metrics.csv files).
+  metric_ci <- function(metric_name, model_name) {
+    row <- metrics[metrics$metric == metric_name & metrics$model == model_name, , drop = FALSE]
+    if (nrow(row) == 0) return("\u2014")
+    if (!all(c("ci_lower", "ci_upper") %in% names(row))) return("\u2014")
+    lo <- as.numeric(row$ci_lower[1])
+    hi <- as.numeric(row$ci_upper[1])
+    if (is.na(lo) || is.na(hi)) return("\u2014")
+    paste0("(", fmt(lo), "\u2013", fmt(hi), ")")
+  }
+
   n_target <- nrow(person_level)
   n_outcome <- sum(person_level$outcome, na.rm = TRUE)
   outcome_prev <- if (n_target > 0) 100 * n_outcome / n_target else NA_real_
@@ -1172,6 +1186,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       fmt(metric_value("CalibrationIntercept", "lookup")),
       fmt(metric_value("CalibrationSlope", "lookup"))
     ),
+    "95% CI" = c(
+      metric_ci("AUROC",                "lookup"),
+      metric_ci("AUPRC",                "lookup"),
+      metric_ci("Brier",                "lookup"),
+      metric_ci("ECE",                  "lookup"),
+      metric_ci("CalibrationIntercept", "lookup"),
+      metric_ci("CalibrationSlope",     "lookup")
+    ),
+    check.names     = FALSE,
     stringsAsFactors = FALSE
   )
 
@@ -1591,11 +1614,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         age_row <- row1(
           "Age, median (IQR), years",
           paste0(
-            format(round(stats::median(ages), 1), nsmall = 1),
+            as.character(as.integer(floor(stats::median(ages)))),
             " (",
-            format(round(q[[1]], 1), nsmall = 1),
+            as.character(as.integer(floor(q[[1]]))),
             "\u2013",
-            format(round(q[[2]], 1), nsmall = 1),
+            as.character(as.integer(floor(q[[2]]))),
             ")"
           )
         )
@@ -1897,7 +1920,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
   doc <- body_add_par(doc, "Summary metrics", style = "heading 3")
   doc <- body_add_par(doc, "Table 3. Lookup-model discrimination and calibration metrics.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Metrics are read directly from metrics.csv for model = lookup, including AUROC, AUPRC, Brier score, estimated calibration error, calibration intercept, and calibration slope.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Metrics are shown for the lookup model. 95% CI = 95% bootstrap percentile confidence interval (B\u2009=\u2009500 resamples). \u2014 indicates CI not available.", style = "Normal")
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
