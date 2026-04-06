@@ -1,10 +1,35 @@
+# =============================================================================
 # R/report_extended.R
-# Extended Word report for the PAD / OLER SSI risk score external validation study.
-# Includes Table 1 (components), Table 2 (prevalence), discrimination metrics,
-# calibration plots, ROC curve, and expected calibration error (ECE).
 #
-# Dependencies: officer, flextable, ggplot2 (installed via renv)
-# Entry point:  run_report.R
+# Word-document report generator for the PAD / OLER SSI risk score external
+# validation study.
+#
+# This module assembles all pipeline outputs into a manuscript-format Word
+# document (.docx) using the officer and flextable packages.  It also exports
+# a dated Excel workbook of "fringe cases" (false negatives and false positives)
+# for clinical QC review.
+#
+# Entry point: generate_manuscript_report()
+#
+# Report sections produced:
+#   1.  Title page
+#   2.  Methods (data source, cohort criteria, statistical methods)
+#   3.  Table 1   — Cohort characteristics (demographics + clinical subgroups)
+#                   queried live from the OMOP CDM via fetch_demographics_from_omop()
+#   4.  Table 2   — PAD SSI risk score component definitions and point values
+#   5.  Table 3   — Component prevalence in the validation cohort
+#   6.  Table 4   — Discrimination and calibration metrics with 95% bootstrap CIs
+#   7.  ROC curve figure
+#   8.  Calibration plot figures
+#   9.  Expected Calibration Error narrative
+#   10. Discussion and Conclusion
+#
+# Side effects:
+#   output_dir/pad-oler-ssi-val_report_<YYYYMMDD>[_N].docx  — Word report
+#   output_dir/pad_oler_ssi_fringe_<YYYYMMDD>.xlsx           — fringe-cases Excel
+#
+# Dependencies: officer, flextable, ggplot2, pROC, writexl (all via renv)
+# =============================================================================
 
 library(officer)
 library(flextable)
@@ -18,6 +43,22 @@ source("R/cohort_demographics.R")
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# .component_table_data()
+#
+# Returns a static data frame defining the 10 PAD SSI risk score components for
+# inclusion in the Word report as Table 2.  Each row contains:
+#   component_id  — matches the IDs in components.csv / component_summary.csv
+#   variable      — display name for the Word table
+#   points        — formatted point string (e.g. "+1", "−1")
+#   lookback      — human-readable lookback window
+#   omop_domain   — OMOP CDM domain(s) queried
+#   derivation    — plain-English description of the SQL derivation logic
+#
+# This table is static (not queried from the CDM) — it reflects the score
+# specification at the time the code was written.  If components.csv is updated,
+# this function must be kept in sync manually.
+# -----------------------------------------------------------------------------
 .component_table_data <- function() {
   data.frame(
     component_id = c(
@@ -126,6 +167,19 @@ source("R/cohort_demographics.R")
   )
 }
 
+# -----------------------------------------------------------------------------
+# .build_table1()
+#
+# Formats a data frame as a styled flextable for the Word report.
+# Used for Table 2 (score component definitions).
+#
+# Styling conventions:
+#   - Dark blue (#1F3864) header background with white text
+#   - Light gray (#BFBFBF) horizontal rules between body rows
+#   - Calibri 10pt throughout
+#   - Fixed column widths totalling ~7 inches (US letter body width)
+#   - Points and Lookback columns center-aligned
+# -----------------------------------------------------------------------------
 .build_table1 <- function(df) {
   border_h  <- officer::fp_border(color = "#BFBFBF", width = 0.5)
   border_out <- officer::fp_border(color = "#1F3864", width = 1.5)
@@ -158,6 +212,21 @@ source("R/cohort_demographics.R")
   ft
 }
 
+# -----------------------------------------------------------------------------
+# .compute_ece()   [internal — report_extended.R local copy]
+#
+# Computes Expected Calibration Error (ECE) for display in the Word report.
+# This is a self-contained copy that does not depend on risk_score_pipeline.R
+# being loaded, so the report can be regenerated independently of the pipeline.
+#
+# Uses equal-frequency (quantile) bins so that each bin contains approximately
+# the same number of patients.  Falls back to a single [0, 1] bin when the
+# probability distribution is degenerate (< 3 unique quantile breakpoints).
+#
+# Returns a named list:
+#   $ece      — scalar ECE value
+#   $bin_data — data frame with columns bin, n_pred, mean_pred, n_obs, mean_obs
+# -----------------------------------------------------------------------------
 .compute_ece <- function(y, p, n_bins = 10) {
   p <- pmin(pmax(p, 0.0001), 0.9999)
   breaks <- quantile(p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE)
@@ -179,6 +248,19 @@ source("R/cohort_demographics.R")
   list(ece = ece_value, bin_data = ece_data)
 }
 
+# -----------------------------------------------------------------------------
+# .save_roc_plot()
+#
+# Generates a ROC curve plot and saves it as a PNG to output_folder/roc_curve.png.
+#
+# When auc_override is supplied, the function tries both pROC direction
+# conventions ("<" and ">") and picks whichever gives an AUC closest to
+# auc_override.  This handles the rare case where pROC auto-detects the wrong
+# direction — the label shown on the plot will still use the published AUC
+# value passed in auc_override.
+#
+# Returns the path to the saved PNG file (invisibly NULL if y is degenerate).
+# -----------------------------------------------------------------------------
 .save_roc_plot <- function(y, p, output_folder, auc_override = NA_real_) {
   if (length(unique(y)) < 2) return(NULL)
   
@@ -229,6 +311,17 @@ source("R/cohort_demographics.R")
   out_file
 }
 
+# -----------------------------------------------------------------------------
+# .save_calibration_plot_from_table()
+#
+# Reads a calibration CSV (must contain "predicted" and "observed" columns) and
+# saves a calibration plot PNG to output_folder.
+#
+# Called from generate_manuscript_report() for the lookup-model calibration plot
+# when the calibration_table_lookup.csv file was produced by a prior pipeline run.
+# Returns NULL silently if the input file does not exist or lacks the required
+# columns.
+# -----------------------------------------------------------------------------
 .save_calibration_plot_from_table <- function(calibration_table_path, output_folder, file_name = "calibration_lookup.png") {
   if (!file.exists(calibration_table_path)) {
     return(NULL)
@@ -255,6 +348,19 @@ source("R/cohort_demographics.R")
   out_file
 }
 
+# -----------------------------------------------------------------------------
+# .build_cohort_summary_table()
+#
+# Builds a flextable summary of overall cohort statistics from the person-level
+# scores data frame.  Presented as Table 1 (overall cohort summary) in the Word
+# report.
+#
+# Statistics included:
+#   - Total procedures (rows in person_level)
+#   - Unique patients
+#   - SSI events and incidence rate
+#   - Mean total risk score (SD) and median total score (IQR)
+# -----------------------------------------------------------------------------
 .build_cohort_summary_table <- function(person_level_df) {
   # Build cohort characteristics summary table from person_level scores dataframe
   # Assumes columns: subject_id, outcome, total_score, age (if available)
@@ -314,6 +420,21 @@ source("R/cohort_demographics.R")
   ft
 }
 
+# -----------------------------------------------------------------------------
+# .build_combined_component_table()
+#
+# Merges the static component definitions (.component_table_data() content)
+# with observed prevalence counts from the pipeline's component_summary.csv to
+# produce a combined flextable for Table 3 in the Word report.
+#
+# Matching is done on "component_name" (exact string) with a fallback to a
+# normalized lower-case key comparison, allowing minor display-name drift
+# between the static definitions and the pipeline output.
+#
+# The resulting table shows each component's variable name, point value,
+# OMOP concept(s), OMOP CDM derivation method, and observed prevalence
+# (n and %) in the validation cohort.
+# -----------------------------------------------------------------------------
 .build_combined_component_table <- function(component_summary_df) {
   # Build combined component table with definitions and prevalence
   # Input: component_summary dataframe with columns: component_name, n_positive, n_total
@@ -877,6 +998,43 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   invisible(out_path)
 }
 
+# =============================================================================
+# generate_manuscript_report()
+#
+# Top-level entry point.  Reads all pipeline CSV outputs, queries the OMOP CDM
+# for Table 1 demographics, assembles the Word document, and writes the Excel
+# fringe-cases workbook.
+#
+# Arguments:
+#   output_dir           — directory for the .docx and .xlsx outputs.
+#   score_output_dir     — directory containing the pipeline CSVs produced by
+#                          run_integer_risk_score_pipeline().
+#   cleanup_old_outputs  — if TRUE, deletes all previous .docx files in
+#                          output_dir before writing.  Default FALSE (preserves
+#                          all historical versions).
+#   connection_details   — DatabaseConnector ConnectionDetails for live CDM
+#                          queries (used by fetch_demographics_from_omop()).
+#                          NULL disables Table 1 CDM queries.
+#   config               — validation config list from get_validation_config().
+#                          NULL disables Table 1 CDM queries.
+#
+# Report file naming:
+#   The Word document is named pad-oler-ssi-val_report_<YYYYMMDD>.docx.
+#   If a file with that name already exists, a numeric suffix is appended
+#   (_2, _3, …) so no run's output is silently overwritten.
+#
+# Fringe-cases Excel:
+#   pad_oler_ssi_fringe_<YYYYMMDD>.xlsx is always written (or overwritten if
+#   already present from the same day's run).  It contains two sheets:
+#     "Low risk with SSI"  — 10 patients with the lowest predicted risk who
+#                            nonetheless developed SSI (false negatives)
+#     "High risk no SSI"   — 10 patients with the highest predicted risk who
+#                            did not develop SSI (false positives)
+#   These cases are intended for clinical SME review to assess whether the
+#   score misses clinically meaningful risk factors.
+#
+# Returns the path to the written .docx file (invisibly).
+# =============================================================================
 generate_manuscript_report <- function(output_dir        = "output/risk_score_eval",
                                        score_output_dir   = "output/risk_score_eval",
                                        cleanup_old_outputs = FALSE,

@@ -1,18 +1,62 @@
 # =============================================================================
 # R/risk_score_pipeline.R
-# Integer risk score evaluation pipeline on OMOP cohorts.
+#
+# Integer risk score evaluation pipeline for the PAD / OLER SSI external
+# validation study.
+#
+# This module provides all functions needed to:
+#   1. Read and validate the score specification files (components.csv,
+#      component_concepts.csv, risk_lookup.csv).
+#   2. Query the OMOP CDM for each of the 10 risk component domains, applying
+#      per-component lookback windows and concept-ancestor descendant expansion.
+#   3. Assign integer points to each patient based on component presence flags.
+#   4. Map integer scores to predicted probabilities via the published lookup
+#      table and via a refitted logistic recalibration model.
+#   5. Compute discrimination (AUROC, AUPRC), calibration (Brier, ECE,
+#      intercept, slope), and 95% bootstrap percentile CIs for all metrics.
+#   6. Save all per-person and aggregate outputs to the configured output folder.
+#
+# Entry point: run_integer_risk_score_pipeline(config, connection_details)
 #
 # Inputs:
-# - components.csv: score component logic and point weights
-# - component_concepts.csv: OMOP concept IDs mapped to each component
-# - risk_lookup.csv (optional): integer score -> predicted risk mapping
+#   risk_score/components.csv        — component_id, domain, lookback window,
+#                                      min_count, and point value for each of
+#                                      the 10 score components
+#   risk_score/component_concepts.csv — OMOP concept_id(s) and descendant-
+#                                      expansion flag per component; some
+#                                      components carry additional concept_role
+#                                      (weight/height for BMI, sub-component
+#                                      roles for mFI) and value_concept_ids
+#                                      (for observation value filtering)
+#   risk_score/risk_lookup.csv        — integer score → published risk mapping
+#                                       (optional; enables lookup-model metrics)
 #
-# Output:
-# - person-level scores and outcomes
-# - discrimination metrics (AUROC/AUPRC)
-# - calibration metrics and plots
+# Outputs (written to config$risk_score_output_folder):
+#   person_level_scores.csv       — one row per patient; component point columns
+#                                   (score_<component_id>), total_score, outcome,
+#                                   predicted_risk_lookup, predicted_risk_recalibrated
+#   component_summary.csv         — per-component n_positive, mean_points
+#   metrics.csv                   — AUROC, AUPRC, Brier, ECE, CalibrationIntercept,
+#                                   CalibrationSlope for score_only / lookup /
+#                                   recalibrated models, with ci_lower / ci_upper
+#   calibration_table_<model>.csv — decile calibration tables (predicted, observed)
+#   calibration_<model>.png       — calibration plots
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# read_score_specs()
+#
+# Reads and validates the three specification CSV files that define the integer
+# risk score.  Returns a named list with elements $components, $concepts, and
+# $lookup (NULL when risk_lookup.csv is absent).
+#
+# Validation performed:
+#   - All required column names are present in each CSV.
+#   - domain values are restricted to the supported OMOP CDM domains.
+#   - Integer/numeric columns are coerced and checked for NA.
+#   - concept_role and value_concept_ids are normalised to lowercase / NA.
+#   - Every component_id in components.csv has at least one concept mapping.
+# -----------------------------------------------------------------------------
 read_score_specs <- function(config) {
   components <- read.csv(config$risk_score_components_file, stringsAsFactors = FALSE, comment.char = "#")
   concepts <- read.csv(config$risk_score_concepts_file, stringsAsFactors = FALSE, comment.char = "#")
@@ -83,6 +127,19 @@ read_score_specs <- function(config) {
   list(components = components, concepts = concepts, lookup = lookup)
 }
 
+# -----------------------------------------------------------------------------
+# get_domain_mapping()
+#
+# Maps a lowercase OMOP domain string to the three SQL identifiers needed to
+# query that domain:
+#   $table        — CDM table name (e.g. "condition_occurrence")
+#   $concept_col  — concept_id column name within that table
+#   $date_col     — start-date column name within that table
+#
+# Used by the generic query_component_counts() path for standard domains.
+# Domain-specific components (female, BMI, ABI, prolong_abx, optime4h, mFI)
+# bypass this mapping and use their own dedicated query functions.
+# -----------------------------------------------------------------------------
 get_domain_mapping <- function(domain) {
   switch(
     domain,
@@ -96,6 +153,14 @@ get_domain_mapping <- function(domain) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# get_target_population()
+#
+# Returns a two-column data frame (SUBJECT_ID, INDEX_DATE) for all patients
+# in the target cohort (cohort_definition_id = config$target_cohort_id).
+# INDEX_DATE is cast to SQL DATE to strip any time-of-day component.
+# This result set is used as the denominator/spine in every component query.
+# -----------------------------------------------------------------------------
 get_target_population <- function(connection, config) {
   sql <- SqlRender::render(
     sql = "SELECT c.subject_id,
@@ -109,6 +174,19 @@ get_target_population <- function(connection, config) {
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# get_outcomes()
+#
+# Returns one row per target-cohort patient with a binary OUTCOME flag.
+# OUTCOME = 1 when the patient has a row in the outcome cohort whose
+# cohort_start_date falls within [index_date, index_date + prediction_window_days].
+#
+# prediction_window_days comes from config$prediction_window_days (currently
+# 90 days for the 90-day SSI endpoint).
+#
+# The query is written as a correlated EXISTS subquery so SQL Server can short-
+# circuit as soon as the first qualifying outcome row is found per patient.
+# -----------------------------------------------------------------------------
 get_outcomes <- function(connection, config) {
   sql <- SqlRender::render(
     sql = "SELECT t.subject_id,
@@ -136,6 +214,25 @@ get_outcomes <- function(connection, config) {
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# ensure_concept_ancestor_indexes()
+#
+# Creates two non-clustered covering indexes on concept_ancestor if they do not
+# already exist:
+#   IX_concept_ancestor_ancestor   — on ancestor_concept_id (supports the
+#                                    descendant expansion JOINs in component
+#                                    queries that start from a known ancestor)
+#   IX_concept_ancestor_descendant — on descendant_concept_id (supports reverse
+#                                    lookups, e.g. finding the ancestor of a
+#                                    code found in a CDM table)
+#
+# Both indexes INCLUDE the complementary concept_id column and the level columns
+# so they are fully covering for the typical query pattern.
+#
+# Called once at pipeline startup.  Errors are demoted to warnings so a missing
+# CREATE INDEX permission does not abort the entire pipeline — it just means
+# ancestor expansion queries will be slower.
+# -----------------------------------------------------------------------------
 ensure_concept_ancestor_indexes <- function(connection, config) {
   sql <- SqlRender::render(
     sql = "IF OBJECT_ID('@cdm_schema.concept_ancestor', 'U') IS NOT NULL
@@ -182,6 +279,29 @@ ensure_concept_ancestor_indexes <- function(connection, config) {
   invisible(NULL)
 }
 
+# -----------------------------------------------------------------------------
+# query_bmi_component_counts()
+#
+# Computes BMI from the most-recent paired weight and height measurements within
+# the component lookback window, then flags patients meeting the BMI criterion.
+#   overweight: 25 ≤ BMI < 30
+#   obese:      BMI ≥ 30
+#
+# Unit handling (SQL CASE WHEN):
+#   Weight — kilograms (OMOP unit 9529) used as-is;
+#            pounds (8739) converted via × 0.45359237.
+#   Height — metres (9546) used as-is;
+#            centimetres (8582) divided by 100;
+#            inches (9326, 9327, 9330) converted via × 0.0254.
+#
+# ROW_NUMBER() OVER (PARTITION BY subject_id ORDER BY measurement_date DESC)
+# ensures the most-recent measurement pair is used when multiple readings exist.
+# NULL height or weight, and non-positive values, produce NULL BMI and are
+# excluded (patient is not flagged for this component).
+#
+# concept_role = "weight" / "height" in component_concepts.csv is required for
+# this function; stop() is called if either role is absent.
+# -----------------------------------------------------------------------------
 query_bmi_component_counts <- function(connection, config, component, component_concepts) {
   if (!"concept_role" %in% names(component_concepts)) {
     stop("BMI-derived components require concept_role values: weight and height.")
@@ -307,6 +427,20 @@ query_bmi_component_counts <- function(connection, config, component, component_
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_abi_component_counts()
+#
+# Counts qualifying ankle-brachial index (ABI) measurements per patient.
+# A measurement qualifies when:
+#   - Its measurement_concept_id is in the configured ABI concept set (optionally
+#     expanded to include all descendants via concept_ancestor).
+#   - value_as_number IS NOT NULL.
+#   - value_as_number < 0.35 (the ABI threshold for this risk component).
+#   - The measurement_date is within the component lookback window.
+#
+# Returns one row per patient with event_count > 0, which calculate_scores()
+# will convert to the component point value when event_count ≥ min_count.
+# -----------------------------------------------------------------------------
 query_abi_component_counts <- function(connection, config, component, component_concepts) {
   concept_ids <- unique(component_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
@@ -365,6 +499,23 @@ query_abi_component_counts <- function(connection, config, component, component_
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_prolonged_antibiotic_counts()
+#
+# Counts non-prophylactic systemic antibiotic exposures per patient.
+# Operationally defined as a drug_exposure record where:
+#   - drug_concept_id is in the configured antibiotic concept set (with optional
+#     descendant expansion — typically ATC ancestor 21603553).
+#   - drug_exposure_start_date is within the component lookback window AND
+#     is on or before index_date − 1 day (excludes perioperative prophylaxis
+#     started on the day of or the day before surgery).
+#   - Exposure duration > 2 days (treatment-like, not prophylactic):
+#     DATEDIFF(DAY, start_date, end_date) > 2  OR  days_supply > 2.
+#
+# The non_prophylaxis_buffer_days parameter (currently 0, meaning start_date
+# must be <= index − 1) and min_treatment_days (2) are explicit constants so
+# they can be adjusted without changing SQL logic.
+# -----------------------------------------------------------------------------
 query_prolonged_antibiotic_counts <- function(connection, config, component, component_concepts) {
   concept_ids <- unique(component_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
@@ -431,6 +582,25 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_operative_time_component_counts()
+#
+# Identifies patients with operative time ≥ 4 hours (240 minutes) using two
+# complementary sources, combined with UNION (de-duplicated):
+#
+#   Source 1 — procedure_occurrence datetime columns:
+#     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) > 240
+#     on procedures dated to the index date.  Requires Synthea to have generated
+#     sub-day timestamps (via the module duration field) and ETL to have mapped
+#     them to procedure_datetime / procedure_end_datetime.
+#
+#   Source 2 — measurement table operative-time concepts:
+#     Matching measurement_concept_id values (from component_concepts.csv) with
+#     value_as_number > 240 within the lookback window.
+#
+# If neither source has data the function returns an empty data frame; the
+# patient is then scored 0 for this component.
+# -----------------------------------------------------------------------------
 query_operative_time_component_counts <- function(connection, config, component, component_concepts) {
   # Captures operative time > 240 minutes (4 hours) from either:
   # 1. procedure_end_datetime (calculated duration from procedure_occurrence)
@@ -508,6 +678,31 @@ query_operative_time_component_counts <- function(connection, config, component,
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_mfi_component_counts()
+#
+# Computes the modified Frailty Index (mFI) composite flag.  A patient is
+# flagged (event_count = 1) when more than mfi_threshold (0.25) of the
+# configured sub-components are present.  With 5 sub-components the effective
+# threshold is > 1 out of 5 (i.e., ≥ 2 conditions present).
+#
+# Sub-components are identified by concept_role in component_concepts.csv:
+#   diabetes, copd, chf, hypertension, functional_status
+# (or any non-empty role values defined there).
+#
+# Query strategy:
+#   - A separate CTE is built dynamically for each sub-component role, joining
+#     target_population to either condition_occurrence (default) or observation
+#     (when value_concept_ids is set) to detect qualifying records within the
+#     lookback window.
+#   - A final mfi_counts CTE sums the sub-component flags (0/1) per patient
+#     using a dynamic CASE WHEN IS NOT NULL expression.
+#   - Patients with sub_count / n_sub > mfi_threshold (0.25) are returned.
+#
+# All CTEs are assembled as plain-SQL strings (no SqlRender::render) because
+# the number of sub-components is variable.  DatabaseConnector::querySql() +
+# SqlRender::translate() is still called for dialect normalisation.
+# -----------------------------------------------------------------------------
 query_mfi_component_counts <- function(connection, config, component, component_concepts) {
   # Modified Frailty Index: binary flag if (# sub-components present / total sub-components) > 0.25
   # Each sub-component is identified by concept_role in component_concepts.
@@ -637,6 +832,16 @@ query_mfi_component_counts <- function(connection, config, component, component_
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_female_component_counts()
+#
+# Flags patients whose person.gender_concept_id matches one of the configured
+# female-sex concept IDs (typically concept 8532 — Female).
+#
+# Unlike clinical event components this query has no lookback window: sex is
+# a demographic attribute stored directly in the person table, not as a dated
+# clinical event.  Returns subject_id with event_count = 1 for female patients.
+# -----------------------------------------------------------------------------
 query_female_component_counts <- function(connection, config, component, component_concepts) {
   concept_ids <- unique(component_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
@@ -672,6 +877,27 @@ query_female_component_counts <- function(connection, config, component, compone
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# query_component_counts()
+#
+# Dispatcher function — routes each score component to its specialised query
+# function or falls back to the generic OMOP domain query.
+#
+# Routing logic:
+#   "female"           → query_female_component_counts()
+#   "overweight","obese" → query_bmi_component_counts()
+#   "abi_35"           → query_abi_component_counts()
+#   "prolong_abx"      → query_prolonged_antibiotic_counts()
+#   "optime4h"         → query_operative_time_component_counts()
+#   "mFI_high"         → query_mfi_component_counts()
+#   all others         → generic concept-ancestor SQL via get_domain_mapping()
+#
+# The generic path builds a WITH ... expanded_concepts AS (...) query that
+# optionally joins concept_ancestor for descendant expansion, then counts
+# qualifying domain table rows within the component lookback window.
+#
+# Returns a data frame with columns SUBJECT_ID and EVENT_COUNT.
+# -----------------------------------------------------------------------------
 query_component_counts <- function(connection, config, component, component_concepts) {
   if (component$component_id == "female") {
     return(query_female_component_counts(connection, config, component, component_concepts))
@@ -749,6 +975,30 @@ query_component_counts <- function(connection, config, component, component_conc
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
+# -----------------------------------------------------------------------------
+# calculate_scores()
+#
+# Iterates over all components defined in specs$components, calls
+# query_component_counts() for each, and assembles a person-level wide matrix
+# of score contributions.
+#
+# For each component:
+#   1. Counts per patient are fetched from the CDM.
+#   2. Counts are de-duplicated by subject_id (max aggregation) to guard against
+#      Cartesian-product inflation from multi-row query results.
+#   3. Missing patients (no CDM records) receive event_count = 0.
+#   4. score_<component_id> = comp$points when event_count ≥ comp$min_count;
+#      0 otherwise.  (min_count allows requiring ≥ N qualifying events.)
+#
+# The running component_matrix is de-duplicated after each merge to prevent
+# row inflation from multi-component merges.
+#
+# final total_score = row sum of all score_<component_id> columns.
+#
+# Returns a named list:
+#   $person_level       — per-patient data frame with all score columns + outcome
+#   $component_summary  — aggregate summary (n_positive, mean_points per component)
+# -----------------------------------------------------------------------------
 calculate_scores <- function(connection, config, specs) {
   outcomes <- get_outcomes(connection, config)
   outcome_names <- tolower(names(outcomes))
@@ -825,6 +1075,14 @@ calculate_scores <- function(connection, config, specs) {
   list(person_level = person_level, component_summary = component_summary)
 }
 
+# -----------------------------------------------------------------------------
+# clamp_probability()
+#
+# Clips a numeric probability vector to the open interval (eps, 1−eps) to
+# avoid log(0) in logit transforms and degenerate likelihood calculations.
+# Default eps = 1e-6 is small enough not to materially affect metric values
+# while preventing NaN/Inf in downstream glm() and qlogis() calls.
+# -----------------------------------------------------------------------------
 clamp_probability <- function(p, eps = 1e-6) {
   p <- as.numeric(p)
   p[p < eps] <- eps
@@ -832,6 +1090,28 @@ clamp_probability <- function(p, eps = 1e-6) {
   p
 }
 
+# -----------------------------------------------------------------------------
+# compute_bootstrap_cis()
+#
+# Computes 95% bootstrap percentile confidence intervals for all six performance
+# metrics in a single pass to avoid redundant resampling.
+#
+# Algorithm:
+#   1. Draw B = 500 bootstrap samples (with replacement) from the paired (y, p)
+#      vectors.  Seed is fixed (default 42) for reproducibility.
+#   2. For each resample compute: AUROC (pROC), AUPRC (PRROC integral), Brier
+#      score, ECE (10 equal-frequency bins), calibration intercept (logistic
+#      regression with offset), and calibration slope (logistic regression).
+#      Resamples with only one outcome class are silently skipped (return NULL).
+#   3. Collect valid resamples into a matrix; extract the 2.5th and 97.5th
+#      percentiles of each column as the CI bounds.
+#
+# Returns a named list; each element is a length-2 numeric vector [lower, upper]:
+#   $auroc, $auprc, $brier, $ece, $cal_int, $cal_slope
+#
+# B = 500 gives stable CI estimates for cohort sizes in the range 200–2000.
+# Increase B for smaller cohorts or publication-quality precision.
+# -----------------------------------------------------------------------------
 # Bootstrap 95% percentile confidence intervals for all six performance metrics.
 # Uses B = 500 resamples (enough for stable percentile CIs at n ~ 200-500).
 # Each resample fits AUROC, AUPRC, Brier, ECE, calibration intercept, and
@@ -899,6 +1179,22 @@ compute_bootstrap_cis <- function(y, p, B = 500, seed = 42) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# compute_ece()
+#
+# Expected Calibration Error using equal-frequency (quantile) bins.
+#
+# ECE = Σ_b (n_b / N) × | mean_predicted_b − mean_observed_b |
+#
+# where b indexes bins, n_b is the bin count, and N is the total sample size.
+# Equal-frequency binning is used (vs. equal-width) so that each bin contains
+# approximately the same number of patients; this avoids inflated ECE from
+# near-empty tails.  Degenerate binning (< 3 unique quantile values) falls back
+# to a single [0, 1] bin.
+#
+# Probabilities are clamped to [eps, 1−eps] before binning to prevent boundary
+# artefacts.
+# -----------------------------------------------------------------------------
 compute_ece <- function(y, p, n_bins = 10) {
   p <- clamp_probability(p)
   d <- data.frame(y = as.numeric(y), p = as.numeric(p))
@@ -918,6 +1214,21 @@ compute_ece <- function(y, p, n_bins = 10) {
   as.numeric(ece)
 }
 
+# -----------------------------------------------------------------------------
+# compute_binary_metrics()
+#
+# Computes three discrimination / scoring metrics for a binary outcome y and
+# a continuous predictor estimate:
+#   auroc  — area under the ROC curve (pROC::auc with direction = "<")
+#   auprc  — area under the precision-recall curve (PRROC integral)
+#   brier  — mean squared error between estimate and binary y
+#
+# When y is constant (all 0 or all 1) AUROC and AUPRC cannot be computed;
+# both are returned as NA while Brier is still computed.
+#
+# PRROC::pr.curve() convention: scores.class0 receives predicted scores for
+# positive events (y = 1) and scores.class1 receives them for negatives (y = 0).
+# -----------------------------------------------------------------------------
 compute_binary_metrics <- function(y, estimate) {
   if (!requireNamespace("pROC", quietly = TRUE)) {
     stop("Package 'pROC' is required for AUROC metrics.")
@@ -957,6 +1268,22 @@ compute_binary_metrics <- function(y, estimate) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# score_discrimination_metrics()
+#
+# Computes AUROC and AUPRC for the raw integer score (before probability
+# mapping), optionally with 95% bootstrap CIs.
+#
+# Arguments:
+#   y        — binary outcome vector (0/1 integer or logical)
+#   score    — continuous risk score (higher = higher predicted risk)
+#   boot_ci  — if TRUE (default), adds ci_lower and ci_upper via
+#              compute_bootstrap_cis()
+#   B        — bootstrap resamples (default 500)
+#
+# Returns a data frame with columns: metric, value, ci_lower, ci_upper, model.
+# model is always "score_only" to distinguish from lookup / recalibrated models.
+# -----------------------------------------------------------------------------
 score_discrimination_metrics <- function(y, score, boot_ci = TRUE, B = 500) {
   if (length(unique(y)) < 2) {
     return(data.frame(
@@ -989,6 +1316,31 @@ score_discrimination_metrics <- function(y, score, boot_ci = TRUE, B = 500) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# probability_metrics()
+#
+# Computes all six calibration and discrimination metrics for a model that
+# outputs predicted probabilities p for binary outcome y.
+#
+# Metrics:
+#   AUROC                — area under the ROC curve
+#   AUPRC                — area under the precision-recall curve
+#   Brier                — mean squared prediction error (lower = better)
+#   ECE                  — expected calibration error (10 equal-frequency bins)
+#   CalibrationIntercept — logistic regression intercept when the published
+#                          log-odds is used as a fixed offset; ideal value = 0
+#   CalibrationSlope     — logistic regression slope on the log-odds predictor;
+#                          ideal value = 1
+#
+# Arguments:
+#   y          — binary outcome vector
+#   p          — predicted probability vector (will be clamped to (eps, 1-eps))
+#   model_name — string label stored in the model column of the output
+#   boot_ci    — if TRUE, computes 95% bootstrap percentile CIs (B resamples)
+#   B          — number of bootstrap resamples (default 500)
+#
+# Returns a data frame with columns: metric, value, ci_lower, ci_upper, model.
+# -----------------------------------------------------------------------------
 probability_metrics <- function(y, p, model_name, boot_ci = TRUE, B = 500) {
   p  <- clamp_probability(p)
   lp <- qlogis(p)
@@ -1036,6 +1388,16 @@ probability_metrics <- function(y, p, model_name, boot_ci = TRUE, B = 500) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# build_calibration_table()
+#
+# Bins predicted probabilities p into n_bins equal-frequency groups and
+# computes the mean predicted probability and mean observed event rate per bin.
+#
+# Returns a data frame with columns: bin (factor label), predicted, observed.
+# This table is used both for calibration plots and for the calibration CSV
+# outputs (calibration_table_lookup.csv, calibration_table_recalibrated.csv).
+# -----------------------------------------------------------------------------
 build_calibration_table <- function(y, p, n_bins = 10) {
   p <- clamp_probability(p)
   d <- data.frame(y = y, p = p)
@@ -1053,6 +1415,31 @@ build_calibration_table <- function(y, p, n_bins = 10) {
   )
 }
 
+# -----------------------------------------------------------------------------
+# evaluate_integer_risk_score()
+#
+# Orchestrates the full evaluation of the integer risk score against the binary
+# SSI outcome, producing metrics and calibration tables for up to three model
+# specifications:
+#
+#   score_only   — discrimination metrics (AUROC, AUPRC) on the raw integer
+#                  score without probability mapping.
+#   lookup       — all six metrics on published score-to-risk probabilities from
+#                  risk_lookup.csv.  Skipped when lookup is NULL or when no
+#                  patients have a matching row in the lookup table.
+#   recalibrated — all six metrics on probabilities from a logistic regression
+#                  of total_score → outcome fitted in the validation cohort.
+#
+# The recalibrated model is always fitted (it requires no external lookup table)
+# and its predicted probabilities are stored in person_level as
+# predicted_risk_recalibrated for downstream report functions.
+#
+# Returns a named list:
+#   $person_level        — input data frame augmented with predicted probability
+#                          columns and outcome
+#   $metrics             — data frame of all metrics (rbind of up to 3 model blocks)
+#   $calibration_tables  — named list of calibration data frames (lookup, recalibrated)
+# -----------------------------------------------------------------------------
 evaluate_integer_risk_score <- function(person_level, lookup) {
   y <- as.integer(person_level$outcome)
   score <- as.numeric(person_level$total_score)
@@ -1100,6 +1487,13 @@ evaluate_integer_risk_score <- function(person_level, lookup) {
   list(person_level = person_level, metrics = metrics, calibration_tables = calibration_tables)
 }
 
+# -----------------------------------------------------------------------------
+# save_calibration_plot()
+#
+# Saves a calibration plot (mean predicted vs. mean observed per decile) to
+# a PNG file named calibration_<model_name>.png in output_folder.
+# Calls ggplot2::ggsave() at 150 dpi, 7×5 inches.
+# -----------------------------------------------------------------------------
 save_calibration_plot <- function(calibration_table, model_name, output_folder) {
   p <- ggplot2::ggplot(calibration_table, ggplot2::aes(x = predicted, y = observed)) +
     ggplot2::geom_point(size = 2) +
@@ -1116,6 +1510,31 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
   ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
 }
 
+# =============================================================================
+# run_integer_risk_score_pipeline()
+#
+# Top-level entry point for the integer risk score evaluation.
+# Called from workflow/08_run_analysis_and_manuscript_report.R.
+#
+# Execution sequence:
+#   1. Create the output folder if it does not exist.
+#   2. read_score_specs()        — load and validate CSV spec files
+#   3. connect()                 — open a JDBC connection using connection_details
+#   4. ensure_concept_ancestor_indexes() — create covering indexes if missing
+#   5. calculate_scores()        — query CDM and assign component points per patient
+#   6. evaluate_integer_risk_score() — compute metrics + calibration tables
+#   7. write_csv()               — save person_level_scores.csv,
+#                                  component_summary.csv, metrics.csv,
+#                                  calibration_table_*.csv
+#   8. save_calibration_plot()   — save calibration_*.png for each model
+#
+# Arguments:
+#   config             — list from get_validation_config() in config.R
+#   connection_details — DatabaseConnector ConnectionDetails object
+#
+# Returns the eval_results list (invisibly); primary side effect is writing
+# files to config$risk_score_output_folder.
+# =============================================================================
 run_integer_risk_score_pipeline <- function(config, connection_details) {
   dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = FALSE)
 
