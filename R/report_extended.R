@@ -1757,33 +1757,28 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     doc <- body_add_par(doc, "", style = "Normal")
   }
 
-  # ---- Fringe cases appendix -----------------------------------------------
+  # ---- Fringe cases — Excel export (not in Word report) -------------------
   # Two groups of patients that the model handled worst:
   #   Group A — lowest predicted risk who nonetheless had an SSI (false negatives)
   #   Group B — highest predicted risk who did not have an SSI (false positives)
-  # Queries the CDM directly for patient name (from synthea.patients), the
-  # Synthea patient ID (used as MRN proxy), procedure date, and procedure name.
+  # Written to a dated Excel file in the same output folder as the report.
   if (!is.null(connection_details) && !is.null(config) &&
       "predicted_risk_lookup" %in% names(person_level)) {
 
-    fringe_tbl <- tryCatch({
+    tryCatch({
       conn_f <- DatabaseConnector::connect(connection_details)
       on.exit(try(DatabaseConnector::disconnect(conn_f), silent = TRUE), add = TRUE)
 
       # Identify the two fringe groups from person_level_scores
-      fn_ids <- person_level$subject_id[person_level$outcome == 1 &
-                   !is.na(person_level$predicted_risk_lookup)]
-      fn_risk <- person_level$predicted_risk_lookup[person_level$outcome == 1 &
-                   !is.na(person_level$predicted_risk_lookup)]
-      fn_ord  <- order(fn_risk)
-      fn_top  <- fn_ids[fn_ord][seq_len(min(10L, length(fn_ord)))]
+      fn_mask <- person_level$outcome == 1 & !is.na(person_level$predicted_risk_lookup)
+      fn_ids  <- person_level$subject_id[fn_mask]
+      fn_risk <- person_level$predicted_risk_lookup[fn_mask]
+      fn_top  <- fn_ids[order(fn_risk)][seq_len(min(10L, sum(fn_mask)))]
 
-      fp_ids  <- person_level$subject_id[person_level$outcome == 0 &
-                   !is.na(person_level$predicted_risk_lookup)]
-      fp_risk <- person_level$predicted_risk_lookup[person_level$outcome == 0 &
-                   !is.na(person_level$predicted_risk_lookup)]
-      fp_ord  <- order(fp_risk, decreasing = TRUE)
-      fp_top  <- fp_ids[fp_ord][seq_len(min(10L, length(fp_ord)))]
+      fp_mask <- person_level$outcome == 0 & !is.na(person_level$predicted_risk_lookup)
+      fp_ids  <- person_level$subject_id[fp_mask]
+      fp_risk <- person_level$predicted_risk_lookup[fp_mask]
+      fp_top  <- fp_ids[order(fp_risk, decreasing = TRUE)][seq_len(min(10L, sum(fp_mask)))]
 
       all_ids <- unique(c(fn_top, fp_top))
       id_str  <- paste(as.integer(all_ids), collapse = ",")
@@ -1810,89 +1805,57 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         id_list    = id_str
       )
 
-      raw <- tryCatch(
-        DatabaseConnector::querySql(
-          conn_f,
-          SqlRender::translate(sql_fringe, targetDialect = "sql server")
-        ),
-        error = function(e) { message("[report] Fringe query failed: ", conditionMessage(e)); NULL }
+      raw <- DatabaseConnector::querySql(
+        conn_f,
+        SqlRender::translate(sql_fringe, targetDialect = "sql server")
       )
-      if (is.null(raw) || nrow(raw) == 0) stop("no fringe rows returned")
-
-      # Normalise column names (case-insensitive)
       names(raw) <- tolower(names(raw))
 
-      # Pick one procedure row per person (earliest qualifying procedure)
+      # One row per person — earliest qualifying procedure
       raw <- raw[order(raw$person_id, raw$procedure_date), ]
       raw <- raw[!duplicated(raw$person_id), ]
 
-      # Attach predicted risk and outcome from person_level
       pl_sub <- person_level[, c("subject_id", "predicted_risk_lookup", "outcome")]
       raw    <- merge(raw, pl_sub, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
 
       make_group <- function(ids, label) {
-        sub <- raw[raw$person_id %in% ids, ]
-        sub$group <- label
+        sub        <- raw[raw$person_id %in% ids, ]
+        sub$group  <- label
         sub
       }
 
       fn_df <- make_group(fn_top, "Low risk, SSI occurred")
       fp_df <- make_group(fp_top, "High risk, no SSI")
-
       fn_df <- fn_df[order(fn_df$predicted_risk_lookup), ]
       fp_df <- fp_df[order(fp_df$predicted_risk_lookup, decreasing = TRUE), ]
 
-      rbind(fn_df, fp_df)[, c("group", "patient_name", "mrn",
-                               "procedure_date", "procedure_name",
-                               "predicted_risk_lookup")]
-    }, error = function(e) {
-      message("[report] Fringe case table skipped: ", conditionMessage(e))
-      NULL
-    })
+      fringe_tbl <- rbind(fn_df, fp_df)[,
+        c("group", "patient_name", "mrn",
+          "procedure_date", "procedure_name", "predicted_risk_lookup")]
 
-    if (!is.null(fringe_tbl) && nrow(fringe_tbl) > 0) {
-      doc <- body_add_par(doc, "", style = "Normal")
-      doc <- body_add_par(doc, "", style = "Normal")
-      doc <- body_add_par(doc, "Appendix: Fringe Cases", style = "heading 2")
-      doc <- body_add_par(doc,
-        paste0(
-          "The table below lists the 10 patients with the lowest predicted risk who ",
-          "experienced an SSI (false negatives — cases the model missed) and the 10 patients ",
-          "with the highest predicted risk who did not experience an SSI (false positives — ",
-          "cases the model over-predicted). These cases are useful for auditing model failures ",
-          "and identifying systematic gaps in predictor coverage."
-        ),
-        style = "Normal"
-      )
-      doc <- body_add_par(doc, "", style = "Normal")
-
-      fringe_disp <- fringe_tbl
-      names(fringe_disp) <- c(
+      names(fringe_tbl) <- c(
         "Group", "Patient Name", "MRN",
         "Procedure Date", "Procedure", "Predicted Risk"
       )
-      fringe_disp[["Predicted Risk"]] <- round(as.numeric(fringe_disp[["Predicted Risk"]]), 3)
+      fringe_tbl[["Predicted Risk"]] <- round(as.numeric(fringe_tbl[["Predicted Risk"]]), 3)
 
-      ft_fringe <- flextable(fringe_disp) |>
-        bold(part = "header") |>
-        fontsize(size = 9, part = "all") |>
-        font(fontname = "Calibri", part = "all") |>
-        bg(part = "header", bg = "#1F3864") |>
-        color(part = "header", color = "white") |>
-        bg(i = fringe_disp[["Group"]] == "Low risk, SSI occurred", bg = "#FFF2CC") |>
-        bg(i = fringe_disp[["Group"]] == "High risk, no SSI",      bg = "#DEEAF1") |>
-        set_table_properties(width = 1, layout = "autofit") |>
-        merge_v(j = "Group") |>
-        valign(j = "Group", valign = "top") |>
-        bold(j = "Group")
-
-      doc <- body_add_par(doc,
-        "Appendix Table. Fringe cases: 10 lowest-risk patients with SSI (yellow) and 10 highest-risk patients without SSI (blue).",
-        style = "Normal"
+      # Write to dated Excel file alongside the report
+      export_date  <- format(Sys.Date(), "%Y%m%d")
+      fringe_file  <- file.path(output_dir,
+                                paste0("pad_oler_ssi_fringe_", export_date, ".xlsx"))
+      writexl::write_xlsx(
+        list(
+          "Low risk with SSI"  = fringe_tbl[fringe_tbl$Group == "Low risk, SSI occurred", -1L],
+          "High risk no SSI"   = fringe_tbl[fringe_tbl$Group == "High risk, no SSI",      -1L]
+        ),
+        path = fringe_file
       )
-      doc <- body_add_flextable(doc, ft_fringe)
-      doc <- body_add_par(doc, "", style = "Normal")
-    }
+      message("[report] Fringe case Excel written to: ",
+              normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
+
+    }, error = function(e) {
+      message("[report] Fringe case Excel skipped: ", conditionMessage(e))
+    })
   }
 
   print(doc, target = report_file)
