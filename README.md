@@ -166,7 +166,21 @@ Key clinical parameters:
 | SSI — with obesity (BMI ≥ 30) | 10% |
 | SSI requiring rehospitalization | 15% of SSIs |
 | Hospital stay | 3–7 days |
-| SSI onset window | 5–25 days post-discharge |
+| SSI onset window | 5–83 days post-discharge (extended from 5–25 for 90-day attribution window) |
+
+> **`urgnt` ETL fix (2026-04):** The `Urgent_Case` module state was previously
+> typed as `"Observation"`, which routes it to `synthea.observations`.  The ETL
+> only maps LOINC codes from that table, causing SNOMED `73994005` (Emergency
+> operation → OMOP 4158569) to be silently dropped.  The state has been renamed
+> to `Urgent_Case_Procedure` and retyped as `"Procedure"`, which routes it to
+> `synthea.procedures` and is correctly mapped to `procedure_occurrence` by the
+> ETL.  **Re-run Steps 4 and 5** after applying the updated module to regenerate
+> synthetic data with urgnt cases correctly captured.
+>
+> **90-day SSI onset window (2026-04):** `Post_Discharge_Delay` range was updated
+> to `low: 5, high: 83` days to support the extended 90-day outcome window.
+> The overall onset envelope (discharge + hospital stay) is therefore 8–90 days
+> from the index procedure date.
 
 Primary concept codes (OMOP-mappable):
 
@@ -329,10 +343,20 @@ Rscript workflow/08_run_analysis_and_manuscript_report.R
 
 This step:
 1. Loads project configuration and connections
-2. Builds target/outcome cohorts
-3. Runs integer risk score analysis
-4. Writes score outputs to `output/risk_score_eval/`
-5. Generates the manuscript-style report as a Word document (`.docx`)
+2. Resolves the most-recently-populated CDM schema automatically
+3. Verifies all hardcoded OMOP concept IDs against `omop_vocab.concept`
+4. Builds target (inpatient open lower-extremity revascularisation) and outcome
+   (90-day SSI) cohorts
+5. Runs integer risk score analysis with 95% bootstrap percentile CIs (B = 500)
+6. Writes score outputs to `output/risk_score_eval/`
+7. Generates the manuscript-style report as a Word document (`.docx`)
+8. Exports a dated fringe-cases Excel workbook (`.xlsx`) for clinical QC review
+
+> **90-day SSI window (2026-04):** The outcome attribution window was extended
+> from 30 days to 90 days post-procedure.  This change is controlled by
+> `prediction_window_days = 90L` in `config.R` and requires that Steps 4 and 5
+> have been re-run with the updated `pad_ssi.json` Synthea module (which extends
+> the `Post_Discharge_Delay` upper bound from 25 to 83 days post-discharge).
 
 ### Integer Risk Score Pipeline
 
@@ -342,6 +366,11 @@ Configuration files:
 - `risk_score/component_concepts.csv` — maps each component to OMOP standard concept IDs and descendant expansion
 - `risk_score/risk_lookup.csv` — optional score-to-risk lookup table from the original publication
 
+> **`indicationClaudication` lookback fix (2026-04):** `lookback_end_day` was
+> corrected from `-1` to `0` so that claudication diagnoses recorded on the day
+> of surgery (the index date) are captured.  This aligns Table 1 and Table 2
+> prevalence counts.
+
 All components are fully mapped:
 
 | Component | Concept(s) | Notes |
@@ -349,7 +378,7 @@ All components are fully mapped:
 | `female` | 8532 | Biological sex = Female |
 | `overweight` | 3025315 (weight), 3036277 (height) | BMI 25–30 derived from measurements |
 | `obese` | 3025315 (weight), 3036277 (height) | BMI ≥ 30 derived from measurements |
-| `urgnt` | 4158569, 4250892 + descendants | Emergency or urgent procedure flag |
+| `urgnt` | 4158569, 4250892 + descendants | Emergency or urgent procedure flag — **requires Synthea re-run** after the `Urgent_Case_Procedure` state-type fix in `pad_ssi.json` (see Synthea module note below) |
 | `abi_35` | 40489833, 46237026 + descendants | Ankle-brachial index measurement < 0.35 |
 | `prrevasc_any` | 4159960 + descendants | Prior lower-extremity vascular procedure |
 | `prolong_abx` | 21603553 + descendants | Non-prophylactic antibiotic (start ≤ index − 1 day, duration > 2 days) |
@@ -361,13 +390,15 @@ Output files (written to `output/risk_score_eval/`):
 
 | File | Description |
 |------|-------------|
-| `person_level_scores.csv` | Per-person component points and total score |
-| `component_summary.csv` | Component-level aggregate summary |
-| `metrics.csv` | AUROC, AUPRC |
+| `person_level_scores.csv` | Per-person component points, total score, predicted probabilities, and binary outcome |
+| `component_summary.csv` | Component-level aggregate summary (n_positive, mean_points) |
+| `metrics.csv` | AUROC, AUPRC, Brier, ECE, CalibrationIntercept, CalibrationSlope for three model specs; includes `ci_lower` and `ci_upper` columns (95% bootstrap percentile CIs, B = 500) |
 | `calibration_table_lookup.csv` | Calibration by lookup probability (if lookup populated) |
 | `calibration_table_recalibrated.csv` | Calibration by logistic-mapped score |
 | `calibration_lookup.png` | Calibration plot (if lookup populated) |
 | `calibration_recalibrated.png` | Calibration plot (recalibrated) |
+| `pad-oler-ssi-val_report_<date>.docx` | Manuscript-format Word report |
+| `pad_oler_ssi_fringe_<date>.xlsx` | Fringe-cases Excel: 10 lowest-risk patients with SSI + 10 highest-risk patients without SSI (two sheets) |
 
 ### Missing Value Handling
 
