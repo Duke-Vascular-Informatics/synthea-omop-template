@@ -698,14 +698,46 @@ run_synthea_full_csv_builder_etl <- function(
       )
     }
 
-    # insert_payer_plan_period.sql wraps a multi-table join in an outer SELECT that
-    # uses ROW_NUMBER() OVER (ORDER BY person_id, ...) for ID generation.  SQL Server
-    # picks a parallel plan for the window function that stalls on CXSYNC_PORT.
-    # Fix: append OPTION(MAXDOP 1) before the final semicolon.
+    # insert_payer_plan_period.sql wraps a 4-table join
+    # (payers → payer_transitions → patients → person) in an outer SELECT that
+    # uses ROW_NUMBER() OVER (ORDER BY ...) for ID generation.
+    #
+    # Two problems require patching:
+    #   1. CXSYNC_PORT stall: SQL Server picks a parallel window-function plan
+    #      that deadlocks on thread synchronisation.  MAXDOP 1 forces serial.
+    #   2. Nested-loop pathology: with ~91 K payer_transition rows and no index
+    #      on payer_transitions.payer, a serial nested-loop plan must scan the
+    #      91 K staging table once per payer (~10 × 91 K = 917 K comparisons) and
+    #      then scan patients once per matched transition row
+    #      (~91 K × 1 914 = 174 M comparisons).  HASH JOIN forces hash-join
+    #      operators throughout, reducing the work to O(91 K) regardless of
+    #      missing indexes.
     if (tolower(basename(file_path)) == "insert_payer_plan_period.sql") {
       sql <- sub(
         "\\)\\s*person_payer_windows\\s*;",
-        ") person_payer_windows\nOPTION (MAXDOP 1);",
+        ") person_payer_windows\nOPTION (HASH JOIN, MAXDOP 1);",
+        sql, perl = TRUE, ignore.case = TRUE
+      )
+    }
+
+    # insert_cost_v300.sql builds cost rows via four UNION ALL branches that
+    # each join synthea staging tables against the OMOP event tables and
+    # payer_plan_period.  The most expensive branch joins:
+    #   synthea.conditions  (137 K rows)
+    #   synthea.encounters  (242 K rows)
+    #   synthea.claims      (549 K rows)
+    #   synthea.claims_transactions (4.6 M rows)
+    # plus omop.person, visit_occurrence, condition_occurrence, payer_plan_period.
+    # Without proper indexes, SQL Server builds a 4.6 M-row hash table for
+    # claims_transactions and spills to tempdb, taking hours.
+    #
+    # Fix: force HASH JOIN + MAXDOP 1 so that SQL Server chooses hash-join
+    # operators on the pre-built (non-spilling) hash tables and executes
+    # serially, avoiding both the hash-spill and CXSYNC_PORT stall.
+    if (tolower(basename(file_path)) == "insert_cost_v300.sql") {
+      sql <- sub(
+        "\\)\\s*as\\s+tmp\\s*;",
+        ") as tmp\nOPTION (HASH JOIN, MAXDOP 1);",
         sql, perl = TRUE, ignore.case = TRUE
       )
     }
@@ -875,13 +907,19 @@ run_synthea_full_csv_builder_etl <- function(
     # Execute each statement individually (SQL Server does not allow TRUNCATE
     # and IF-blocks to be batched as a single executeSQL call via JDBC in all
     # driver versions).
-    stmts <- strsplit(truncate_sql, ";\\s*\\n", perl = TRUE)[[1]]
+    #
+    # Splitting strategy:
+    #   - Pattern ";[ \t]*\r?\n" explicitly handles both LF (\n) and CRLF (\r\n)
+    #     line endings so the fix is reliable on any platform.
+    #   - sub(";+\\s*$", ...) strips any trailing semicolons AND trailing
+    #     whitespace in one pass, preventing the ";;" double-semicolon that
+    #     causes "String.indexOf(int)" NullPointerException in SQL Server JDBC.
+    #   - grepl("\\S", stmts) filters whitespace-only/empty fragments (more
+    #     robust than nchar > 0 which would keep "\r"-only strings).
+    stmts <- strsplit(truncate_sql, ";[ \t]*\r?\n", perl = TRUE)[[1]]
     stmts <- trimws(stmts)
-    # Strip any trailing semicolons left by the split (last statement keeps its ';'
-    # when no newline follows) before appending one — prevents sending ";;" which
-    # causes a NullPointerException in the SQL Server JDBC driver.
-    stmts <- sub(";+$", "", stmts)
-    stmts <- stmts[nchar(stmts) > 0]
+    stmts <- sub(";+\\s*$", "", stmts)
+    stmts <- stmts[grepl("\\S", stmts)]
     for (stmt in stmts) {
       execute_sql_with_retry(conn_trunc, paste0(stmt, ";"))
     }
@@ -1892,7 +1930,117 @@ run_synthea_full_csv_builder_etl <- function(
     targetDialect = config$dbms
   )
   execute_sql_with_retry(conn_indices_pre, ppt_index_sql)
-  message("[PERF] Pre-era indexes ready (omop_vocab concept_ancestor + concept_relationship + condition_occurrence + payer_transitions).")
+
+  # Index on synthea.payer_transitions(payer) supports the payer_plan_period
+  # INSERT which starts FROM synthea.payers and joins payer_transitions on
+  # pt.payer = pay.id.  The existing IX_payer_transitions_patient index covers
+  # the reverse direction only; without this index SQL Server must scan all
+  # ~91 K payer_transition rows once per payer (~10 scans).
+  ppt_payer_index_sql <- SqlRender::translate(
+    "IF OBJECT_ID('synthea.payer_transitions', 'U') IS NOT NULL
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM sys.indexes
+         WHERE object_id = OBJECT_ID('synthea.payer_transitions')
+           AND name = 'IX_payer_transitions_payer'
+       )
+       BEGIN
+         CREATE INDEX IX_payer_transitions_payer
+           ON synthea.payer_transitions (payer)
+           INCLUDE (patient, start_date, end_date);
+       END;
+     END;",
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, ppt_payer_index_sql)
+
+  # Index on synthea.patients(id) covers the join
+  # synthea.payer_transitions pt JOIN synthea.patients pat ON pt.patient = pat.id
+  # in insert_payer_plan_period.sql.  synthea.patients is a heap by default;
+  # without this index each payer_transition requires a full scan of 1 914 rows.
+  patients_id_index_sql <- SqlRender::translate(
+    "IF OBJECT_ID('synthea.patients', 'U') IS NOT NULL
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM sys.indexes
+         WHERE object_id = OBJECT_ID('synthea.patients')
+           AND name = 'IX_patients_id'
+       )
+       BEGIN
+         CREATE INDEX IX_patients_id
+           ON synthea.patients (id);
+       END;
+     END;",
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, patients_id_index_sql)
+
+  # Index on synthea.encounters(id) is used as a join key in multiple INSERT
+  # files (insert_visit_occurrence, insert_cost_v300, etc.).
+  encounters_id_index_sql <- SqlRender::translate(
+    "IF OBJECT_ID('synthea.encounters', 'U') IS NOT NULL
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM sys.indexes
+         WHERE object_id = OBJECT_ID('synthea.encounters')
+           AND name = 'IX_encounters_id'
+       )
+       BEGIN
+         CREATE INDEX IX_encounters_id
+           ON synthea.encounters (id)
+           INCLUDE (patient, payer, provider, start);
+       END;
+     END;",
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, encounters_id_index_sql)
+
+  # Index on synthea.claims(id) supports insert_cost_v300.sql which joins
+  # synthea.claims_transactions ct ON ca.id = ct.claimid.  Without an index
+  # on claims.id SQL Server must scan the 549 K claims table to locate each
+  # matching claim row.
+  claims_id_index_sql <- SqlRender::translate(
+    "IF OBJECT_ID('synthea.claims', 'U') IS NOT NULL
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM sys.indexes
+         WHERE object_id = OBJECT_ID('synthea.claims')
+           AND name = 'IX_claims_id'
+       )
+       BEGIN
+         CREATE INDEX IX_claims_id
+           ON synthea.claims (id)
+           INCLUDE (patientid, appointmentid, providerid, primarypatientinsuranceid, servicedate, currentillnessdate, diagnosis1);
+       END;
+     END;",
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, claims_id_index_sql)
+
+  # Index on synthea.claims_transactions(claimid) is the single most impactful
+  # index for insert_cost_v300.sql: the condition branch joins
+  #   synthea.claims ca JOIN synthea.claims_transactions ct ON ca.id = ct.claimid
+  # across 4.6 M claims_transaction rows.  Without this index SQL Server builds
+  # a 4.6 M-row hash table that spills to tempdb, causing hour-long runtimes.
+  ct_claimid_index_sql <- SqlRender::translate(
+    "IF OBJECT_ID('synthea.claims_transactions', 'U') IS NOT NULL
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM sys.indexes
+         WHERE object_id = OBJECT_ID('synthea.claims_transactions')
+           AND name = 'IX_claims_transactions_claimid'
+       )
+       BEGIN
+         CREATE INDEX IX_claims_transactions_claimid
+           ON synthea.claims_transactions (claimid)
+           INCLUDE (patientid, appointmentid, providerid, transfertype, amount);
+       END;
+     END;",
+    targetDialect = config$dbms
+  )
+  execute_sql_with_retry(conn_indices_pre, ct_claimid_index_sql)
+
+  message("[PERF] Pre-era indexes ready (vocab + CDM + synthea staging: payer_transitions, patients, encounters, claims, claims_transactions).")
   progress$tick("Pre-era indexes verified")
   
   load_event_tables_sql_server(progress)
