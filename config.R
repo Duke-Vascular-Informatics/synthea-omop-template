@@ -81,7 +81,7 @@ get_validation_config <- function() {
     risk_score_concepts_file   = file.path(getwd(), "risk_score", "component_concepts.csv"),
     risk_score_lookup_file     = file.path(getwd(), "risk_score", "risk_lookup.csv"),
     risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
-    prediction_window_days     = 30L,
+    prediction_window_days     = 90L,
 
     # Study date window applied to both cohort instantiation and PLP data pull.
     # Adjust to match the date range of the original training study so that

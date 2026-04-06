@@ -567,7 +567,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "The outcome cohort identified incident SSI events using OMOP concept 4334801 and all ",
       "descendants, capturing superficial incisional, deep incisional, and organ-space SSI ",
       "consistent with CDC/NHSN classification. An SSI event was attributed to the target cohort ",
-      "if the condition onset occurred within 30 days of the index date (prediction_window_days = 30). ",
+      "if the condition onset occurred within 90 days of the index date (prediction_window_days = 90). ",
       "Both cohort definitions are implemented as SqlRender-parameterised SQL templates stored ",
       "under 'cohorts/' and are compatible with OMOP CDM v5.4. The dataset contained ",
       if (!is.null(person_level)) length(unique(person_level$subject_id)) else "N",
@@ -606,7 +606,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "(AUROC) and the area under the precision-recall curve (AUPRC). Calibration was evaluated under two ",
       "model specifications: (1) lookup-based predicted probabilities drawn directly from the published ",
       "score-to-risk calibration table (no refitting), and (2) recalibrated probabilities estimated by ",
-      "fitting a logistic regression of the total integer score on the observed binary 30-day SSI outcome ",
+      "fitting a logistic regression of the total integer score on the observed binary 90-day SSI outcome ",
       "in the validation cohort. Calibration-in-the-large was summarised by the intercept and slope of the ",
       "calibration regression. Expected calibration error (ECE) was computed as the probability-weighted ",
       "mean absolute difference between mean predicted and observed event rates across 10 equal-frequency bins."
@@ -842,7 +842,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "OMOP CDM v5.4 dataset. All ten score components were successfully mapped to OMOP standard concept IDs ",
       "using transparent, scriptable SQL against the concept_ancestor and concept tables. The target cohort ",
       "was restricted to adult patients undergoing inpatient open lower-extremity revascularization with a ",
-      "pre-operative washout for prior SSI, and the 30-day post-operative SSI outcome was ascertained using ",
+      "pre-operative washout for prior SSI, and the 90-day post-operative SSI outcome was ascertained using ",
       "the validated concept hierarchy under SNOMED-CT 433202001. Performance metrics indicate ",
       if (!is.null(metrics)) {
         auroc <- metrics$value[metrics$metric == "AUROC" & metrics$model == "lookup"]
@@ -1503,8 +1503,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       sub_row("Femoral endarterectomy",   endar_n,    n_target),
       sub_row("Femoral-popliteal bypass", fempop_n,   n_target),
       sub_row("Femorotibial bypass",      femtib_n,   n_target),
-      # 30-day outcome
-      row1("30-day outcome", header = TRUE),
+      # 90-day outcome
+      row1("90-day outcome", header = TRUE),
       sub_row("Surgical site infection", n_outcome, n_target),
       # Total (last row)
       row1("Total cohort", fmt_n_pct(n_target, n_target))
@@ -1718,14 +1718,14 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
   doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity revascularization (OMOP concept 4159960 and descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy). The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
-  doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 30 days of the index date.", style = "Normal")
+  doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 90 days of the index date.", style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
   doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
   doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
-  doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 30 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
+  doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 90 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
   doc <- body_add_par(doc, "Table 1. Baseline characteristics of the external validation cohort.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
@@ -1755,6 +1755,144 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     doc <- body_add_par(doc, "Caption: Calibration plot generated from calibration_table_lookup.csv with x = mean predicted risk and y = observed event rate by bin.", style = "Normal")
     doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 5.5, height = 4.0)
     doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- Fringe cases appendix -----------------------------------------------
+  # Two groups of patients that the model handled worst:
+  #   Group A — lowest predicted risk who nonetheless had an SSI (false negatives)
+  #   Group B — highest predicted risk who did not have an SSI (false positives)
+  # Queries the CDM directly for patient name (from synthea.patients), the
+  # Synthea patient ID (used as MRN proxy), procedure date, and procedure name.
+  if (!is.null(connection_details) && !is.null(config) &&
+      "predicted_risk_lookup" %in% names(person_level)) {
+
+    fringe_tbl <- tryCatch({
+      conn_f <- DatabaseConnector::connect(connection_details)
+      on.exit(try(DatabaseConnector::disconnect(conn_f), silent = TRUE), add = TRUE)
+
+      # Identify the two fringe groups from person_level_scores
+      fn_ids <- person_level$subject_id[person_level$outcome == 1 &
+                   !is.na(person_level$predicted_risk_lookup)]
+      fn_risk <- person_level$predicted_risk_lookup[person_level$outcome == 1 &
+                   !is.na(person_level$predicted_risk_lookup)]
+      fn_ord  <- order(fn_risk)
+      fn_top  <- fn_ids[fn_ord][seq_len(min(10L, length(fn_ord)))]
+
+      fp_ids  <- person_level$subject_id[person_level$outcome == 0 &
+                   !is.na(person_level$predicted_risk_lookup)]
+      fp_risk <- person_level$predicted_risk_lookup[person_level$outcome == 0 &
+                   !is.na(person_level$predicted_risk_lookup)]
+      fp_ord  <- order(fp_risk, decreasing = TRUE)
+      fp_top  <- fp_ids[fp_ord][seq_len(min(10L, length(fp_ord)))]
+
+      all_ids <- unique(c(fn_top, fp_top))
+      id_str  <- paste(as.integer(all_ids), collapse = ",")
+
+      sql_fringe <- SqlRender::render(
+        "SELECT
+           p.person_id,
+           COALESCE(CONCAT(RTRIM(pat.FIRST), ' ', RTRIM(pat.LAST)), 'Unknown') AS patient_name,
+           p.person_source_value                                                AS mrn,
+           CAST(po.procedure_date AS DATE)                                      AS procedure_date,
+           COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name
+         FROM @cdm_schema.person p
+         LEFT JOIN synthea.patients pat
+           ON pat.id = p.person_source_value
+         JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = p.person_id
+         JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4159960
+         LEFT JOIN @cdm_schema.concept c
+           ON c.concept_id = po.procedure_concept_id
+         WHERE p.person_id IN (@id_list)",
+        cdm_schema = config$cdm_schema,
+        id_list    = id_str
+      )
+
+      raw <- tryCatch(
+        DatabaseConnector::querySql(
+          conn_f,
+          SqlRender::translate(sql_fringe, targetDialect = "sql server")
+        ),
+        error = function(e) { message("[report] Fringe query failed: ", conditionMessage(e)); NULL }
+      )
+      if (is.null(raw) || nrow(raw) == 0) stop("no fringe rows returned")
+
+      # Normalise column names (case-insensitive)
+      names(raw) <- tolower(names(raw))
+
+      # Pick one procedure row per person (earliest qualifying procedure)
+      raw <- raw[order(raw$person_id, raw$procedure_date), ]
+      raw <- raw[!duplicated(raw$person_id), ]
+
+      # Attach predicted risk and outcome from person_level
+      pl_sub <- person_level[, c("subject_id", "predicted_risk_lookup", "outcome")]
+      raw    <- merge(raw, pl_sub, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
+
+      make_group <- function(ids, label) {
+        sub <- raw[raw$person_id %in% ids, ]
+        sub$group <- label
+        sub
+      }
+
+      fn_df <- make_group(fn_top, "Low risk, SSI occurred")
+      fp_df <- make_group(fp_top, "High risk, no SSI")
+
+      fn_df <- fn_df[order(fn_df$predicted_risk_lookup), ]
+      fp_df <- fp_df[order(fp_df$predicted_risk_lookup, decreasing = TRUE), ]
+
+      rbind(fn_df, fp_df)[, c("group", "patient_name", "mrn",
+                               "procedure_date", "procedure_name",
+                               "predicted_risk_lookup")]
+    }, error = function(e) {
+      message("[report] Fringe case table skipped: ", conditionMessage(e))
+      NULL
+    })
+
+    if (!is.null(fringe_tbl) && nrow(fringe_tbl) > 0) {
+      doc <- body_add_par(doc, "", style = "Normal")
+      doc <- body_add_par(doc, "", style = "Normal")
+      doc <- body_add_par(doc, "Appendix: Fringe Cases", style = "heading 2")
+      doc <- body_add_par(doc,
+        paste0(
+          "The table below lists the 10 patients with the lowest predicted risk who ",
+          "experienced an SSI (false negatives — cases the model missed) and the 10 patients ",
+          "with the highest predicted risk who did not experience an SSI (false positives — ",
+          "cases the model over-predicted). These cases are useful for auditing model failures ",
+          "and identifying systematic gaps in predictor coverage."
+        ),
+        style = "Normal"
+      )
+      doc <- body_add_par(doc, "", style = "Normal")
+
+      fringe_disp <- fringe_tbl
+      names(fringe_disp) <- c(
+        "Group", "Patient Name", "MRN",
+        "Procedure Date", "Procedure", "Predicted Risk"
+      )
+      fringe_disp[["Predicted Risk"]] <- round(as.numeric(fringe_disp[["Predicted Risk"]]), 3)
+
+      ft_fringe <- flextable(fringe_disp) |>
+        bold(part = "header") |>
+        fontsize(size = 9, part = "all") |>
+        font(fontname = "Calibri", part = "all") |>
+        bg(part = "header", bg = "#1F3864") |>
+        color(part = "header", color = "white") |>
+        bg(i = fringe_disp[["Group"]] == "Low risk, SSI occurred", bg = "#FFF2CC") |>
+        bg(i = fringe_disp[["Group"]] == "High risk, no SSI",      bg = "#DEEAF1") |>
+        set_table_properties(width = 1, layout = "autofit") |>
+        merge_v(j = "Group") |>
+        valign(j = "Group", valign = "top") |>
+        bold(j = "Group")
+
+      doc <- body_add_par(doc,
+        "Appendix Table. Fringe cases: 10 lowest-risk patients with SSI (yellow) and 10 highest-risk patients without SSI (blue).",
+        style = "Normal"
+      )
+      doc <- body_add_flextable(doc, ft_fringe)
+      doc <- body_add_par(doc, "", style = "Normal")
+    }
   }
 
   print(doc, target = report_file)

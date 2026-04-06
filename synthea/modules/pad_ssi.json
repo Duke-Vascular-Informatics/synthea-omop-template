@@ -3,7 +3,7 @@
   "remarks": [
     "Models the full clinical pathway for peripheral arterial disease (PAD) from initial",
     "diagnosis through treatment strategy selection, and — for patients who receive open",
-    "lower extremity revascularization — through the 30-day surgical site infection (SSI)",
+    "lower extremity revascularization — through the 90-day surgical site infection (SSI)",
     "outcome window.",
     "",
     "Clinical workflow:",
@@ -29,7 +29,7 @@
     "",
     "Cohort definitions:",
     "  Target  : inpatient surgery for open lower extremity revascularization",
-    "  Outcome : SSI diagnosis within 30 days of index surgery",
+    "  Outcome : SSI diagnosis within 90 days of index surgery",
     "",
     "SSI incidence assumptions:",
     "  Fixed SSI incidence after open surgery: 20%",
@@ -78,7 +78,7 @@
     "Timing:",
     "  Pre-surgical workup delay : 1-6 months after PAD diagnosis",
     "  Inpatient stay            : 3-7 days post-surgery",
-    "  SSI onset window          : 5-25 days post-discharge (8-32 days post-surgery)",
+    "  SSI onset window          : 5-83 days post-discharge (8-90 days post-surgery)",
     "  SSI antibiotic course     : 7-14 days",
     "  Rehospitalization stay    : 7-21 days",
     "",
@@ -1003,10 +1003,12 @@
       "type": "Delay",
       "remarks": [
         "Time from hospital discharge to SSI diagnosis (if SSI occurs).",
-        "Combined with inpatient stay (3-7 days), the SSI onset window is 8-32 days",
-        "post-surgery — consistent with 30-day outcome definition in target study."
+        "Combined with inpatient stay (3-7 days), the SSI onset window is 8-90 days",
+        "post-surgery — consistent with the 90-day outcome definition.",
+        "Range: 5-83 days post-discharge (low end captures early superficial SSIs;",
+        "high end captures late deep/organ-space SSIs up to the 90-day window)."
       ],
-      "range": { "low": 5, "high": 25, "unit": "days" },
+      "range": { "low": 5, "high": 83, "unit": "days" },
       "direct_transition": "Past_10_Years_Check"
     },
 
