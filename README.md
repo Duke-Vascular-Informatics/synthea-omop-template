@@ -412,21 +412,34 @@ had evidence per person.
 
 ---
 
-## Step 9 — Build Portable Analysis Bundle
+## Step 9 — Build Portable PRCC Analysis Bundle
 
-`workflow/09_build_portable_analysis_bundle.ps1`
+Packages the analysis into a self-contained bundle for external validation on the Duke PRCC
+(Research Computing Cluster) against an institutional OMOP CDM v5.4 SQL Server database.
 
-Builds a curated portable bundle for external OMOP sites.
+**Bundle location:** `portable/prcc_bundle/`
+**Distributable zip:** `dist/pad_oler_ssi_val_prcc_<date>.zip`
 
-```powershell
-powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
+The bundle includes all required R scripts, SQL cohort definitions, JDBC driver, and a
+step-by-step `README.md` runbook. Authentication uses Kerberos (Duke NetID) — no passwords
+are stored in any file. Java is provided by `conda-forge::openjdk` via the PRCC miniforge
+module; no system-level Java installation is needed.
+
+**All packages are available on CRAN** (no GitHub-only dependencies):
+`DatabaseConnector`, `SqlRender`, `dplyr`, `ggplot2`, `pROC`, `PRROC`, `readr`,
+`officer`, `flextable`, `writexl`.
+
+To deploy, transfer `pad_oler_ssi_val_prcc_<date>.zip` to PRCC, unzip, and follow the
+runbook in `portable/prcc_bundle/README.md`. In brief:
+
+```bash
+bash setup_prcc_env.sh     # one-time: conda Java env + kinit + R packages
+# edit config.R            # fill in server, database, schema names
+conda activate openjdk
+Rscript run_analysis.R
 ```
 
-Output: `dist/risk_score_validation_bundle_<timestamp>.zip`
-
-The bundle (`portable/risk_score_validation_bundle/`) contains only the required risk score
-scripts, config template, and JDBC artifact. Collaborators unzip, edit `config.R`, and run
-`run_risk_score_pipeline.R` directly against their OMOP database.
+Output is written to `output/risk_score_eval/` inside the bundle directory.
 
 ---
 
