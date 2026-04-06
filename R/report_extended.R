@@ -1050,29 +1050,30 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            WHERE p2._rn = 1
          )"
 
+      # Age = FLOOR((procedure_date - birth_date) / 365.25), where birth_date
+      # is constructed from the three OMOP person fields year_of_birth,
+      # month_of_birth, day_of_birth (ETLSyntheaBuilder populates all three;
+      # birth_datetime is optional in CDM 5.4 and may be NULL).
+      # DATEFROMPARTS defaults to mid-year (Jul 1) when month/day are missing
+      # so that any residual imprecision is symmetric rather than biased.
+      # The DATEDIFF(DAY, ...) / 365.25 division is done in floating-point
+      # so that fractional years are preserved before FLOOR rounds down to the
+      # last completed year — matching the user-specified formula exactly.
       sql_age <- SqlRender::render(
         paste0(
           "WITH ", dedup_person_cte, "
            SELECT
-             -- Accurate completed-years age at index date.
-             -- DATEDIFF(YEAR, ...) counts calendar-year boundaries crossed, which
-             -- over-estimates by 1 for patients whose birthday has not yet occurred
-             -- in the index year.  The CASE subtracts 1 when that is true.
-             -- Falls back to year_of_birth when birth_datetime is NULL (OMOP allows
-             -- birth_datetime to be NULL when only year_of_birth is available).
              CAST(
-               CASE
-                 WHEN p.birth_datetime IS NOT NULL THEN
-                   DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date)
-                   - CASE
-                       WHEN DATEADD(YEAR,
-                                    DATEDIFF(YEAR, p.birth_datetime, t.cohort_start_date),
-                                    p.birth_datetime) > t.cohort_start_date
-                       THEN 1 ELSE 0
-                     END
-                 ELSE
-                   YEAR(t.cohort_start_date) - p.year_of_birth
-               END
+               FLOOR(
+                 CAST(DATEDIFF(DAY,
+                   DATEFROMPARTS(
+                     p.year_of_birth,
+                     COALESCE(p.month_of_birth, 7),
+                     COALESCE(p.day_of_birth,   1)
+                   ),
+                   t.cohort_start_date
+                 ) AS FLOAT) / 365.25
+               )
              AS FLOAT) AS age_at_index
            FROM @results_schema.@cohort_table t
            INNER JOIN dedup_person p ON p.person_id = t.subject_id
@@ -1083,9 +1084,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         cdm_schema     = config$cdm_schema,
         target_id      = config$target_cohort_id
       )
-      age_df <- DatabaseConnector::querySql(
-        conn,
-        SqlRender::translate(sql_age, targetDialect = "sql server")
+      age_df <- tryCatch(
+        DatabaseConnector::querySql(
+          conn,
+          SqlRender::translate(sql_age, targetDialect = "sql server")
+        ),
+        error = function(e) {
+          message("[report] Age query failed: ", conditionMessage(e))
+          NULL
+        }
       )
 
       # Returns concept_id, category (concept_name), and n per group so that
@@ -1376,7 +1383,10 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     # ---- Age ------------------------------------------------------------------
     age_row <- row1("Age, median (IQR), years", "N/A")
     if (!is.null(demog$age) && nrow(demog$age) > 0) {
-      ages <- as.numeric(demog$age$AGE_AT_INDEX)
+      # DatabaseConnector >= 6.0 stopped auto-uppercasing column names, so use
+      # a case-insensitive lookup instead of the hard-coded AGE_AT_INDEX name.
+      .age_col <- names(demog$age)[toupper(names(demog$age)) == "AGE_AT_INDEX"][1]
+      ages <- if (!is.na(.age_col)) as.numeric(demog$age[[.age_col]]) else numeric(0)
       ages <- ages[!is.na(ages)]
       if (length(ages) > 0) {
         q <- stats::quantile(ages, probs = c(0.25, 0.75), na.rm = TRUE)
