@@ -1795,6 +1795,92 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     ft
   }
 
+  # ---------------------------------------------------------------------------
+  # save_subgroup_forest_plot()
+  #
+  # Builds a forest plot of ECE (95% CI) by subgroup from the subgroup_bias
+  # data frame.  Each subgroup variable is drawn as a labelled section (via
+  # ggplot2 faceting on subgroup_var).  A dashed vertical reference line shows
+  # the overall ECE for the lookup model (read from metrics.csv).
+  #
+  # Arguments:
+  #   bias_df      — data frame from subgroup_bias.csv
+  #   overall_ece  — numeric overall ECE (lookup model) for the reference line
+  #   output_folder — directory where the PNG will be written
+  #
+  # Returns the path to the saved PNG, or NULL on failure.
+  # ---------------------------------------------------------------------------
+  save_subgroup_forest_plot <- function(bias_df, overall_ece, output_folder) {
+
+    if (is.null(bias_df) || nrow(bias_df) == 0) return(NULL)
+
+    # Build a combined label: "Sex: Female", "Race: Black", etc.
+    bias_df$label <- paste0(
+      tools::toTitleCase(gsub("_", " ", bias_df$subgroup_var)),
+      ": ",
+      bias_df$subgroup_level
+    )
+
+    # Order labels within each facet by ECE (ascending) for readability.
+    bias_df$label <- factor(
+      bias_df$label,
+      levels = bias_df$label[order(bias_df$subgroup_var, bias_df$ece)]
+    )
+
+    # Facet labels: capitalise the subgroup variable name for display.
+    facet_labels <- setNames(
+      tools::toTitleCase(gsub("_", " ", unique(bias_df$subgroup_var))),
+      unique(bias_df$subgroup_var)
+    )
+
+    p <- ggplot2::ggplot(bias_df,
+           ggplot2::aes(x = ece, y = label)) +
+      ggplot2::geom_point(size = 2, colour = "black") +
+      ggplot2::geom_errorbarh(
+        ggplot2::aes(xmin = ci_lower, xmax = ci_upper),
+        height = 0.25, colour = "grey40"
+      ) +
+      ggplot2::geom_vline(
+        xintercept = overall_ece,
+        linetype   = "dashed",
+        colour     = "black"
+      ) +
+      ggplot2::facet_grid(
+        subgroup_var ~ .,
+        scales   = "free_y",
+        space    = "free_y",
+        labeller = ggplot2::as_labeller(facet_labels)
+      ) +
+      ggplot2::labs(
+        x     = "Expected Calibration Error (95% CI)",
+        y     = NULL,
+        title = "Subgroup Calibration (ECE)",
+        caption = paste0(
+          "Dashed line = overall ECE (", round(overall_ece, 3), "). ",
+          "Groups with < 10 events suppressed. ",
+          "CIs from 200 bootstrap resamples."
+        )
+      ) +
+      ggplot2::theme_bw(base_size = 11) +
+      ggplot2::theme(
+        panel.grid.major.y = ggplot2::element_blank(),
+        strip.text         = ggplot2::element_text(face = "bold"),
+        plot.caption       = ggplot2::element_text(size = 8)
+      )
+
+    out_path <- file.path(output_folder, "subgroup_forest_plot.png")
+    tryCatch({
+      ggplot2::ggsave(out_path, p,
+                      width  = 7,
+                      height = max(4, nrow(bias_df) * 0.35 + 1.5),
+                      dpi    = 150)
+      out_path
+    }, error = function(e) {
+      message("[report] Could not save subgroup forest plot: ", conditionMessage(e))
+      NULL
+    })
+  }
+
   next_report_file <- function(output_dir, base_name) {
     primary <- file.path(output_dir, paste0(base_name, ".docx"))
     if (!file.exists(primary)) {
@@ -1923,6 +2009,94 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Caption: Metrics are shown for the lookup model. 95% CI = 95% bootstrap percentile confidence interval (B\u2009=\u2009500 resamples). \u2014 indicates CI not available.", style = "Normal")
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
+
+  # ---- Subgroup bias section -----------------------------------------------
+  # Read subgroup_bias.csv if it was produced by the pipeline.
+  subgroup_bias_path <- file.path(score_output_dir, "subgroup_bias.csv")
+  subgroup_bias_df   <- NULL
+  if (file.exists(subgroup_bias_path)) {
+    subgroup_bias_df <- tryCatch(
+      readr::read_csv(subgroup_bias_path, show_col_types = FALSE),
+      error = function(e) NULL
+    )
+  }
+
+  if (!is.null(subgroup_bias_df) && nrow(subgroup_bias_df) > 0) {
+
+    # Overall ECE for reference line — read from metrics.csv.
+    overall_ece_val <- tryCatch(
+      as.numeric(metric_value("ECE", "lookup")),
+      error = function(e) NA_real_
+    )
+    if (is.na(overall_ece_val)) overall_ece_val <- 0.0
+
+    # Build a display table.
+    bias_display <- data.frame(
+      Subgroup     = tools::toTitleCase(gsub("_", " ", subgroup_bias_df$subgroup_var)),
+      Level        = subgroup_bias_df$subgroup_level,
+      N            = subgroup_bias_df$n,
+      Events       = subgroup_bias_df$n_events,
+      ECE          = round(subgroup_bias_df$ece,      3),
+      "95% CI"     = paste0("(", round(subgroup_bias_df$ci_lower, 3),
+                            "\u2013",
+                            round(subgroup_bias_df$ci_upper, 3), ")"),
+      check.names     = FALSE,
+      stringsAsFactors = FALSE
+    )
+
+    bias_ft <- flextable::flextable(bias_display) |>
+      flextable::bold(part = "header") |>
+      flextable::fontsize(size = 10, part = "all") |>
+      flextable::font(fontname = "Calibri", part = "all") |>
+      flextable::bg(part = "header", bg = "#1F3864") |>
+      flextable::color(part = "header", color = "white") |>
+      flextable::padding(padding = 4, part = "all") |>
+      flextable::align(j = c("N", "Events", "ECE", "95% CI"),
+                       align = "center", part = "all") |>
+      flextable::width(j = "Subgroup", width = 1.2) |>
+      flextable::width(j = "Level",    width = 1.6) |>
+      flextable::width(j = "N",        width = 0.6) |>
+      flextable::width(j = "Events",   width = 0.7) |>
+      flextable::width(j = "ECE",      width = 0.7) |>
+      flextable::width(j = "95% CI",   width = 1.2) |>
+      flextable::set_table_properties(layout = "fixed")
+
+    doc <- body_add_par(doc, "Subgroup bias assessment", style = "heading 3")
+    doc <- body_add_par(doc,
+      paste0("Table 4. Expected calibration error (ECE) by subgroup."),
+      style = "Normal")
+    doc <- body_add_par(doc,
+      paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
+             "Subgroups with fewer than 10 observed SSI events are suppressed. ",
+             "Overall ECE (dashed reference line in Figure 3) = ",
+             round(overall_ece_val, 3), ". ",
+             "95% CI = bootstrap percentile interval (B\u2009=\u2009200 resamples)."),
+      style = "Normal")
+    doc <- body_add_flextable(doc, bias_ft)
+    doc <- body_add_par(doc, "", style = "Normal")
+
+    # Forest plot
+    forest_png <- save_subgroup_forest_plot(
+      subgroup_bias_df,
+      overall_ece_val,
+      temp_figure_dir
+    )
+    if (!is.null(forest_png) && file.exists(forest_png)) {
+      plot_height <- max(4.0, nrow(subgroup_bias_df) * 0.35 + 1.5)
+      doc <- body_add_par(doc,
+        "Figure 3. Forest plot of ECE by subgroup.",
+        style = "Normal")
+      doc <- body_add_par(doc,
+        paste0("Caption: Point estimates with 95% bootstrap percentile CIs (B\u2009=\u2009200). ",
+               "Dashed line = overall ECE for lookup model. ",
+               "Groups with < 10 SSI events are suppressed."),
+        style = "Normal")
+      doc <- body_add_img(doc, src = forest_png,
+                          width  = 5.5,
+                          height = min(plot_height, 8.0))
+      doc <- body_add_par(doc, "", style = "Normal")
+    }
+  }
 
   if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
     doc <- body_add_par(doc, "Figure 1. Receiver operating characteristic curve for the lookup model.", style = "Normal")

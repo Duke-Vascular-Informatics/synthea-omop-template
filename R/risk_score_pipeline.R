@@ -1488,6 +1488,204 @@ evaluate_integer_risk_score <- function(person_level, lookup) {
 }
 
 # -----------------------------------------------------------------------------
+# calc_ece()
+#
+# Computes the Expected Calibration Error (ECE) between a vector of predicted
+# probabilities and a binary outcome vector.
+#
+# Method: predictions are sorted into n_bins equal-width probability bins
+# spanning [0, 1].  For each non-empty bin the absolute difference between
+# the mean predicted probability and the observed event rate is computed and
+# weighted by the fraction of observations in that bin.  ECE is the weighted
+# sum across all bins.
+#
+# Arguments:
+#   pred   — numeric vector of predicted probabilities in [0, 1]
+#   truth  — numeric vector of binary outcomes (0/1)
+#   n_bins — number of equal-width bins (default 10)
+#
+# Returns a single numeric value, or NA if no valid observations remain after
+# removing NAs.
+# -----------------------------------------------------------------------------
+calc_ece <- function(pred, truth, n_bins = 10L) {
+
+  # Remove missing values from both vectors jointly.
+  valid <- !is.na(pred) & !is.na(truth)
+  pred  <- pred[valid]
+  truth <- truth[valid]
+  if (length(pred) == 0L) return(NA_real_)
+
+  # Assign each prediction to one of n_bins equal-width bins over [0, 1].
+  breaks <- seq(0, 1, length.out = n_bins + 1L)
+  bins   <- cut(pred, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+
+  n   <- length(pred)
+  ece <- 0.0
+
+  for (b in seq_len(n_bins)) {
+    idx <- which(bins == b)
+    if (length(idx) == 0L) next
+    # Weighted absolute calibration error for this bin.
+    ece <- ece + (length(idx) / n) * abs(mean(pred[idx]) - mean(truth[idx]))
+  }
+
+  ece
+}
+
+# -----------------------------------------------------------------------------
+# compute_subgroup_bias()
+#
+# Evaluates ECE (Expected Calibration Error) for the lookup model within each
+# demographic and clinical subgroup.  Groups with fewer than min_events observed
+# SSI events are suppressed to avoid unreliable estimates.
+#
+# Subgroups evaluated:
+#   sex        — Female / Male  (from OMOP person table via fetch_subgroup_labels)
+#   race       — White / Black / Other
+#   ethnicity  — Hispanic / Non-Hispanic
+#   age_group  — <65 / 65-74 / >=75
+#   indication — Claudication / Critical limb ischemia
+#                (derived from score_indicationClaudication in person_level;
+#                 score > 0 → Claudication, score == 0 → Critical limb ischemia)
+#
+# Bootstrap CIs use B = 200 resamples (percentile method, 2.5th–97.5th).
+# The random seed is fixed at 42 for reproducibility.
+#
+# Arguments:
+#   person_level — data frame returned by evaluate_integer_risk_score()
+#   connection   — open DatabaseConnector connection object
+#   config       — list from get_validation_config()
+#   B            — number of bootstrap resamples (default 200)
+#   min_events   — minimum observed events required per subgroup (default 10)
+#
+# Returns a data frame with columns:
+#   subgroup_var, subgroup_level, n, n_events, ece, ci_lower, ci_upper
+# Returns NULL if demographics cannot be fetched or no subgroups qualify.
+# -----------------------------------------------------------------------------
+compute_subgroup_bias <- function(person_level,
+                                  connection,
+                                  config,
+                                  B          = 200L,
+                                  min_events = 10L) {
+
+  # ---------------------------------------------------------------------------
+  # Step 1 — fetch demographic subgroup labels from OMOP person table.
+  # ---------------------------------------------------------------------------
+  subgroup_labels <- fetch_subgroup_labels(connection, config)
+
+  if (is.null(subgroup_labels)) {
+    warning("[subgroup_bias] Could not fetch demographic labels — skipping.")
+    return(NULL)
+  }
+
+  # ---------------------------------------------------------------------------
+  # Step 2 — merge demographics with person-level scores.
+  # ---------------------------------------------------------------------------
+  df <- merge(person_level, subgroup_labels, by = "subject_id", all.x = TRUE)
+
+  # ---------------------------------------------------------------------------
+  # Step 3 — derive surgical indication from score_indicationClaudication.
+  # The column name follows the pattern score_<component_id>; component_id is
+  # "indicationClaudication" as defined in components.csv.
+  # score > 0 means the Claudication component was positive at the index date.
+  # ---------------------------------------------------------------------------
+  ind_col <- names(df)[tolower(names(df)) == "score_indicationclaudication"][1]
+  if (is.na(ind_col)) {
+    # Exact-case fallback for case-sensitive environments.
+    ind_col <- if ("score_indicationClaudication" %in% names(df))
+                 "score_indicationClaudication"
+               else
+                 NA_character_
+  }
+
+  if (!is.na(ind_col)) {
+    df$indication <- ifelse(
+      !is.na(df[[ind_col]]) & as.numeric(df[[ind_col]]) > 0,
+      "Claudication",
+      "Critical limb ischemia"
+    )
+  } else {
+    message("[subgroup_bias] score_indicationClaudication column not found ",
+            "— indication subgroup will be skipped.")
+    df$indication <- NA_character_
+  }
+
+  # ---------------------------------------------------------------------------
+  # Step 4 — require the lookup model predictions.
+  # ---------------------------------------------------------------------------
+  if (!"predicted_risk_lookup" %in% names(df)) {
+    warning("[subgroup_bias] predicted_risk_lookup column not found — skipping.")
+    return(NULL)
+  }
+
+  # ---------------------------------------------------------------------------
+  # Step 5 — bootstrap ECE for each non-empty, qualifying subgroup level.
+  # ---------------------------------------------------------------------------
+  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication")
+  # Keep only vars that were successfully added to df.
+  subgroup_vars <- subgroup_vars[subgroup_vars %in% names(df)]
+
+  set.seed(42L)
+  results <- list()
+
+  for (var in subgroup_vars) {
+
+    levels_present <- sort(unique(na.omit(as.character(df[[var]]))))
+
+    for (lvl in levels_present) {
+
+      # Filter to this subgroup; drop rows with missing predictions or outcomes.
+      grp <- df[!is.na(df[[var]]) & as.character(df[[var]]) == lvl, ]
+      grp <- grp[!is.na(grp$predicted_risk_lookup) & !is.na(grp$outcome), ]
+
+      n_total  <- nrow(grp)
+      n_events <- sum(as.integer(grp$outcome), na.rm = TRUE)
+
+      # Suppress if below minimum event threshold.
+      if (n_events < min_events) {
+        message(sprintf(
+          "[subgroup_bias] Suppressing %s = '%s': %d events < min %d",
+          var, lvl, n_events, min_events
+        ))
+        next
+      }
+
+      # Observed ECE for this subgroup.
+      ece_obs <- calc_ece(grp$predicted_risk_lookup, as.numeric(grp$outcome))
+
+      # Bootstrap to obtain 95% percentile CI.
+      boot_eces <- vapply(seq_len(B), function(i) {
+        idx <- sample(n_total, n_total, replace = TRUE)
+        calc_ece(grp$predicted_risk_lookup[idx], as.numeric(grp$outcome[idx]))
+      }, numeric(1L))
+      boot_eces <- boot_eces[!is.na(boot_eces)]
+
+      ci_lo <- stats::quantile(boot_eces, 0.025, na.rm = TRUE)
+      ci_hi <- stats::quantile(boot_eces, 0.975, na.rm = TRUE)
+
+      results[[length(results) + 1L]] <- data.frame(
+        subgroup_var   = var,
+        subgroup_level = lvl,
+        n              = n_total,
+        n_events       = n_events,
+        ece            = round(ece_obs, 4),
+        ci_lower       = round(as.numeric(ci_lo), 4),
+        ci_upper       = round(as.numeric(ci_hi), 4),
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  if (length(results) == 0L) {
+    warning("[subgroup_bias] No subgroups met the minimum event threshold ",
+            "(min_events = ", min_events, ").")
+    return(NULL)
+  }
+
+  dplyr::bind_rows(results)
+}
+
+# -----------------------------------------------------------------------------
 # save_calibration_plot()
 #
 # Saves a calibration plot (mean predicted vs. mean observed per decile) to
@@ -1560,6 +1758,25 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
   readr::write_csv(eval_results$person_level, file.path(out, "person_level_scores.csv"))
   readr::write_csv(score_data$component_summary, file.path(out, "component_summary.csv"))
   readr::write_csv(eval_results$metrics, file.path(out, "metrics.csv"))
+
+  # ---------------------------------------------------------------------------
+  # Subgroup bias analysis — ECE per demographic and clinical subgroup.
+  # Suppressed for subgroups with fewer than 10 observed SSI events.
+  # Uses 200 bootstrap resamples per subgroup for speed.
+  # ---------------------------------------------------------------------------
+  message("Computing subgroup bias analysis (B = 200 per subgroup) ...")
+  subgroup_bias <- tryCatch(
+    compute_subgroup_bias(eval_results$person_level, conn, config,
+                          B = 200L, min_events = 10L),
+    error = function(e) {
+      message("[subgroup_bias] Skipped due to error: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (!is.null(subgroup_bias) && nrow(subgroup_bias) > 0) {
+    readr::write_csv(subgroup_bias, file.path(out, "subgroup_bias.csv"))
+    message("Wrote: subgroup_bias.csv (", nrow(subgroup_bias), " subgroup rows)")
+  }
 
   for (nm in names(eval_results$calibration_tables)) {
     tbl <- eval_results$calibration_tables[[nm]]

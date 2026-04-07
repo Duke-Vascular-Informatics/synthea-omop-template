@@ -139,3 +139,105 @@ build_combined_feature_table <- function(components, component_summary) {
   
   combined
 }
+
+# -----------------------------------------------------------------------------
+# fetch_subgroup_labels()
+#
+# Queries the OMOP CDM person table to assign demographic subgroup labels to
+# each subject in the target cohort.  Returns a data frame with one row per
+# subject_id and five label columns used by compute_subgroup_bias():
+#
+#   sex        — "Female" / "Male"  (OMOP gender_concept_id: 8532 = Female)
+#   race       — "White" / "Black" / "Other"
+#                (OMOP race_concept_id: 8527 = White, 8516 = Black)
+#   ethnicity  — "Hispanic" / "Non-Hispanic"
+#                (OMOP ethnicity_concept_id: 38003563 = Hispanic or Latino)
+#   age_group  — "<65" / "65-74" / ">=75"  (age at index date in years)
+#
+# Note: surgical indication subgroup is derived from the score component
+# column score_indicationClaudication in person_level (already computed by
+# the risk score pipeline), so it is NOT included here.
+#
+# Returns NULL (with a warning) if the SQL query fails or returns no rows.
+# -----------------------------------------------------------------------------
+fetch_subgroup_labels <- function(connection, config) {
+
+  # ---------------------------------------------------------------------------
+  # Query person demographics + age at index date for all target cohort members.
+  # FLOOR(DATEDIFF / 365.25) replicates the age calculation used elsewhere in
+  # the pipeline (consistent with SQL FLOOR(days/365.25) convention).
+  # ---------------------------------------------------------------------------
+  sql <- SqlRender::render(
+    "SELECT
+       c.subject_id,
+       FLOOR(DATEDIFF(day, p.birth_datetime, c.cohort_start_date) / 365.25)
+         AS age_at_index,
+       p.gender_concept_id,
+       p.race_concept_id,
+       p.ethnicity_concept_id
+     FROM @results_schema.@cohort_table c
+     INNER JOIN @cdm_schema.person p
+       ON c.subject_id = p.person_id
+     WHERE c.cohort_definition_id = @target_id",
+    results_schema = config$results_schema,
+    cohort_table   = config$cohort_table,
+    cdm_schema     = config$cdm_schema,
+    target_id      = config$target_cohort_id
+  )
+
+  demog <- tryCatch(
+    DatabaseConnector::querySql(
+      connection,
+      SqlRender::translate(sql, targetDialect = "sql server")
+    ),
+    error = function(e) {
+      warning("[fetch_subgroup_labels] Demographics query failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+
+  if (is.null(demog) || nrow(demog) == 0) {
+    warning("[fetch_subgroup_labels] No rows returned — subgroup labels unavailable.")
+    return(NULL)
+  }
+
+  # Normalise column names: DatabaseConnector may return UPPER or mixed case.
+  names(demog) <- tolower(names(demog))
+
+  # ---------------------------------------------------------------------------
+  # Map concept IDs to human-readable subgroup labels.
+  # ---------------------------------------------------------------------------
+
+  # Sex: 8532 = FEMALE; all others treated as Male.
+  demog$sex <- ifelse(
+    as.integer(demog$gender_concept_id) == 8532L,
+    "Female",
+    "Male"
+  )
+
+  # Race: 8527 = White, 8516 = Black; all others → "Other".
+  demog$race <- dplyr::case_when(
+    as.integer(demog$race_concept_id) == 8527L ~ "White",
+    as.integer(demog$race_concept_id) == 8516L ~ "Black",
+    TRUE                                        ~ "Other"
+  )
+
+  # Ethnicity: 38003563 = Hispanic or Latino; all others → "Non-Hispanic".
+  demog$ethnicity <- ifelse(
+    as.integer(demog$ethnicity_concept_id) == 38003563L,
+    "Hispanic",
+    "Non-Hispanic"
+  )
+
+  # Age group: three clinically meaningful bands.
+  age <- as.numeric(demog$age_at_index)
+  demog$age_group <- dplyr::case_when(
+    age <  65 ~ "<65",
+    age <  75 ~ "65-74",
+    !is.na(age) ~ ">=75",
+    TRUE        ~ NA_character_
+  )
+
+  # Return only the columns needed downstream.
+  demog[, c("subject_id", "sex", "race", "ethnicity", "age_group")]
+}
