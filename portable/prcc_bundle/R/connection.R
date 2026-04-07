@@ -13,7 +13,7 @@
 #
 # Java model:
 #   - Java comes from the conda openjdk environment (miniforge on PRCC).
-#   - JAVA_HOME must be set before starting R (conda activate openjdk sets it).
+#   - JAVA_HOME must be set before starting R (source activate openjdk sets it).
 #   - This file reads JAVA_HOME from config$java_home (resolved in config.R).
 #
 # Differences from the Windows dev bundle:
@@ -39,7 +39,7 @@ configure_java_prcc <- function(config) {
     stop(
       "java_home is empty in config. Activate the conda openjdk environment\n",
       "before starting R:\n",
-      "  conda activate openjdk\n",
+      "  source activate openjdk\n",
       "  Rscript run_analysis.R"
     )
   }

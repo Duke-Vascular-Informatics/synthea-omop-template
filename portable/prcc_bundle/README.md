@@ -24,7 +24,7 @@ bash setup_prcc_env.sh          # creates conda env, runs kinit, installs R pkgs
 cd ~/prcc_bundle
 export KRB5CCNAME=FILE:~/krb5cc_java
 kinit                           # enter Duke NetID password when prompted
-conda activate openjdk
+source activate openjdk
 Rscript run_analysis.R
 ```
 
@@ -198,7 +198,7 @@ included SQL templates in `cohorts/`.
 Before running R, activate the conda environment that provides Java:
 
 ```bash
-conda activate openjdk
+source activate openjdk
 ```
 
 Your prompt will change to show `(openjdk)`:
@@ -208,7 +208,7 @@ Your prompt will change to show `(openjdk)`:
 ```
 
 > **Important:** R must be started from a shell where the openjdk conda env is
-> active. If you close the terminal and reopen it, run `conda activate openjdk`
+> active. If you close the terminal and reopen it, run `source activate openjdk`
 > again before proceeding.
 
 ---
@@ -315,7 +315,7 @@ klist
 | `GSS initiate failed` / `Kerberos` error | Ticket expired | `export KRB5CCNAME=FILE:~/krb5cc_java && kinit` |
 | `KDC not found` | Not on PRCC login node | Launch **RE Cluster Shell Access** from the PRCC dashboard |
 | `Login failed for user` | Wrong `spn_host` | Check `spn_host` in config.R; open a DHTS ticket to confirm the correct SPN |
-| `JAVA_HOME is not set` | conda env not active | `conda activate openjdk` then re-run |
+| `JAVA_HOME is not set` | conda env not active | `source activate openjdk` then re-run |
 | `No mssql-jdbc*.jar found` | drivers/ missing JAR | Re-transfer the bundle; confirm `drivers/mssql-jdbc-13.2.1.jre11.jar` exists |
 | `fill in the following fields in config.R` | CHANGE_ME not replaced | Edit config.R and fill in all required values (Step 4) |
 | `Run this script in a FRESH R session` | R session already had Java loaded | Open a new terminal, re-activate conda, re-run |
@@ -365,7 +365,7 @@ descendants) within 90 days of the index date.
   module — no system-level Java installation is required.
 - The conda environment is named `openjdk` and is created once by
   `setup_prcc_env.sh`.
-- JAVA_HOME is set automatically when you run `conda activate openjdk`; the
+- JAVA_HOME is set automatically when you run `source activate openjdk`; the
   `config.R` and `R/connection.R` files read this environment variable at
   runtime.
 - The MSSQL JDBC driver (`drivers/mssql-jdbc-13.2.1.jre11.jar`) is included

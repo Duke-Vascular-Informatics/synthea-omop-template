@@ -5,7 +5,7 @@
 # generate the manuscript-format Word report.
 #
 # Run from the bundle directory AFTER activating the openjdk conda env:
-#   conda activate openjdk
+#   source activate openjdk
 #   Rscript install_packages.R
 #
 # Uses the Duke CRAN mirror (archive.linux.duke.edu/cran) which is accessible
