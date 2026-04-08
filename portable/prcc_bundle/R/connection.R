@@ -53,20 +53,27 @@ write_jaas_conf <- function(jaas_path) {
   krb5_env  <- Sys.getenv("KRB5CCNAME")
   krb5_file <- path.expand(sub("^FILE:", "", krb5_env))
 
-  ticket_line <- if (nchar(krb5_file) > 0)
-    paste0('   ticketCache="', krb5_file, '"\n')
-  else
-    ""
-
   # Standard JAAS stanza for the MSSQL JDBC Kerberos login module.
   # SQLJDBCDriver is the entry name the MSSQL JDBC driver looks up by default.
+  # JAAS syntax requires the semicolon to terminate the LAST option line —
+  # it cannot appear on its own line or the JVM will fail to parse the stanza.
+  if (nchar(krb5_file) > 0) {
+    # ticketCache is the last line — semicolon appended to it.
+    last_line <- paste0('   ticketCache="', krb5_file, '";\n')
+    middle    <- "   useTicketCache=true\n"
+  } else {
+    # useTicketCache is the last line when no explicit cache path is available.
+    last_line <- "   useTicketCache=true;\n"
+    middle    <- ""
+  }
+
   jaas_content <- paste0(
     "SQLJDBCDriver {\n",
     "   com.sun.security.auth.module.Krb5LoginModule required\n",
     "   doNotPrompt=true\n",
-    "   useTicketCache=true\n",
-    ticket_line,
-    ";\n};\n"
+    middle,
+    last_line,
+    "};\n"
   )
 
   writeLines(jaas_content, jaas_path)
