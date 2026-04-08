@@ -35,7 +35,7 @@ errorReportR.txt
 
 # JAAS config — generated at runtime by R/connection.R; contains local paths
 jaas.conf
-portable/prcc_bundle/jaas.conf
+portable/prcc_bundle/drivers/jaas.conf
 
 # Generated portable bundle archives
 dist/*.zip

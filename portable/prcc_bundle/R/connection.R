@@ -102,10 +102,11 @@ configure_java_prcc <- function(config) {
   java_bin <- file.path(java_home, "bin")
   Sys.setenv(PATH = paste(java_bin, Sys.getenv("PATH"), sep = ":"))
 
-  # Write jaas.conf to the bundle root directory and capture its absolute path.
-  # This must happen before options(java.parameters) so the path is available.
+  # Write jaas.conf to the drivers/ directory alongside the JDBC JAR and
+  # capture its absolute path.  This must happen before options(java.parameters)
+  # so the path is available when the JVM parameters are set.
   jaas_conf_path <- normalizePath(
-    file.path(getwd(), "jaas.conf"),
+    file.path(config$jdbc_runtime_dir, "jaas.conf"),
     mustWork = FALSE
   )
   write_jaas_conf(jaas_conf_path)
