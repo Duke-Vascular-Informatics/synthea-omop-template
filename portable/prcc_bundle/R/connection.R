@@ -140,20 +140,20 @@ configure_java_prcc <- function(config) {
 # ---------------------------------------------------------------------------
 # build_connection_details()
 #
-# Assembles the JDBC connection string for Kerberos authentication and returns
-# a DatabaseConnector ConnectionDetails object.
+# Builds a DatabaseConnector ConnectionDetails object for Kerberos
+# authentication on PRCC using the extraSettings approach recommended in the
+# DatabaseConnector vignette "Connecting with Windows authentication from a
+# non-windows machine":
 #
-# The connection string format follows the Duke PRCC documentation:
-#   jdbc:sqlserver://<server>
-#     ;databaseName=<database>
-#     ;integratedSecurity=true
-#     ;authenticationScheme=JavaKerberos
-#     ;trustServerCertificate=true
-#     ;serverSpn=MSSQLSvc/<spn_host>
+#   createConnectionDetails(
+#     dbms          = "sql server",
+#     server        = "<host>/<database>",
+#     extraSettings = "authenticationScheme=JavaKerberos"
+#   )
 #
-# config$spn_host is usually identical to config$server (the SQL Server
-# hostname). If connections fail with Kerberos errors, open a ticket with
-# DHTS/SOM-HPC to confirm the correct SPN.
+# authenticationScheme=JavaKerberos tells the MSSQL JDBC driver to use the
+# Kerberos ticket cache obtained by `kinit` rather than prompting for a
+# username/password.
 #
 # Prerequisites (enforced by this function):
 #   1. KRB5CCNAME env var points to the Kerberos credential cache.
@@ -184,22 +184,17 @@ build_connection_details <- function(config) {
     )
   }
 
-  # Build the full JDBC connection URL.
-  conn_string <- paste0(
-    "jdbc:sqlserver://", config$server,
-    ";databaseName=",     config$database,
-    ";integratedSecurity=true",
-    ";authenticationScheme=JavaKerberos",
-    ";trustServerCertificate=true",
-    ";serverSpn=MSSQLSvc/", config$spn_host
-  )
+  # server argument format for DatabaseConnector SQL Server:
+  # "<hostname>/<database>" — DatabaseConnector constructs the JDBC URL from this.
+  server_arg <- paste0(config$server, "/", config$database)
 
   message("Building connection: ", config$server, " / ", config$database,
-          " (Kerberos SPN: MSSQLSvc/", config$spn_host, ")")
+          " (authenticationScheme=JavaKerberos)")
 
   DatabaseConnector::createConnectionDetails(
-    dbms             = "sql server",
-    connectionString = conn_string,
-    pathToDriver     = config$jdbc_runtime_dir
+    dbms          = "sql server",
+    server        = server_arg,
+    extraSettings = "authenticationScheme=JavaKerberos",
+    pathToDriver  = config$jdbc_runtime_dir
   )
 }
