@@ -312,7 +312,7 @@ klist
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `GSS initiate failed` / `Kerberos` error | Ticket expired | `export KRB5CCNAME=FILE:~/krb5cc_java && kinit` |
+| `GSS initiate failed` / `Kerberos` error | Ticket expired or JAAS config missing | `export KRB5CCNAME=FILE:~/krb5cc_java && kinit`; confirm `jaas.conf` was written (appears in bundle dir after first run) |
 | `KDC not found` | Not on PRCC login node | Launch **RE Cluster Shell Access** from the PRCC dashboard |
 | `Login failed for user` | Wrong `spn_host` | Check `spn_host` in config.R; open a DHTS ticket to confirm the correct SPN |
 | `JAVA_HOME is not set` | conda env not active | `source activate openjdk` then re-run |
