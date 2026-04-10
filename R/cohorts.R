@@ -70,7 +70,7 @@ ensure_results_schema <- function(connection, config) {
 
   # Check whether the schema exists (sys.schemas is database-scoped).
   schema_exists_sql <- SqlRender::render(
-    sql            = "SELECT COUNT(*) AS n FROM sys.schemas WHERE name = '@results_schema'",
+    sql            = "SELECT COUNT(*) AS N FROM sys.schemas WHERE name = '@results_schema'",
     results_schema = config$results_schema
   )
   schema_exists <- DatabaseConnector::querySql(
