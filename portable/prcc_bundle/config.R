@@ -72,7 +72,7 @@ get_validation_config <- function() {
     # When a non-default port is used the SPN format is MSSQLSvc/<host>:<port>
     # — connection.R appends the port automatically from config$server.
     # Contact DHTS if unsure of the correct hostname.
-    spn_host         = "caboodleprod.dhe.duke.edu",
+    spn_host         = "pwp-cabdb01.dhe.duke.edu",
 
     # Schema holding shared OMOP vocabulary tables
     # (concept, concept_ancestor, concept_relationship, etc.)
