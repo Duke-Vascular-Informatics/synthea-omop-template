@@ -61,9 +61,9 @@ get_validation_config <- function() {
     prcc_jar         = prcc_jar,
 
     # ---- UPDATE THESE -------------------------------------------------------
-    # SQL Server hostname and port.
-    # Format: "hostname:port"  (include port if not the default 1433)
-    server           = "pwp-cabdb01.dhe.duke.edu:1433",
+    # SQL Server hostname. Omit the port when using the default (1433).
+    # Only include ":port" if the instance uses a non-standard port.
+    server           = "pwp-cabdb01.dhe.duke.edu",
 
     # Database name containing your OMOP CDM
     database         = "CHANGE_ME",
