@@ -1734,7 +1734,14 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 # files to config$risk_score_output_folder.
 # =============================================================================
 run_integer_risk_score_pipeline <- function(config, connection_details) {
-  dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = FALSE)
+  dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = TRUE)
+  if (!dir.exists(config$risk_score_output_folder)) {
+    stop(
+      "Could not create output directory: ", config$risk_score_output_folder, "\n",
+      "Check that you have write access to: ",
+      dirname(dirname(config$risk_score_output_folder))
+    )
+  }
 
   message("\n=== Integer risk score pipeline ===")
   message("Reading score specification files ...")
