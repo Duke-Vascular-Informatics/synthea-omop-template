@@ -61,16 +61,18 @@ get_validation_config <- function() {
     prcc_jar         = prcc_jar,
 
     # ---- UPDATE THESE -------------------------------------------------------
-    # SQL Server hostname (e.g. "dbserver01.dhe.duke.edu")
-    server           = "CHANGE_ME",
+    # SQL Server hostname and port.
+    # Format: "hostname:port"  (include port if not the default 1433)
+    server           = "pwp-cabdb01.dhe.duke.edu:1433",
 
     # Database name containing your OMOP CDM
     database         = "CHANGE_ME",
 
-    # Kerberos SPN host — usually the same as server.
-    # Format: just the hostname, NOT the full "MSSQLSvc/..." prefix.
-    # If unsure, open a ticket with DHTS/SOM-HPC.
-    spn_host         = "CHANGE_ME",
+    # Kerberos SPN host — the hostname portion only (no port, no MSSQLSvc/ prefix).
+    # When a non-default port is used the SPN format is MSSQLSvc/<host>:<port>
+    # — connection.R appends the port automatically from config$server.
+    # Contact DHTS if unsure of the correct hostname.
+    spn_host         = "pwp-cabdb01.dhe.duke.edu",
 
     # Schema holding shared OMOP vocabulary tables
     # (concept, concept_ancestor, concept_relationship, etc.)

@@ -243,9 +243,18 @@ build_connection_details <- function(config) {
   # often fails with "Integrated authentication failed" because the guessed
   # SPN does not match what is registered in AD.
   #
-  # SPN format: MSSQLSvc/<spn_host>  (uses default port 1433)
-  # spn_host is set in config.R — contact DHTS if you are unsure of the value.
-  spn <- paste0("MSSQLSvc/", config$spn_host)
+  # SPN format:
+  #   MSSQLSvc/<host>       — when using the default port 1433
+  #   MSSQLSvc/<host>:<port> — when using a non-default port
+  #
+  # We extract the port from config$server (format "host:port") if present
+  # and append it to the SPN.  spn_host in config.R is the hostname only.
+  server_port <- sub("^[^:]+:?", "", config$server)   # "" if no port specified
+  if (nchar(server_port) > 0) {
+    spn <- paste0("MSSQLSvc/", config$spn_host, ":", server_port)
+  } else {
+    spn <- paste0("MSSQLSvc/", config$spn_host)
+  }
 
   jdbc_url <- paste0(
     "jdbc:sqlserver://", config$server,
