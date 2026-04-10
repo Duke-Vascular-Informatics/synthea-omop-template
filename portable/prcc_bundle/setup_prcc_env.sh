@@ -2,23 +2,28 @@
 # =============================================================================
 # setup_prcc_env.sh
 #
-# One-time (per session) environment setup for the PAD/OLER SSI validation
-# bundle on Duke PRCC.
+# Step 1 of 2 — Java and Kerberos environment setup for the PAD/OLER SSI
+# validation bundle on Duke PRCC.
 #
-# Run this from the RE Cluster Shell Access terminal BEFORE starting R.
-# After running this script, activate the conda environment and then launch R:
+# Run this from the PRCC cluster shell BEFORE installing R packages or
+# running the analysis.  You only need to run this once per session
+# (or whenever your Kerberos ticket expires).
 #
-#   bash setup_prcc_env.sh
+# FULL SETUP SEQUENCE (first time):
+#   bash setup_prcc_env.sh        # Step 1 — Java + Kerberos
+#   bash install_r_packages.sh    # Step 2 — R packages (first time only)
+#
+# SUBSEQUENT SESSIONS (packages already installed):
+#   bash setup_prcc_env.sh        # renew Kerberos ticket + activate env
 #   conda activate openjdk
 #   Rscript run_analysis.R
 #
 # What this script does:
 #   1. Loads the miniforge module and creates the openjdk conda env (first run
-#      only; subsequent runs skip creation).
+#      only; subsequent runs skip creation if the env already exists).
 #   2. Obtains a Kerberos ticket via `kinit` using your Duke NetID password.
 #      The ticket is stored at ~/krb5cc_java and is valid for ~10 hours.
-#      Re-run this script (step 2 only) if the ticket expires mid-session.
-#   3. Installs required R packages (first run only; skips if already present).
+#      Re-run this script if the ticket expires mid-session.
 #
 # Prerequisites:
 #   - Access to the PRCC cluster ("RE Cluster Shell Access" on PRCC dashboard)
@@ -33,7 +38,7 @@ cd "$BUNDLE_DIR"
 
 echo ""
 echo "======================================================================"
-echo "  PAD/OLER SSI Validation — PRCC Environment Setup"
+echo "  PAD/OLER SSI Validation — PRCC Environment Setup (Step 1 of 2)"
 echo "  Bundle: $BUNDLE_DIR"
 echo "======================================================================"
 echo ""
@@ -41,7 +46,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 1 — Java via conda (openjdk + maven from conda-forge)
 # -----------------------------------------------------------------------------
-echo "[1/3] Setting up Java environment ..."
+echo "[1/2] Setting up Java environment ..."
 
 module load miniforge
 
@@ -63,7 +68,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 2 — Kerberos ticket (NetID authentication for SQL Server)
 # -----------------------------------------------------------------------------
-echo "[2/3] Obtaining Kerberos ticket (enter your Duke NetID password) ..."
+echo "[2/2] Obtaining Kerberos ticket (enter your Duke NetID password) ..."
 
 export KRB5CCNAME=FILE:~/krb5cc_java
 kinit
@@ -78,52 +83,37 @@ fi
 echo ""
 
 # -----------------------------------------------------------------------------
-# Step 3 — R package installation (first run only)
-# -----------------------------------------------------------------------------
-echo "[3/3] Installing R packages (skips packages already installed) ..."
-
-# Resolve Rscript — use module-loaded R if available, otherwise system R.
-if command -v Rscript &>/dev/null; then
-  RSCRIPT=$(command -v Rscript)
-else
-  echo "ERROR: Rscript not found on PATH. Load the R module first:"
-  echo "  module load R"
-  exit 1
-fi
-
-echo "      Using R: $RSCRIPT"
-"$RSCRIPT" install_packages.R
-echo ""
-
-# -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
 cat <<SUMMARY
 ======================================================================
-  Setup complete.
+  Environment setup complete.
 
   Bundle location: $BUNDLE_DIR
 
-  To run the analysis:
+  NEXT STEPS:
 
-    1. Edit config.R and fill in all CHANGE_ME values:
+  If this is your FIRST time running the analysis, install R packages:
+       bash install_r_packages.sh
+
+  If packages are already installed, run the analysis directly:
+       conda activate openjdk
+       Rscript run_analysis.R
+
+  Before running the analysis, make sure you have:
+    1. Edited config.R to fill in all CHANGE_ME values:
          server, database, spn_host, vocab_schema,
          cdm_schema, results_schema
 
-    2. Confirm the Duke SOM-HPC JDBC wrapper JAR is in place:
+    2. The Duke SOM-HPC JDBC wrapper JAR in place:
          $(dirname "$BUNDLE_DIR")/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
        (Contact DHTS/SOM-HPC if you do not have this file.)
 
-    3. In a fresh terminal:
-         cd $BUNDLE_DIR
-         conda activate openjdk
-         Rscript run_analysis.R
-
   Kerberos tickets expire after ~10 hours. If you get authentication
-  errors on a subsequent run, re-obtain a ticket:
-         export KRB5CCNAME=FILE:~/krb5cc_java && kinit
+  errors, re-run this script to renew:
+       bash setup_prcc_env.sh
 
   Output will be written to:
-         $BUNDLE_DIR/output/risk_score_eval/
+       $BUNDLE_DIR/output/risk_score_eval/
 ======================================================================
 SUMMARY

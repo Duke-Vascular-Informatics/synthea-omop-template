@@ -278,11 +278,12 @@ try {
     #     - cohorts/      OMOP SQL templates
     #     - drivers/      mssql-jdbc-*.jre11.jar (just synced in Step 2)
     #     - output/       empty placeholder directory (created by run_analysis.R)
-    #     - config.R      PRCC-specific config with CHANGE_ME placeholders
-    #     - run_analysis.R  PRCC entry-point script
-    #     - connection.R  PRCC Kerberos/JVM setup (inside R/)
-    #     - install_packages.R  PRCC package installer
-    #     - setup_prcc_env.sh   conda + kinit setup script
+    #     - config.R             PRCC-specific config with CHANGE_ME placeholders
+    #     - run_analysis.R       PRCC entry-point script
+    #     - connection.R         PRCC Kerberos/JVM setup (inside R/)
+    #     - install_packages.R   R package installer (called by install_r_packages.sh)
+    #     - setup_prcc_env.sh    Step 1: conda env creation + Kerberos ticket
+    #     - install_r_packages.sh  Step 2: activates env + runs install_packages.R
     #
     # WHAT IS *NOT* IN THE ZIP:
     #     - prcc-jdbc-mssql-1.0-SNAPSHOT.jar  (Duke SOM-HPC JAR, not ours to ship)
