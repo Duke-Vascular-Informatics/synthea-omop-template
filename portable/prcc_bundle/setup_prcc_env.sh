@@ -52,9 +52,21 @@ module load miniforge
 
 if conda env list | grep -qE '^openjdk[[:space:]]'; then
   echo "      conda env 'openjdk' already exists — skipping creation."
+  # Ensure the compression libraries required by rJava are present.
+  # xz (liblzma) and zlib (libz) must be in the conda env because the
+  # conda gcc linker looks for them there rather than in system paths.
+  # conda install is a no-op if they are already installed.
+  echo "      Checking for required compiler libraries (xz, zlib) ..."
+  conda install -n openjdk conda-forge::xz conda-forge::zlib -y --quiet
 else
   echo "      Creating conda env 'openjdk' (this takes ~2 minutes on first run) ..."
-  conda create -n openjdk conda-forge::openjdk conda-forge::maven -y
+  # openjdk, maven  : Java runtime and build tools
+  # xz, zlib        : compression libraries required by the rJava linker.
+  #                   The conda gcc compiler links against these and cannot
+  #                   fall back to system libraries, so they must live inside
+  #                   the conda env.
+  conda create -n openjdk conda-forge::openjdk conda-forge::maven \
+                           conda-forge::xz conda-forge::zlib -y
   echo "      conda env created."
 fi
 
