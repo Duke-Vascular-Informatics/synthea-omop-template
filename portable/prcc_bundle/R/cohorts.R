@@ -7,19 +7,47 @@
 
 # Ensure the results schema and the cohort table both exist.
 ensure_results_schema <- function(connection, config) {
-  # Create schema if absent (SQL Server CREATE SCHEMA must run in its own batch)
-  schema_sql <- SqlRender::render(
-    sql = "IF NOT EXISTS (
-      SELECT 1 FROM sys.schemas WHERE name = '@results_schema'
-    )
-    BEGIN
-      EXEC('CREATE SCHEMA [@results_schema]')
-    END",
+  # Check whether the results schema already exists before attempting to create
+  # it.  On many institutional servers users have SELECT permission but not
+  # CREATE SCHEMA.  If the schema already exists we skip creation entirely.
+  # If it does not exist we attempt creation and surface a clear error if
+  # permissions are insufficient.
+  schema_exists_sql <- SqlRender::render(
+    sql            = "SELECT COUNT(*) AS n FROM sys.schemas WHERE name = '@results_schema'",
     results_schema = config$results_schema
   )
-  DatabaseConnector::executeSql(connection,
-                                SqlRender::translate(schema_sql, targetDialect = "sql server"),
-                                reportOverallTime = FALSE)
+  schema_exists_result <- DatabaseConnector::querySql(
+    connection,
+    SqlRender::translate(schema_exists_sql, targetDialect = "sql server")
+  )
+  schema_exists <- schema_exists_result$N[1] > 0
+
+  if (schema_exists) {
+    message("Results schema '", config$results_schema, "' already exists — skipping creation.")
+  } else {
+    message("Results schema '", config$results_schema, "' not found — attempting to create ...")
+    schema_sql <- SqlRender::render(
+      sql            = "EXEC('CREATE SCHEMA [@results_schema]')",
+      results_schema = config$results_schema
+    )
+    tryCatch(
+      DatabaseConnector::executeSql(
+        connection,
+        SqlRender::translate(schema_sql, targetDialect = "sql server"),
+        reportOverallTime = FALSE
+      ),
+      error = function(e) {
+        stop(
+          "Could not create results schema '", config$results_schema, "'.\n",
+          "Your database account may not have CREATE SCHEMA permission.\n",
+          "Options:\n",
+          "  1. Ask DHTS to create the schema for you and grant you INSERT/SELECT/DROP.\n",
+          "  2. Use a schema that already exists (update results_schema in config.R).\n\n",
+          "Original error: ", conditionMessage(e)
+        )
+      }
+    )
+  }
 
   # Create cohort table if absent
   cohort_table_sql <- SqlRender::render(
