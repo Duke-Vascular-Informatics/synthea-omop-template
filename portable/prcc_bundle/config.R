@@ -90,7 +90,7 @@ get_validation_config <- function() {
 
     # Results schema within results_database.
     # Your NetID must have CREATE TABLE permission in this schema.
-    results_schema   = "CHANGE_ME",
+    results_schema   = "dhe\\apj20",
     # ---- END UPDATE ---------------------------------------------------------
 
     dbms             = "sql server",
