@@ -108,9 +108,8 @@ cat <<SUMMARY
   If this is your FIRST time running the analysis, install R packages:
        bash install_r_packages.sh
 
-  If packages are already installed, run the analysis directly:
-       conda activate openjdk
-       Rscript run_analysis.R
+  If packages are already installed, run the analysis:
+       bash run_analysis.sh
 
   Before running the analysis, make sure you have:
     1. Edited config.R to fill in all CHANGE_ME values:

@@ -11,8 +11,10 @@
 #   3. Edit config.R                   — fill in server, database, schemas
 #
 # EXECUTION:
-#   Rscript run_analysis.R
-#   (Run from the bundle directory in a FRESH R session.)
+#   bash run_analysis.sh        ← use this, not Rscript directly
+#   The wrapper sets LD_LIBRARY_PATH so libjvm.so is found before R starts.
+#   Calling Rscript run_analysis.R directly will fail with:
+#     "libjvm.so: cannot open shared object file: No such file or directory"
 #
 # OUTPUTS (written to output/risk_score_eval/):
 #   person_level_scores.csv            — per-patient scores and outcomes
