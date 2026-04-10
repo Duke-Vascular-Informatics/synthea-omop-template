@@ -258,11 +258,18 @@ try {
     #       snapshot of the analysis code.
     #
     # WHY PREVIOUS ZIPS ARE NOT DELETED:
-    #   Old zips are intentionally retained.  Compress-Archive is called with
-    #   -Force, which only overwrites a zip with the SAME filename (i.e. a
-    #   second run on the same calendar day).  Zips from prior days are never
-    #   touched.  dist/ is in .gitignore so the zip files do not bloat the
-    #   repository; they are local build artefacts only.
+    #   Old zips are intentionally retained.  Every build produces a unique
+    #   filename so no zip is ever overwritten.  dist/ is in .gitignore so
+    #   the zip files do not bloat the repository; they are local build
+    #   artefacts only.
+    #
+    # FILENAME SCHEME — multiple builds on the same day:
+    #   First build of the day  : pad_oler_ssi_val_prcc_YYYYMMDD.zip
+    #   Second build of the day : pad_oler_ssi_val_prcc_YYYYMMDD_1.zip
+    #   Third build of the day  : pad_oler_ssi_val_prcc_YYYYMMDD_2.zip
+    #   ...and so on.
+    #   The counter is found by scanning dist/ for existing files that match
+    #   the date prefix and taking the next available number.
     #
     # WHAT IS INCLUDED IN THE ZIP:
     #   Everything under portable/prcc_bundle/* is zipped.  This includes:
@@ -284,14 +291,25 @@ try {
     # -------------------------------------------------------------------------
     Write-Host "[Step 9] Building zip ..." -ForegroundColor Cyan
 
-    $stamp   = Get-Date -Format "yyyyMMdd"
-    $zipName = "pad_oler_ssi_val_prcc_$stamp.zip"
+    $stamp    = Get-Date -Format "yyyyMMdd"
+    $base     = "pad_oler_ssi_val_prcc_$stamp"
+
+    # Find the next available filename for today.
+    # Existing files that match today's date are counted so the new zip always
+    # gets a unique name:
+    #   pad_oler_ssi_val_prcc_YYYYMMDD.zip      (no suffix — first of the day)
+    #   pad_oler_ssi_val_prcc_YYYYMMDD_1.zip    (second build)
+    #   pad_oler_ssi_val_prcc_YYYYMMDD_2.zip    (third build)  ...
+    $existing = @(Get-ChildItem -Path $dist -Filter "${base}*.zip" -ErrorAction SilentlyContinue)
+    if ($existing.Count -eq 0) {
+        $zipName = "${base}.zip"
+    } else {
+        $zipName = "${base}_$($existing.Count).zip"
+    }
+
     $zipPath = Join-Path $dist $zipName
 
-    # Compress-Archive -Force overwrites only if this exact filename already
-    # exists (i.e. a second run on the same day).  All other dated zips in
-    # dist/ are left untouched.
-    Compress-Archive -Path (Join-Path $bundle "*") -DestinationPath $zipPath -Force
+    Compress-Archive -Path (Join-Path $bundle "*") -DestinationPath $zipPath
 
     $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
     Write-Host ""
