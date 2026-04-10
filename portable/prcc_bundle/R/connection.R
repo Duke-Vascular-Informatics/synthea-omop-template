@@ -236,16 +236,29 @@ build_connection_details <- function(config) {
   }
 
   # Full JDBC URL — matches the approach confirmed by Duke SOM-HPC.
+  #
+  # serverSpn: The Kerberos Service Principal Name (SPN) registered for the
+  # SQL Server instance in Active Directory.  Without this, the JDBC driver
+  # tries to construct the SPN automatically from the server hostname, which
+  # often fails with "Integrated authentication failed" because the guessed
+  # SPN does not match what is registered in AD.
+  #
+  # SPN format: MSSQLSvc/<spn_host>  (uses default port 1433)
+  # spn_host is set in config.R — contact DHTS if you are unsure of the value.
+  spn <- paste0("MSSQLSvc/", config$spn_host)
+
   jdbc_url <- paste0(
     "jdbc:sqlserver://", config$server,
     ";databaseName=",         config$database,
     ";integratedSecurity=true",
     ";authenticationScheme=JavaKerberos",
+    ";serverSpn=",            spn,
     ";trustServerCertificate=true"
   )
 
   message("Building connection: ", config$server, " / ", config$database,
           " (JavaKerberos)")
+  message("Server SPN: ", spn)
 
   DatabaseConnector::createConnectionDetails(
     dbms             = "sql server",
