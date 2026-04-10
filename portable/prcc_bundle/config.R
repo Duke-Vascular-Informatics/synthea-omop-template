@@ -63,23 +63,23 @@ get_validation_config <- function() {
     # ---- UPDATE THESE -------------------------------------------------------
     # SQL Server hostname. Omit the port when using the default (1433).
     # Only include ":port" if the instance uses a non-standard port.
-    server           = "pwp-cabdb01.dhe.duke.edu",
+    server           = "caboodleprod.dhe.duke.edu",
 
     # Database containing the OMOP CDM (read-only access is sufficient).
-    database         = "CHANGE_ME",
+    database         = "ACE_DATA",
 
     # Kerberos SPN host — the hostname portion only (no port, no MSSQLSvc/ prefix).
     # When a non-default port is used the SPN format is MSSQLSvc/<host>:<port>
     # — connection.R appends the port automatically from config$server.
     # Contact DHTS if unsure of the correct hostname.
-    spn_host         = "pwp-cabdb01.dhe.duke.edu",
+    spn_host         = "caboodleprod.dhe.duke.edu",
 
     # Schema holding shared OMOP vocabulary tables
     # (concept, concept_ancestor, concept_relationship, etc.)
-    vocab_schema     = "CHANGE_ME",
+    vocab_schema     = "CDRN_OMOP",
 
     # CDM schema (person, visit_occurrence, condition_occurrence, etc.)
-    cdm_schema       = "CHANGE_ME",
+    cdm_schema       = "CDRN_OMOP",
 
     # Results database — the database where cohort tables will be written.
     # This may differ from the CDM database if you only have read access to
@@ -131,8 +131,8 @@ get_validation_config <- function() {
     study_end_date   = "2023-12-31",
 
     # Database identifier metadata (written into output files)
-    cdm_database_id          = "CHANGE_ME",   # e.g. "duke_omop_v5.4"
-    cdm_database_name        = "CHANGE_ME",   # e.g. "Duke SOM OMOP CDM"
-    cdm_database_description = "CHANGE_ME"    # free-text description
+    cdm_database_id          = "duke_ace_data_omop",
+    cdm_database_name        = "Duke University Health System OMOP CDM (ACE_DATA)",
+    cdm_database_description = "Duke University Health System OMOP CDM, ACE_DATA database, CDRN_OMOP schema, accessed via PRCC Kerberos authentication on caboodleprod.dhe.duke.edu"
   )
 }
