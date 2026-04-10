@@ -25,7 +25,7 @@ cd ~/prcc_bundle
 export KRB5CCNAME=FILE:~/krb5cc_java
 kinit                           # enter Duke NetID password when prompted
 conda activate openjdk
-Rscript run_analysis.R
+bash run_analysis.sh
 ```
 
 Results are written to `output/risk_score_eval/`.
@@ -216,7 +216,7 @@ Your prompt will change to show `(openjdk)`:
 ### Step 6 — Run the analysis
 
 ```bash
-Rscript run_analysis.R
+bash run_analysis.sh
 ```
 
 The script will print progress messages as it runs:
@@ -298,7 +298,7 @@ export KRB5CCNAME=FILE:~/krb5cc_java
 kinit
 ```
 
-Enter your Duke NetID password when prompted, then re-run `Rscript run_analysis.R`.
+Enter your Duke NetID password when prompted, then re-run `bash run_analysis.sh`.
 
 To check whether your current ticket is still valid:
 

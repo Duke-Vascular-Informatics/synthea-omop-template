@@ -168,7 +168,7 @@ cat <<SUMMARY
 
   To run the analysis:
        conda activate openjdk
-       Rscript run_analysis.R
+       bash run_analysis.sh
 
   Make sure config.R has been edited with your site-specific values
   before running the analysis.

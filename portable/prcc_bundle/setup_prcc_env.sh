@@ -16,7 +16,7 @@
 # SUBSEQUENT SESSIONS (packages already installed):
 #   bash setup_prcc_env.sh        # renew Kerberos ticket + activate env
 #   conda activate openjdk
-#   Rscript run_analysis.R
+#   bash run_analysis.sh
 #
 # What this script does:
 #   1. Loads the miniforge module and creates the openjdk conda env (first run

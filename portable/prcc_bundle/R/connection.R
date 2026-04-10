@@ -99,7 +99,7 @@ configure_java_prcc <- function(config) {
       "java_home is empty in config. Activate the conda openjdk environment\n",
       "before starting R:\n",
       "  conda activate openjdk\n",
-      "  Rscript run_analysis.R"
+      "  bash run_analysis.sh"
     )
   }
 
