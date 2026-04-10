@@ -133,10 +133,30 @@ configure_java_prcc <- function(config) {
   # -Djava.home                       : confirm java.home for rJava.
   # -Djava.security.auth.login.config : JAAS config for Kerberos login module.
   # -Xmx4g                            : 4 GB heap for large JDBC result sets.
+  #
+  # --add-opens flags (Java 17+ module system compatibility):
+  #   Java 9+ introduced the module system (JPMS) which restricts access to
+  #   internal JDK classes by default.  The MSSQL JDBC driver and Kerberos
+  #   authentication code access several internal packages that are now
+  #   encapsulated in modules.  Without --add-opens, the JVM raises:
+  #     "Could not initialize class sun.security.util.FilePermCompat"
+  #   or similar NoClassDefFoundError / InaccessibleObjectException errors.
+  #   Each --add-opens line opens the named package to all unnamed modules
+  #   (ALL-UNNAMED = code on the classpath, including our JDBC JARs).
   options(java.parameters = c(
     paste0("-Djava.home=",                       normalizePath(java_home, mustWork = FALSE)),
     paste0("-Djava.security.auth.login.config=", jaas_conf_path),
-    "-Xmx4g"
+    "-Xmx4g",
+    # Security / Kerberos internals accessed by MSSQL JDBC + Krb5LoginModule
+    "--add-opens=java.base/sun.security.util=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.krb5=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.krb5.internal=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.krb5.internal.ccache=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.krb5.internal.crypto=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.krb5.internal.ktab=ALL-UNNAMED",
+    # JAAS internals accessed by Krb5LoginModule
+    "--add-opens=java.base/javax.security.auth.kerberos=ALL-UNNAMED",
+    "--add-opens=java.security.jgss/sun.security.jgss.krb5=ALL-UNNAMED"
   ))
 
   # Explicitly initialise the JVM now (before library(DatabaseConnector) loads
