@@ -3,15 +3,56 @@
 # Create the results schema / cohort table and instantiate the target (surgery)
 # and outcome (SSI) cohorts using parameterised OHDSI SQL executed via
 # SqlRender and DatabaseConnector.
+#
+# CROSS-DATABASE SUPPORT:
+# When results_database in config differs from database (the CDM database),
+# the cohort table is referenced with a three-part name:
+#   results_database.results_schema.cohort_table
+# SQL Server supports cross-database references as long as the connecting
+# user has SELECT/INSERT/CREATE TABLE permission in results_database.
+# The JDBC connection is made to the CDM database; SQL Server resolves
+# the cross-database reference automatically.
 # =============================================================================
+
+# Helper: returns the fully-qualified schema prefix for the results table.
+# If results_database is set and differs from the CDM database, returns
+# "results_database.results_schema", otherwise just "results_schema".
+results_schema_prefix <- function(config) {
+  rdb <- config$results_database
+  if (!is.null(rdb) && !is.na(rdb) &&
+      nchar(trimws(rdb)) > 0 && trimws(rdb) != "CHANGE_ME" &&
+      trimws(rdb) != trimws(config$database)) {
+    paste0(trimws(rdb), ".", config$results_schema)
+  } else {
+    config$results_schema
+  }
+}
 
 # Ensure the results schema and the cohort table both exist.
 ensure_results_schema <- function(connection, config) {
-  # Check whether the results schema already exists before attempting to create
-  # it.  On many institutional servers users have SELECT permission but not
-  # CREATE SCHEMA.  If the schema already exists we skip creation entirely.
-  # If it does not exist we attempt creation and surface a clear error if
-  # permissions are insufficient.
+  prefix <- results_schema_prefix(config)
+
+  # When results_database differs from the CDM database, switch context to
+  # the results database before checking/creating the schema and table.
+  # This is required because CREATE SCHEMA and sys.schemas are database-scoped
+  # and the JDBC connection is made to the CDM database.
+  rdb <- config$results_database
+  use_cross_db <- !is.null(rdb) && !is.na(rdb) &&
+                  nchar(trimws(rdb)) > 0 && trimws(rdb) != "CHANGE_ME" &&
+                  trimws(rdb) != trimws(config$database)
+
+  if (use_cross_db) {
+    message("Results database: ", trimws(rdb),
+            " (separate from CDM database: ", config$database, ")")
+    # Switch to results database for schema/table creation.
+    DatabaseConnector::executeSql(
+      connection,
+      paste0("USE [", trimws(rdb), "]"),
+      reportOverallTime = FALSE
+    )
+  }
+
+  # Check whether the schema exists in the current database context.
   schema_exists_sql <- SqlRender::render(
     sql            = "SELECT COUNT(*) AS n FROM sys.schemas WHERE name = '@results_schema'",
     results_schema = config$results_schema
@@ -41,7 +82,7 @@ ensure_results_schema <- function(connection, config) {
           "Could not create results schema '", config$results_schema, "'.\n",
           "Your database account may not have CREATE SCHEMA permission.\n",
           "Options:\n",
-          "  1. Ask DHTS to create the schema for you and grant you INSERT/SELECT/DROP.\n",
+          "  1. Ask DHTS to create the schema for you and grant INSERT/SELECT/DROP.\n",
           "  2. Use a schema that already exists (update results_schema in config.R).\n\n",
           "Original error: ", conditionMessage(e)
         )
@@ -49,26 +90,35 @@ ensure_results_schema <- function(connection, config) {
     )
   }
 
-  # Create cohort table if absent
+  # Switch back to CDM database after schema check so subsequent CDM queries work.
+  if (use_cross_db) {
+    DatabaseConnector::executeSql(
+      connection,
+      paste0("USE [", config$database, "]"),
+      reportOverallTime = FALSE
+    )
+  }
+
+  # Create cohort table if absent — use fully-qualified three-part name
+  # so it resolves correctly regardless of current database context.
   cohort_table_sql <- SqlRender::render(
-    sql = "IF OBJECT_ID('@results_schema.@cohort_table', 'U') IS NULL
+    sql = "IF OBJECT_ID('@prefix.@cohort_table', 'U') IS NULL
     BEGIN
-      CREATE TABLE @results_schema.@cohort_table (
+      CREATE TABLE @prefix.@cohort_table (
         cohort_definition_id  BIGINT       NOT NULL,
         subject_id            BIGINT       NOT NULL,
         cohort_start_date     DATE         NOT NULL,
         cohort_end_date       DATE         NOT NULL
       )
     END",
-    results_schema = config$results_schema,
-    cohort_table   = config$cohort_table
+    prefix       = prefix,
+    cohort_table = config$cohort_table
   )
   DatabaseConnector::executeSql(connection,
                                 SqlRender::translate(cohort_table_sql, targetDialect = "sql server"),
                                 reportOverallTime = FALSE)
 
-  message("Results schema and cohort table are ready: ",
-          config$results_schema, ".", config$cohort_table)
+  message("Results table ready: ", prefix, ".", config$cohort_table)
   invisible(NULL)
 }
 
@@ -108,7 +158,7 @@ copy_atlas_cohort <- function(connection,
   clear_sql <- SqlRender::render(
     sql = "DELETE FROM @results_schema.@cohort_table
            WHERE cohort_definition_id = @destination_cohort_id;",
-    results_schema         = config$results_schema,
+    results_schema         = results_schema_prefix(config),
     cohort_table           = config$cohort_table,
     destination_cohort_id  = destination_cohort_id
   )
@@ -134,7 +184,7 @@ copy_atlas_cohort <- function(connection,
            WHERE c.cohort_definition_id = @source_cohort_id
              AND c.cohort_start_date >= CAST('@study_start_date' AS DATE)
              AND c.cohort_start_date <= CAST('@study_end_date'   AS DATE);",
-    results_schema        = config$results_schema,
+    results_schema        = results_schema_prefix(config),
     cohort_table          = config$cohort_table,
     atlas_schema          = config$atlas_cohort_schema,
     atlas_table           = config$atlas_cohort_table,
@@ -159,7 +209,7 @@ count_cohort <- function(connection, config, cohort_id, label) {
         sql = "SELECT COUNT(*) AS N
           FROM @results_schema.@cohort_table
           WHERE cohort_definition_id = @cohort_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table   = config$cohort_table,
     cohort_id      = cohort_id
   )
@@ -178,7 +228,7 @@ build_cohorts <- function(connection, config) {
 
   common_params <- list(
     cdm_database_schema    = config$cdm_schema,
-    target_database_schema = config$results_schema,
+    target_database_schema = results_schema_prefix(config),
     target_cohort_table    = config$cohort_table,
     study_start_date       = config$study_start_date,
     study_end_date         = config$study_end_date

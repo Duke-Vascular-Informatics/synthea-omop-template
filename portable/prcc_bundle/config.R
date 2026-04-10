@@ -65,7 +65,7 @@ get_validation_config <- function() {
     # Only include ":port" if the instance uses a non-standard port.
     server           = "pwp-cabdb01.dhe.duke.edu",
 
-    # Database name containing your OMOP CDM
+    # Database containing the OMOP CDM (read-only access is sufficient).
     database         = "CHANGE_ME",
 
     # Kerberos SPN host — the hostname portion only (no port, no MSSQLSvc/ prefix).
@@ -81,7 +81,14 @@ get_validation_config <- function() {
     # CDM schema (person, visit_occurrence, condition_occurrence, etc.)
     cdm_schema       = "CHANGE_ME",
 
-    # Results schema — will be created if it does not exist.
+    # Results database — the database where cohort tables will be written.
+    # This may differ from the CDM database if you only have read access to
+    # the CDM (e.g. ACE_DATA) but write access to a separate scratch/results
+    # database.  Leave as NA to use the same database as the CDM.
+    # Example: "dhe_results"
+    results_database = "CHANGE_ME",
+
+    # Results schema within results_database.
     # Your NetID must have CREATE TABLE permission in this schema.
     results_schema   = "CHANGE_ME",
     # ---- END UPDATE ---------------------------------------------------------
