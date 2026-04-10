@@ -90,7 +90,13 @@ SYS_LIB_PATHS="/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib"
 
 export LDFLAGS="-L${CONDA_PREFIX}/lib $(echo $SYS_LIB_PATHS | tr ':' '\n' | sed 's/^/-L/' | tr '\n' ' ') ${LDFLAGS:-}"
 export CPPFLAGS="-I${CONDA_PREFIX}/include -I/usr/include ${CPPFLAGS:-}"
-export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${SYS_LIB_PATHS}:${LD_LIBRARY_PATH:-}"
+
+# $JAVA_HOME/lib/server contains libjvm.so — the JVM shared library that
+# rJava loads at runtime via dyn.load().  It must be on LD_LIBRARY_PATH at
+# both compile time AND at runtime (i.e. when R calls library(rJava)).
+# Without this, rJava compiles successfully but fails to load with:
+#   "libjvm.so: cannot open shared object file: No such file or directory"
+export LD_LIBRARY_PATH="${JAVA_HOME}/lib/server:${CONDA_PREFIX}/lib:${SYS_LIB_PATHS}:${LD_LIBRARY_PATH:-}"
 
 echo "      LDFLAGS set to include system lib paths"
 echo "      LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"

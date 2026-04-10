@@ -109,6 +109,19 @@ configure_java_prcc <- function(config) {
   java_bin <- file.path(java_home, "bin")
   Sys.setenv(PATH = paste(java_bin, Sys.getenv("PATH"), sep = ":"))
 
+  # Add $JAVA_HOME/lib/server to LD_LIBRARY_PATH so the dynamic linker can
+  # find libjvm.so at runtime when rJava calls dyn.load().
+  # Without this, rJava compiles successfully but fails to load on PRCC with:
+  #   "libjvm.so: cannot open shared object file: No such file or directory"
+  # The JVM shared library lives inside the conda env's JDK rather than in a
+  # standard system path, so it must be added explicitly before .jinit().
+  jvm_lib <- file.path(java_home, "lib", "server")
+  current_ld <- Sys.getenv("LD_LIBRARY_PATH")
+  if (!grepl(jvm_lib, current_ld, fixed = TRUE)) {
+    Sys.setenv(LD_LIBRARY_PATH = paste(jvm_lib, current_ld, sep = ":"))
+  }
+  message("LD_LIBRARY_PATH includes: ", jvm_lib)
+
   # Write jaas.conf to drivers/ and capture its absolute path.
   jaas_conf_path <- normalizePath(
     file.path(config$jdbc_runtime_dir, "jaas.conf"),
