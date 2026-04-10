@@ -86,10 +86,12 @@ get_validation_config <- function() {
     # the CDM (e.g. ACE_DATA) but write access to a separate scratch/results
     # database.  Leave as NA to use the same database as the CDM.
     # Example: "dhe_results"
-    results_database = "CHANGE_ME",
+    # Results database — set to NA if writing to the same database as the CDM.
+    # Only change this if your write access is in a completely separate database.
+    results_database = NA,
 
-    # Results schema within results_database.
-    # Your NetID must have CREATE TABLE permission in this schema.
+    # Results schema within the results database.
+    # This is your personal write schema — [dhe\apj20] within ACE_DATA.
     results_schema   = "dhe\\apj20",
     # ---- END UPDATE ---------------------------------------------------------
 
