@@ -64,9 +64,35 @@ echo "      JAVA_HOME  = ${JAVA_HOME:-<not set>}"
 echo ""
 
 # -----------------------------------------------------------------------------
-# Step 2 — Run the R package installer
+# Step 2 — Set a user-writable R package library
+#
+# R is installed system-wide on PRCC and users do not have write access to
+# the system library ($(R RHOME)/library).  R_LIBS_USER tells R to install
+# packages into a directory under the user's home folder instead.
+#
+# The directory is created if it does not already exist.  R automatically
+# prepends R_LIBS_USER to .libPaths() at startup, so packages installed here
+# are found by all subsequent R sessions on this node.
 # -----------------------------------------------------------------------------
-echo "[2/2] Installing R packages ..."
+echo "[2/3] Configuring user R package library ..."
+
+# Detect R version for the library path (e.g. ~/R/x86_64-pc-linux-gnu-library/4.3)
+R_VERSION=$(Rscript -e "cat(paste(R.version\$major, R.version\$minor, sep='.'))" 2>/dev/null | tr -d ' ')
+R_PLATFORM=$(Rscript -e "cat(R.version\$platform)" 2>/dev/null | tr -d ' ')
+USER_RLIB="${HOME}/R/${R_PLATFORM}-library/${R_VERSION%.*}"
+
+mkdir -p "$USER_RLIB"
+export R_LIBS_USER="$USER_RLIB"
+
+echo "      R version  : $R_VERSION"
+echo "      R platform : $R_PLATFORM"
+echo "      R_LIBS_USER: $R_LIBS_USER"
+echo ""
+
+# -----------------------------------------------------------------------------
+# Step 3 — Run the R package installer
+# -----------------------------------------------------------------------------
+echo "[3/3] Installing R packages ..."
 
 if ! command -v Rscript &>/dev/null; then
   echo "ERROR: Rscript not found on PATH."

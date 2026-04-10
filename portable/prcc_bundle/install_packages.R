@@ -5,18 +5,21 @@
 # Installs all R packages required to run the integer risk score pipeline and
 # generate the manuscript-format Word report.
 #
-# PREREQUISITES — run these in the shell BEFORE launching this script:
+# Do not run this directly — use the wrapper shell script instead:
+#   bash install_r_packages.sh
 #
-#   conda activate openjdk          # puts conda JDK on PATH and sets JAVA_HOME
-#   Rscript install_packages.R       # run from the bundle directory
+# That script activates the openjdk conda environment (setting JAVA_HOME)
+# and sets R_LIBS_USER before calling this script, both of which are required
+# for rJava to compile correctly into a user-writable library.
 #
-# WHY conda activate FIRST:
-#   rJava must be compiled against the JDK headers.  If JAVA_HOME is not set
-#   (or points to the wrong JDK) before this script runs, rJava compilation
-#   will fail with "jni.h: No such file or directory".  Activating the conda
-#   openjdk environment sets JAVA_HOME correctly.  This script then calls
-#   R CMD javareconf to register that JDK with R before any packages are
-#   installed.
+# WHY NO R CMD javareconf:
+#   R CMD javareconf writes to $(R RHOME)/etc/javaconf, which is a system-wide
+#   R installation directory.  On PRCC, R is installed system-wide and users
+#   do not have write access there — javareconf will fail with a permissions
+#   error.  It is also unnecessary: rJava's own configure script reads
+#   JAVA_HOME directly from the environment at compile time.  As long as
+#   JAVA_HOME is set (via conda activate openjdk) when install.packages() is
+#   called, rJava will find jni.h and compile correctly without javareconf.
 #
 # WHAT IS INSTALLED:
 #   Core pipeline  : DatabaseConnector, SqlRender, dplyr, ggplot2, pROC,
@@ -25,11 +28,10 @@
 #
 # WHAT IS *NOT* INSTALLED (and why):
 #   rJava      — installed automatically as a hard dependency of DatabaseConnector.
-#                It does not need to be listed here.
+#                It does not need to be listed explicitly here.
 #   RPostgres  — a *suggested* (optional) dependency of DatabaseConnector for
 #                PostgreSQL connections.  We use SQL Server only; installing it
-#                would require libpq system headers that are not available on
-#                PRCC compute nodes.
+#                would require libpq system headers unavailable on PRCC nodes.
 #   ssh        — another *suggested* dependency of DatabaseConnector for tunnel
 #                connections.  Not needed for our direct Kerberos JDBC approach;
 #                installing it would require libssh2 system headers.
@@ -48,46 +50,59 @@ message("Installing R packages for PAD/OLER SSI validation bundle ...")
 message("CRAN mirror: ", getOption("repos")["CRAN"])
 
 # ---------------------------------------------------------------------------
-# Step 1 — Verify JAVA_HOME and reconfigure R's Java integration
+# Step 1 — Verify JAVA_HOME and that jni.h is present
 #
-# R stores the location of the JDK at install time.  When a new JDK is
-# activated via conda (conda activate openjdk), R does not automatically
-# pick it up.  Running `R CMD javareconf` updates R's Java configuration
-# (stored in $(R RHOME)/etc/javaconf) to point at the currently active JDK.
-# This must happen before rJava is compiled; otherwise the compiler cannot
-# find jni.h and rJava installation fails.
+# rJava's configure script compiles a small C program that includes jni.h.
+# If JAVA_HOME is not set, or if the JDK headers are not present under
+# $JAVA_HOME/include/, the compilation will fail immediately.
+#
+# We check for jni.h explicitly here so that the error message is clear
+# rather than buried in compiler output.
 # ---------------------------------------------------------------------------
 java_home <- Sys.getenv("JAVA_HOME")
 
 if (nchar(trimws(java_home)) == 0) {
   stop(
     "JAVA_HOME is not set.\n\n",
-    "Please activate the conda openjdk environment BEFORE running this script:\n",
-    "  conda activate openjdk\n",
-    "  Rscript install_packages.R\n\n",
-    "If you already ran 'conda activate openjdk' and still see this error,\n",
-    "check that the environment is active with: echo $JAVA_HOME"
+    "Do not run install_packages.R directly.\n",
+    "Use the wrapper script instead:\n",
+    "  bash install_r_packages.sh\n\n",
+    "That script activates conda activate openjdk which sets JAVA_HOME."
   )
 }
 
 message("JAVA_HOME: ", java_home)
-message("Running R CMD javareconf to register JDK with R ...")
 
-# R CMD javareconf updates R's internal javaconf so that rJava compilation
-# picks up the correct JDK headers and libraries.
-# The JAVA_HOME= argument makes the reconfiguration explicit even if
-# the shell environment is inherited differently by the subprocess.
-javareconf_cmd <- paste0("R CMD javareconf JAVA_HOME=", shQuote(java_home))
-javareconf_ret <- system(javareconf_cmd)
-
-if (javareconf_ret != 0) {
-  warning(
-    "R CMD javareconf returned a non-zero exit code (", javareconf_ret, ").\n",
-    "rJava compilation may still succeed if JAVA_HOME is set correctly.\n",
-    "Continuing ..."
+# Check that jni.h exists — this is the header rJava needs to compile.
+# It lives under $JAVA_HOME/include/ in standard JDK installations.
+jni_header <- file.path(java_home, "include", "jni.h")
+if (!file.exists(jni_header)) {
+  stop(
+    "JDK header not found: ", jni_header, "\n\n",
+    "The openjdk conda environment may not include JDK development headers.\n",
+    "Verify the environment with:\n",
+    "  conda activate openjdk\n",
+    "  find $JAVA_HOME/include -name 'jni.h'\n\n",
+    "If jni.h is missing, the conda openjdk package may need to be reinstalled:\n",
+    "  conda install -n openjdk conda-forge::openjdk --force-reinstall"
   )
-} else {
-  message("R CMD javareconf completed successfully.")
+}
+
+message("JDK headers found: ", jni_header)
+
+# Also confirm the user library path is writable — packages must go somewhere
+# the current user can write to.  R_LIBS_USER is set by install_r_packages.sh.
+lib_path <- .libPaths()[1]
+message("Package library: ", lib_path)
+if (!file.access(lib_path, mode = 2) == 0) {
+  stop(
+    "R package library is not writable: ", lib_path, "\n\n",
+    "Do not run install_packages.R directly.\n",
+    "Use the wrapper script instead:\n",
+    "  bash install_r_packages.sh\n\n",
+    "That script sets R_LIBS_USER to a user-writable directory before\n",
+    "calling this script."
+  )
 }
 
 # ---------------------------------------------------------------------------
@@ -136,7 +151,8 @@ if (length(missing_packages) == 0) {
   # DatabaseConnector, both of which require unavailable system libraries.
   install.packages(
     missing_packages,
-    dependencies = c("Depends", "Imports", "LinkingTo")
+    dependencies = c("Depends", "Imports", "LinkingTo"),
+    lib          = lib_path
   )
 }
 
@@ -152,11 +168,11 @@ if (length(failed) > 0) {
     "The following package(s) failed to install or load:\n",
     paste("  -", failed, collapse = "\n"), "\n\n",
     "Common causes on PRCC:\n",
-    "  - rJava: JAVA_HOME not set before running this script.\n",
-    "           Fix: exit R, run 'conda activate openjdk', re-run this script.\n",
+    "  - rJava: JAVA_HOME not set or jni.h not found.\n",
+    "           Fix: use 'bash install_r_packages.sh' (not Rscript directly).\n",
     "  - Any package: network issue reaching the Duke CRAN mirror.\n",
-    "           Fix: check VPN / PRCC internet access and retry.\n",
-    "  - DatabaseConnector: rJava failed, so it could not be compiled.\n",
+    "           Fix: check PRCC internet access and retry.\n",
+    "  - DatabaseConnector: rJava failed, so it could not load.\n",
     "           Fix: resolve rJava first (see above), then retry."
   )
 }
@@ -165,8 +181,10 @@ message("")
 message("All ", length(all_packages), " packages installed and verified.")
 message("rJava version: ", as.character(packageVersion("rJava")))
 message("DatabaseConnector version: ", as.character(packageVersion("DatabaseConnector")))
+message("Package library: ", lib_path)
 message("")
 message("Next steps:")
 message("  1. Edit config.R — fill in server, database, and schema names.")
-message("  2. Run: export KRB5CCNAME=FILE:~/krb5cc_java && kinit")
-message("  3. Run: Rscript run_analysis.R")
+message("  2. Ensure Kerberos ticket is valid: klist")
+message("     If expired: export KRB5CCNAME=FILE:~/krb5cc_java && kinit")
+message("  3. Run: conda activate openjdk && Rscript run_analysis.R")
