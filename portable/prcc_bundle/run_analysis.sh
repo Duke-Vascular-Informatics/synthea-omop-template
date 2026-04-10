@@ -54,30 +54,46 @@ fi
 echo "      JAVA_HOME: $JAVA_HOME"
 
 # -----------------------------------------------------------------------------
-# Step 2 — Set LD_LIBRARY_PATH so the dynamic linker can find libjvm.so
+# Step 2 — Find libjvm.so and set LD_LIBRARY_PATH before R starts
 #
-# libjvm.so is at $JAVA_HOME/lib/server/ inside the conda JDK.
-# This must be in LD_LIBRARY_PATH BEFORE Rscript is called — setting it
-# inside R with Sys.setenv() is not sufficient because the OS dynamic
-# linker reads LD_LIBRARY_PATH from the process environment at startup.
+# libjvm.so is the JVM shared library that rJava loads via dyn.load().
+# Its exact location inside the conda JDK varies by platform and conda
+# package version — it may be at:
+#   $JAVA_HOME/lib/server/libjvm.so          (typical Linux JDK layout)
+#   $CONDA_PREFIX/lib/jvm/lib/server/libjvm.so (some conda openjdk packages)
+#   $CONDA_PREFIX/lib/server/libjvm.so
+#
+# We use `find` to locate it dynamically rather than hardcoding the path.
+#
+# IMPORTANT: This MUST be set in the shell before Rscript is called.
+# Setting LD_LIBRARY_PATH inside R with Sys.setenv() is NOT reliable for
+# dyn.load() because the OS dynamic linker on some Linux configurations
+# reads LD_LIBRARY_PATH from the process environment at launch time.
 # -----------------------------------------------------------------------------
-echo "[2/3] Configuring library paths ..."
+echo "[2/3] Locating libjvm.so and configuring library paths ..."
 
-export LD_LIBRARY_PATH="${JAVA_HOME}/lib/server:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+# Search the entire conda env for libjvm.so.
+JVM_LIB=$(find "${CONDA_PREFIX}" -name "libjvm.so" 2>/dev/null | head -1)
 
-echo "      LD_LIBRARY_PATH includes: ${JAVA_HOME}/lib/server"
+if [[ -z "$JVM_LIB" ]]; then
+  # Fallback: search JAVA_HOME directly.
+  JVM_LIB=$(find "${JAVA_HOME}" -name "libjvm.so" 2>/dev/null | head -1)
+fi
 
-# Verify libjvm.so is actually there before launching R.
-JVM_LIB="${JAVA_HOME}/lib/server/libjvm.so"
-if [[ ! -f "$JVM_LIB" ]]; then
+if [[ -z "$JVM_LIB" ]]; then
   echo ""
-  echo "ERROR: libjvm.so not found at expected path: $JVM_LIB"
-  echo "       The conda openjdk environment may be incomplete."
+  echo "ERROR: libjvm.so not found anywhere under CONDA_PREFIX or JAVA_HOME."
+  echo "       CONDA_PREFIX = ${CONDA_PREFIX}"
+  echo "       JAVA_HOME    = ${JAVA_HOME}"
   echo "       Try: conda install -n openjdk conda-forge::openjdk --force-reinstall"
   exit 1
 fi
 
+JVM_LIB_DIR="$(dirname "$JVM_LIB")"
 echo "      libjvm.so found: $JVM_LIB"
+
+export LD_LIBRARY_PATH="${JVM_LIB_DIR}:${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+echo "      LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
 echo ""
 
 # -----------------------------------------------------------------------------

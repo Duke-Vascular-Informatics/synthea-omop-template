@@ -96,7 +96,20 @@ export CPPFLAGS="-I${CONDA_PREFIX}/include -I/usr/include ${CPPFLAGS:-}"
 # both compile time AND at runtime (i.e. when R calls library(rJava)).
 # Without this, rJava compiles successfully but fails to load with:
 #   "libjvm.so: cannot open shared object file: No such file or directory"
-export LD_LIBRARY_PATH="${JAVA_HOME}/lib/server:${CONDA_PREFIX}/lib:${SYS_LIB_PATHS}:${LD_LIBRARY_PATH:-}"
+# Find libjvm.so dynamically — its location varies by conda openjdk version.
+JVM_LIB=$(find "${CONDA_PREFIX}" -name "libjvm.so" 2>/dev/null | head -1)
+if [[ -z "$JVM_LIB" ]]; then
+  JVM_LIB=$(find "${JAVA_HOME}" -name "libjvm.so" 2>/dev/null | head -1)
+fi
+if [[ -z "$JVM_LIB" ]]; then
+  echo "WARNING: libjvm.so not found — rJava may fail to load after install."
+  JVM_LIB_DIR=""
+else
+  JVM_LIB_DIR="$(dirname "$JVM_LIB")"
+  echo "      libjvm.so found: $JVM_LIB"
+fi
+
+export LD_LIBRARY_PATH="${JVM_LIB_DIR:+${JVM_LIB_DIR}:}${CONDA_PREFIX}/lib:${SYS_LIB_PATHS}:${LD_LIBRARY_PATH:-}"
 
 echo "      LDFLAGS set to include system lib paths"
 echo "      LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
