@@ -39,12 +39,24 @@ get_validation_config <- function() {
   jdbc_runtime_dir <- file.path(getwd(), "drivers")
 
   # ---------------------------------------------------------------------------
+  # PRCC custom JDBC wrapper JAR — located in a drivers/ folder one level above
+  # the bundle directory (i.e. ~/drivers/ when the bundle is at ~/prcc_bundle/).
+  # Provided by Duke SOM-HPC; required for Kerberos authentication on PRCC.
+  # ---------------------------------------------------------------------------
+  prcc_jar <- file.path(
+    dirname(normalizePath(getwd(), mustWork = FALSE)),
+    "drivers",
+    "prcc-jdbc-mssql-1.0-SNAPSHOT.jar"
+  )
+
+  # ---------------------------------------------------------------------------
   # SQL Server connection — FILL IN THESE VALUES
   # ---------------------------------------------------------------------------
   list(
     # Java
     java_home        = java_home,
     jdbc_runtime_dir = jdbc_runtime_dir,
+    prcc_jar         = prcc_jar,
 
     # ---- UPDATE THESE -------------------------------------------------------
     # SQL Server hostname (e.g. "dbserver01.dhe.duke.edu")

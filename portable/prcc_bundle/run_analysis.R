@@ -78,7 +78,25 @@ if (has_officer) {
 }
 
 # -----------------------------------------------------------------------------
-# Load heavy packages (after Java is configured by build_connection_details)
+# Configure Java and initialise JVM BEFORE loading DatabaseConnector.
+#
+# configure_java_prcc() must run first because it:
+#   1. Sets options(java.parameters) — only effective before the JVM starts.
+#   2. Writes drivers/jaas.conf for Kerberos login module.
+#   3. Calls rJava::.jinit() to start the JVM explicitly.
+#   4. Adds both JDBC JARs to the classpath via rJava::.jaddClassPath().
+#
+# library(DatabaseConnector) is loaded afterwards so it inherits the running
+# JVM with the correct classpath already in place.
+# -----------------------------------------------------------------------------
+message("\n[run_analysis] Loading config ...")
+config <- get_validation_config()
+
+message("[run_analysis] Configuring Java and initialising JVM ...")
+configure_java_prcc(config)
+
+# -----------------------------------------------------------------------------
+# Load heavy packages (JVM already running — classpath already set)
 # -----------------------------------------------------------------------------
 library(DatabaseConnector)
 library(SqlRender)
@@ -87,12 +105,6 @@ library(ggplot2)
 library(pROC)
 library(PRROC)
 library(readr)
-
-# -----------------------------------------------------------------------------
-# Load configuration
-# -----------------------------------------------------------------------------
-message("\n[run_analysis] Loading config ...")
-config <- get_validation_config()
 
 # Validate required CHANGE_ME fields
 required_fields <- c("server", "database", "spn_host",
