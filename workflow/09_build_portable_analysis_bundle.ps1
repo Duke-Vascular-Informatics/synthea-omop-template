@@ -272,12 +272,17 @@ try {
     #   the date prefix and taking the next available number.
     #
     # WHAT IS INCLUDED IN THE ZIP:
-    #   Everything under portable/prcc_bundle/* is zipped.  This includes:
+    #   Everything under portable/prcc_bundle/* is zipped EXCEPT output/.
+    #   The output/ directory is excluded because:
+    #     - It is created at runtime by run_integer_risk_score_pipeline().
+    #     - Including a pre-existing directory in the zip causes it to be
+    #       extracted with the permissions stored in the zip (often read-only
+    #       on Linux), making it unwritable when the pipeline tries to save CSVs.
+    #   Included items:
     #     - R/            shared analysis modules (just synced in Step 1)
     #     - risk_score/   integer score reference CSVs
     #     - cohorts/      OMOP SQL templates
     #     - drivers/      mssql-jdbc-*.jre11.jar (just synced in Step 2)
-    #     - output/       empty placeholder directory (created by run_analysis.R)
     #     - config.R             PRCC-specific config with CHANGE_ME placeholders
     #     - run_analysis.R       PRCC entry-point script
     #     - connection.R         PRCC Kerberos/JVM setup (inside R/)
@@ -310,7 +315,13 @@ try {
 
     $zipPath = Join-Path $dist $zipName
 
-    Compress-Archive -Path (Join-Path $bundle "*") -DestinationPath $zipPath
+    # Exclude output/ — it is created at runtime by run_integer_risk_score_pipeline().
+    # Including it causes Linux to extract it with read-only permissions, which
+    # prevents the pipeline from writing result CSVs.
+    $zipItems = Get-ChildItem -Path $bundle |
+                Where-Object { $_.Name -ne "output" } |
+                ForEach-Object { $_.FullName }
+    Compress-Archive -Path $zipItems -DestinationPath $zipPath
 
     $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
     Write-Host ""
