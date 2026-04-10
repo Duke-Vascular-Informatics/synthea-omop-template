@@ -14,8 +14,9 @@
 #   bash install_r_packages.sh    # Step 2 — R packages (first time only)
 #
 # SUBSEQUENT SESSIONS (packages already installed):
-#   bash setup_prcc_env.sh        # renew Kerberos ticket + activate env
-#   conda activate openjdk
+#   bash setup_prcc_env.sh                             # renew Kerberos ticket
+#   conda activate openjdk                             # activate env first
+#   export KRB5CCNAME=FILE:~/krb5cc_java && kinit      # then get ticket
 #   bash run_analysis.sh
 #
 # What this script does:
@@ -109,6 +110,8 @@ cat <<SUMMARY
        bash install_r_packages.sh
 
   If packages are already installed, run the analysis:
+       conda activate openjdk
+       export KRB5CCNAME=FILE:~/krb5cc_java && kinit
        bash run_analysis.sh
 
   Before running the analysis, make sure you have:

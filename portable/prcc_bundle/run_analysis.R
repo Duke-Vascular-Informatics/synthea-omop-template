@@ -6,9 +6,9 @@
 # Duke PRCC against institutional OMOP CDM data.
 #
 # PREREQUISITES (run setup_prcc_env.sh first):
-#   1. conda activate openjdk          — Java from conda-forge on PATH
-#   2. export KRB5CCNAME=FILE:~/krb5cc_java && kinit   — Kerberos ticket
-#   3. Edit config.R                   — fill in server, database, schemas
+#   1. conda activate openjdk                          — Java from conda-forge on PATH
+#   2. export KRB5CCNAME=FILE:~/krb5cc_java && kinit   — Kerberos ticket (after activate)
+#   3. Edit config.R                                   — fill in server, database, schemas
 #
 # EXECUTION:
 #   bash run_analysis.sh        ← use this, not Rscript directly
