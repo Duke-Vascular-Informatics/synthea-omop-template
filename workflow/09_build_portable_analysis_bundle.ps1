@@ -18,20 +18,26 @@ param()
 # DEPLOYMENT WORKFLOW
 # -------------------
 # 1. Run this script on the developer workstation to produce a dated zip in
-#    dist/ (e.g. dist/pad_oler_ssi_val_prcc_20240409.zip).
+#    dist/ (e.g. dist/pad_oler_ssi_val_prcc_20260410.zip).
 # 2. Transfer the zip to PRCC:
-#      scp dist/pad_oler_ssi_val_prcc_<date>.zip <netid>@login.rc.duke.edu:~/
-# 3. On PRCC, unzip into your home directory:
-#      unzip pad_oler_ssi_val_prcc_<date>.zip -d ~/prcc_bundle
-# 4. Also place the Duke SOM-HPC custom JDBC wrapper JAR at:
-#      ~/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+#      scp dist/pad_oler_ssi_val_prcc_<date>.zip <netid>@login.rc.duke.edu:/data/pro00119168/
+# 3. On PRCC, unzip keeping the dated zip folder name (do NOT rename it):
+#      cd /data/pro00119168
+#      unzip pad_oler_ssi_val_prcc_<date>.zip -d pad_oler_ssi_val_prcc_<date>
+#    This produces: /data/pro00119168/pad_oler_ssi_val_prcc_<date>/
+# 4. Also place the Duke SOM-HPC custom JDBC wrapper JAR one level above the
+#    bundle, in a drivers/ sibling folder:
+#      /data/pro00119168/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+#    config.R resolves this path automatically as dirname(bundle)/drivers/.
 #    (This JAR is provided by Duke DHTS/SOM-HPC and is NOT included in the
 #    bundle because it is a site-specific file we do not redistribute.)
 # 5. Follow setup_prcc_env.sh and config.R instructions to fill in credentials
 #    and database connection details, then run:
+#      cd /data/pro00119168/pad_oler_ssi_val_prcc_<date>
+#      bash setup_prcc_env.sh
 #      source activate openjdk
 #      export KRB5CCNAME=FILE:~/krb5cc_java && kinit
-#      Rscript ~/prcc_bundle/run_analysis.R
+#      Rscript run_analysis.R
 #
 # WHAT THIS SCRIPT DOES
 # ---------------------

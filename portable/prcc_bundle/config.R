@@ -40,7 +40,9 @@ get_validation_config <- function() {
 
   # ---------------------------------------------------------------------------
   # PRCC custom JDBC wrapper JAR — located in a drivers/ folder one level above
-  # the bundle directory (i.e. ~/drivers/ when the bundle is at ~/prcc_bundle/).
+  # the bundle directory.
+  # Expected path: /data/pro00119168/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+  # (i.e. a sibling 'drivers' folder next to the unzipped bundle folder)
   # Provided by Duke SOM-HPC; required for Kerberos authentication on PRCC.
   # ---------------------------------------------------------------------------
   prcc_jar <- file.path(

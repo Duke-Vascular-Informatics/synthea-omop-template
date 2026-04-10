@@ -100,9 +100,11 @@ echo ""
 # -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
-cat <<'SUMMARY'
+cat <<SUMMARY
 ======================================================================
   Setup complete.
+
+  Bundle location: $BUNDLE_DIR
 
   To run the analysis:
 
@@ -110,7 +112,12 @@ cat <<'SUMMARY'
          server, database, spn_host, vocab_schema,
          cdm_schema, results_schema
 
-    2. In a fresh terminal (with openjdk env still active):
+    2. Confirm the Duke SOM-HPC JDBC wrapper JAR is in place:
+         $(dirname "$BUNDLE_DIR")/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+       (Contact DHTS/SOM-HPC if you do not have this file.)
+
+    3. In a fresh terminal:
+         cd $BUNDLE_DIR
          source activate openjdk
          Rscript run_analysis.R
 
@@ -119,6 +126,6 @@ cat <<'SUMMARY'
          export KRB5CCNAME=FILE:~/krb5cc_java && kinit
 
   Output will be written to:
-         output/risk_score_eval/
+         $BUNDLE_DIR/output/risk_score_eval/
 ======================================================================
 SUMMARY
