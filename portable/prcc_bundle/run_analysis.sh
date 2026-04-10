@@ -54,7 +54,36 @@ fi
 echo "      JAVA_HOME: $JAVA_HOME"
 
 # -----------------------------------------------------------------------------
-# Step 2 — Find libjvm.so and set LD_LIBRARY_PATH before R starts
+# Step 2 — Set Kerberos ticket cache and verify ticket is valid
+#
+# KRB5CCNAME tells the JDBC Kerberos login module where to find the ticket
+# cache file obtained by `kinit`.  It must be set in the shell environment
+# before R starts — the JDBC driver reads it at connection time.
+#
+# Even if setup_prcc_env.sh was run earlier, KRB5CCNAME is only exported
+# for that shell session.  A new terminal window will not have it.  We
+# set it here unconditionally so run_analysis.sh is self-contained.
+# -----------------------------------------------------------------------------
+echo "[2/4] Setting Kerberos ticket cache ..."
+
+export KRB5CCNAME=FILE:~/krb5cc_java
+
+# Verify a valid ticket exists before spending time launching R.
+if ! klist -s 2>/dev/null; then
+  echo ""
+  echo "ERROR: No valid Kerberos ticket found."
+  echo "       Obtain a ticket first, then re-run this script:"
+  echo "         export KRB5CCNAME=FILE:~/krb5cc_java && kinit"
+  exit 1
+fi
+
+EXPIRY=$(klist 2>&1 | awk '/Expires/{found=1; next} found{print $1, $2; exit}')
+echo "      KRB5CCNAME: $KRB5CCNAME"
+echo "      Ticket valid. Expires: ${EXPIRY:-unknown}"
+echo ""
+
+# -----------------------------------------------------------------------------
+# Step 3 — Find libjvm.so and set LD_LIBRARY_PATH before R starts
 #
 # libjvm.so is the JVM shared library that rJava loads via dyn.load().
 # Its exact location inside the conda JDK varies by platform and conda
@@ -70,7 +99,7 @@ echo "      JAVA_HOME: $JAVA_HOME"
 # dyn.load() because the OS dynamic linker on some Linux configurations
 # reads LD_LIBRARY_PATH from the process environment at launch time.
 # -----------------------------------------------------------------------------
-echo "[2/3] Locating libjvm.so and configuring library paths ..."
+echo "[3/4] Locating libjvm.so and configuring library paths ..."
 
 # Search the entire conda env for libjvm.so.
 JVM_LIB=$(find "${CONDA_PREFIX}" -name "libjvm.so" 2>/dev/null | head -1)
@@ -99,7 +128,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 3 — Launch the analysis
 # -----------------------------------------------------------------------------
-echo "[3/3] Launching analysis ..."
+echo "[4/4] Launching analysis ..."
 echo ""
 
 Rscript run_analysis.R
