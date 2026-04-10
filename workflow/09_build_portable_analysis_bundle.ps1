@@ -35,7 +35,7 @@ param()
 #    and database connection details, then run:
 #      cd /data/pro00119168/pad_oler_ssi_val_prcc_<date>
 #      bash setup_prcc_env.sh
-#      source activate openjdk
+#      conda activate openjdk
 #      export KRB5CCNAME=FILE:~/krb5cc_java && kinit
 #      Rscript run_analysis.R
 #

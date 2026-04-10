@@ -14,7 +14,7 @@ get_validation_config <- function() {
 
   # ---------------------------------------------------------------------------
   # Java — resolved automatically from the conda openjdk environment.
-  # Run `source activate openjdk` BEFORE starting R so that JAVA_HOME is set.
+  # Run `conda activate openjdk` BEFORE starting R so that JAVA_HOME is set.
   # ---------------------------------------------------------------------------
   java_home <- Sys.getenv("JAVA_HOME")
   if (nchar(trimws(java_home)) == 0) {
@@ -28,7 +28,7 @@ get_validation_config <- function() {
   if (nchar(trimws(java_home)) == 0) {
     stop(
       "JAVA_HOME is not set and 'java' is not on PATH.\n",
-      "Run: source activate openjdk\n",
+      "Run: conda activate openjdk\n",
       "Then re-launch R from the same shell."
     )
   }

@@ -7,10 +7,10 @@
 #
 # PREREQUISITES — run these in the shell BEFORE launching this script:
 #
-#   source activate openjdk          # puts conda JDK on PATH and sets JAVA_HOME
+#   conda activate openjdk          # puts conda JDK on PATH and sets JAVA_HOME
 #   Rscript install_packages.R       # run from the bundle directory
 #
-# WHY source activate FIRST:
+# WHY conda activate FIRST:
 #   rJava must be compiled against the JDK headers.  If JAVA_HOME is not set
 #   (or points to the wrong JDK) before this script runs, rJava compilation
 #   will fail with "jni.h: No such file or directory".  Activating the conda
@@ -51,7 +51,7 @@ message("CRAN mirror: ", getOption("repos")["CRAN"])
 # Step 1 — Verify JAVA_HOME and reconfigure R's Java integration
 #
 # R stores the location of the JDK at install time.  When a new JDK is
-# activated via conda (source activate openjdk), R does not automatically
+# activated via conda (conda activate openjdk), R does not automatically
 # pick it up.  Running `R CMD javareconf` updates R's Java configuration
 # (stored in $(R RHOME)/etc/javaconf) to point at the currently active JDK.
 # This must happen before rJava is compiled; otherwise the compiler cannot
@@ -63,9 +63,9 @@ if (nchar(trimws(java_home)) == 0) {
   stop(
     "JAVA_HOME is not set.\n\n",
     "Please activate the conda openjdk environment BEFORE running this script:\n",
-    "  source activate openjdk\n",
+    "  conda activate openjdk\n",
     "  Rscript install_packages.R\n\n",
-    "If you already ran 'source activate openjdk' and still see this error,\n",
+    "If you already ran 'conda activate openjdk' and still see this error,\n",
     "check that the environment is active with: echo $JAVA_HOME"
   )
 }
@@ -153,7 +153,7 @@ if (length(failed) > 0) {
     paste("  -", failed, collapse = "\n"), "\n\n",
     "Common causes on PRCC:\n",
     "  - rJava: JAVA_HOME not set before running this script.\n",
-    "           Fix: exit R, run 'source activate openjdk', re-run this script.\n",
+    "           Fix: exit R, run 'conda activate openjdk', re-run this script.\n",
     "  - Any package: network issue reaching the Duke CRAN mirror.\n",
     "           Fix: check VPN / PRCC internet access and retry.\n",
     "  - DatabaseConnector: rJava failed, so it could not be compiled.\n",

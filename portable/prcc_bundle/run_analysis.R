@@ -6,7 +6,7 @@
 # Duke PRCC against institutional OMOP CDM data.
 #
 # PREREQUISITES (run setup_prcc_env.sh first):
-#   1. source activate openjdk          — Java from conda-forge on PATH
+#   1. conda activate openjdk          — Java from conda-forge on PATH
 #   2. export KRB5CCNAME=FILE:~/krb5cc_java && kinit   — Kerberos ticket
 #   3. Edit config.R                   — fill in server, database, schemas
 #

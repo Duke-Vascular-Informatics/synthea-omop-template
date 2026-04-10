@@ -9,7 +9,7 @@
 # After running this script, activate the conda environment and then launch R:
 #
 #   bash setup_prcc_env.sh
-#   source activate openjdk
+#   conda activate openjdk
 #   Rscript run_analysis.R
 #
 # What this script does:
@@ -54,9 +54,7 @@ else
 fi
 
 # Activate to verify Java is reachable.
-# Use `source activate` (not `conda activate`) per Duke PRCC guidance —
-# `conda activate` has issues in non-interactive shells and with sbatch.
-source activate openjdk
+conda activate openjdk
 
 echo "      JAVA_HOME  = ${JAVA_HOME:-<not set>}"
 echo "      java -version: $(java -version 2>&1 | head -1)"
@@ -118,7 +116,7 @@ cat <<SUMMARY
 
     3. In a fresh terminal:
          cd $BUNDLE_DIR
-         source activate openjdk
+         conda activate openjdk
          Rscript run_analysis.R
 
   Kerberos tickets expire after ~10 hours. If you get authentication
