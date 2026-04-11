@@ -10,35 +10,40 @@
 # =============================================================================
 
 # --- Java configuration (must be set before rJava / DatabaseConnector load) ---
-JAVA_HOME <- "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot"
+# JAVA_HOME is read from the environment (set automatically in the dev container).
+# Falls back to the Windows path for legacy Windows runs.
+JAVA_HOME <- Sys.getenv("JAVA_HOME",
+               unset = "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot")
 java_bin  <- file.path(JAVA_HOME, "bin")
+
+if (!dir.exists(JAVA_HOME)) {
+  stop("Configured JAVA_HOME does not exist: ", JAVA_HOME,
+       "\nSet the JAVA_HOME environment variable to your JDK 17 installation.")
+}
 
 Sys.setenv(JAVA_HOME = JAVA_HOME)
 Sys.setenv(PATH = paste(
-  normalizePath(java_bin, winslash = "\\", mustWork = FALSE),
+  normalizePath(java_bin, winslash = "/", mustWork = FALSE),
   Sys.getenv("PATH"), sep = .Platform$path.sep
 ))
 
-# Build java.parameters list. -Djava.library.path must include the JDBC Windows
-# auth DLL directory so the JVM can load it for integrated security.  This must
-# be set before requireNamespace("rJava") starts the JVM.
-auth_dll_dir <- normalizePath(
-  file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64"),
-  winslash = "/", mustWork = FALSE
-)
+# On Windows: add the JDBC auth DLL directory to java.library.path.
+# On Linux/macOS: SQL auth is used; no DLL needed.
 java_params <- paste0("-Djava.home=", normalizePath(JAVA_HOME, winslash = "/", mustWork = FALSE))
-if (dir.exists(auth_dll_dir)) {
-  java_params <- c(java_params, paste0("-Djava.library.path=", auth_dll_dir))
-  Sys.setenv(PATH = paste(
-    normalizePath(auth_dll_dir, winslash = "\\", mustWork = FALSE),
-    Sys.getenv("PATH"), sep = .Platform$path.sep
-  ))
+if (.Platform$OS.type == "windows") {
+  auth_dll_dir <- normalizePath(
+    file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64"),
+    winslash = "/", mustWork = FALSE
+  )
+  if (dir.exists(auth_dll_dir)) {
+    java_params <- c(java_params, paste0("-Djava.library.path=", auth_dll_dir))
+    Sys.setenv(PATH = paste(
+      normalizePath(auth_dll_dir, winslash = "/", mustWork = FALSE),
+      Sys.getenv("PATH"), sep = .Platform$path.sep
+    ))
+  }
 }
 options(java.parameters = java_params)
-
-if (!dir.exists(JAVA_HOME)) {
-  stop("Configured JAVA_HOME does not exist: ", JAVA_HOME)
-}
 
 # --- Activate renv (creates library in project directory) ---------------------
 if (file.exists("renv/activate.R")) source("renv/activate.R")

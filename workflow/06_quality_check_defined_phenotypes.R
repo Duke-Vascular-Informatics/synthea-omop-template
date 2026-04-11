@@ -71,7 +71,8 @@ if (length(args) > 0) {
 
 # Execute in a child R session to isolate script-level options and avoid
 # accidental object leakage from wrapper into quality-check script scope.
-status <- system2(file.path(R.home("bin"), "Rscript.exe"), args = cmd)
+rscript_bin <- if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript"
+status <- system2(file.path(R.home("bin"), rscript_bin), args = cmd)
 if (!identical(status, 0L)) {
   # Preserve fail-fast behavior for downstream workflow automation.
   stop("Quality check failed.")

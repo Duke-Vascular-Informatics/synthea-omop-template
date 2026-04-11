@@ -84,7 +84,13 @@ stage_runtime_jar <- function(jdbc_jar, config) {
 # Verify the Windows Integrated Security auth DLL is present.
 # The DLL ships inside the JDBC zip under enu/auth/x64/ and is needed to
 # authenticate with SQL Server using Windows Kerberos / NTLM.
+# On non-Windows platforms (Linux, macOS) this check is skipped because
+# SQL auth is used instead of Windows Integrated Security.
 check_auth_dll <- function(config) {
+  if (.Platform$OS.type != "windows") {
+    return(invisible(NULL))
+  }
+
   dll_dir <- config$jdbc_auth_dir
   if (!dir.exists(dll_dir)) {
     stop(

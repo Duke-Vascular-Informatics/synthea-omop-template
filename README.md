@@ -14,6 +14,95 @@ self-contained and offline-capable.
 
 CRAN packages are installed from `https://archive.linux.duke.edu/cran/`.
 
+---
+
+## Dev Container Setup (Recommended)
+
+The repo ships a `.devcontainer/` folder that gives you a fully configured Linux R + Java 17 environment inside Docker via VS Code. No local R or Java installation is needed.
+
+### Required folder layout on disk
+
+Clone this repo into an `OMOP_Dev/` parent folder alongside the MSSQL container and vocabulary:
+
+```
+OMOP_Dev/
+  .env                    ← SA password (never commit)
+  docker-compose.yml      ← MSSQL container definition (provided in this repo's parent)
+  omop_vocab/             ← Athena vocabulary download (never commit, see below)
+  pad-oler-ssi-val/       ← this repo
+    .devcontainer/
+```
+
+### Step 1 — Install Docker Desktop and start the MSSQL container
+
+1. Download and install **Docker Desktop**: https://www.docker.com/products/docker-desktop/
+2. Create the `OMOP_Dev/` folder and clone this repo into it:
+   ```bash
+   mkdir OMOP_Dev && cd OMOP_Dev
+   git clone https://github.com/adam-mdmph/pad-oler-ssi-val.git
+   ```
+3. Create `OMOP_Dev/.env` with your SQL Server SA password (min 8 chars, upper + lower + digit + symbol):
+   ```bash
+   echo "MSSQL_SA_PASSWORD=YourStrong@Passw0rd" > .env
+   ```
+4. Copy the `docker-compose.yml` from `pad-oler-ssi-val/` to `OMOP_Dev/` — it defines the Azure SQL Edge container and shared Docker network.
+5. Start the MSSQL container:
+   ```bash
+   docker compose up -d
+   ```
+6. Create the project database (first time only):
+   ```bash
+   docker exec mssql_dev bash -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P "YourStrong@Passw0rd" -C -Q "CREATE DATABASE omop_synth;"'
+   ```
+
+### Step 2 — Download the OMOP Vocabulary from Athena
+
+The OMOP vocabulary is required for ETL but is **not included in this repo** due to licensing restrictions.
+
+1. Go to https://athena.ohdsi.org and create a free account.
+2. Click **Download** and select at minimum: `SNOMED`, `LOINC`, `RxNorm`, `ICD10CM`, `CPT4`.
+3. Download and extract the zip to `OMOP_Dev/omop_vocab/`.
+
+   Required files:
+   ```
+   CONCEPT.csv           CONCEPT_ANCESTOR.csv   CONCEPT_CLASS.csv
+   CONCEPT_RELATIONSHIP.csv  CONCEPT_SYNONYM.csv   DOMAIN.csv
+   DRUG_STRENGTH.csv     RELATIONSHIP.csv        VOCABULARY.csv
+   ```
+
+4. **CPT-4 rebuild (required):** CPT-4 codes are excluded from the Athena download due to AMA licensing. Rebuild them using the script bundled in the vocab folder:
+   - macOS/Linux: `bash omop_vocab/cpt.sh`
+   - Windows: `omop_vocab\cpt.bat`
+
+   This requires a free **UMLS API key**: https://uts.nlm.nih.gov — register, then retrieve your key from your profile page.
+
+### Step 3 — Install VS Code and the Dev Containers extension
+
+1. Install **VS Code**: https://code.visualstudio.com
+2. Open VS Code → Extensions (`Cmd+Shift+X`) → search **Dev Containers** → install **Dev Containers** by Microsoft (`ms-vscode-remote.remote-containers`).
+
+### Step 4 — Open the dev container
+
+1. In VS Code open the `pad-oler-ssi-val/` folder (`File → Open Folder`).
+2. When prompted click **Reopen in Container** — or use `Cmd+Shift+P` → `Dev Containers: Reopen in Container`.
+3. The first build takes ~5 minutes (downloads R base image, installs Java 17, builds renv cache). Subsequent opens are instant.
+
+### Step 5 — One-time environment and vocabulary setup
+
+Open the VS Code terminal (`` Ctrl+` ``) inside the container and run:
+
+```bash
+# Install R packages and verify DB connectivity (~5-10 min, cached after first run)
+Rscript workflow/01_setup_synthea_etl_qc_env.R
+
+# Load OMOP vocabulary into shared omop_vocab schema (~30-60 min, once per SQL Server instance)
+Rscript scripts/setup_omop_vocab_schema.R
+```
+
+After these complete you are ready to run the full workflow (`Steps 1–9`).
+
+---
+
 ## Repository Structure
 
 ```text

@@ -167,7 +167,7 @@ get_target_population <- function(connection, config) {
                   CAST(c.cohort_start_date AS DATE) AS index_date
            FROM @results_schema.@cohort_table c
            WHERE c.cohort_definition_id = @target_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id
   )
@@ -205,7 +205,7 @@ get_outcomes <- function(connection, config) {
              FROM @results_schema.@cohort_table c
              WHERE c.cohort_definition_id = @target_id
            ) t",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     outcome_id = config$outcome_cohort_id,
@@ -408,7 +408,7 @@ query_bmi_component_counts <- function(connection, config, component, component_
                   1 AS event_count
            FROM bmi_values b
            WHERE @bmi_where_clause",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -485,7 +485,7 @@ query_abi_component_counts <- function(connection, config, component, component_
              AND m.value_as_number IS NOT NULL
              AND m.value_as_number < @abi_threshold
            GROUP BY t.subject_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -567,7 +567,7 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
                OR (d.days_supply IS NOT NULL AND d.days_supply > @min_treatment_days)
              )
            GROUP BY t.subject_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -664,7 +664,7 @@ query_operative_time_component_counts <- function(connection, config, component,
                   COUNT(*) AS event_count
            FROM combined_operative_time
            GROUP BY subject_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -729,7 +729,7 @@ query_mfi_component_counts <- function(connection, config, component, component_
            "  FROM %s.%s c\n",
            "  WHERE c.cohort_definition_id = %d\n",
            ")"),
-    config$results_schema, config$cohort_table, as.integer(config$target_cohort_id)
+    results_schema_prefix(config), config$cohort_table, as.integer(config$target_cohort_id)
   )
 
   # Build one CTE per sub-component, joined to target_population
@@ -867,7 +867,7 @@ query_female_component_counts <- function(connection, config, component, compone
              ON p.person_id = t.subject_id
            JOIN concept_ids ci
              ON p.gender_concept_id = ci.concept_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -959,7 +959,7 @@ query_component_counts <- function(connection, config, component, component_conc
            WHERE d.@domain_date_col >= DATEADD(DAY, @lookback_start, t.index_date)
              AND d.@domain_date_col <= DATEADD(DAY, @lookback_end, t.index_date)
            GROUP BY t.subject_id",
-    results_schema = config$results_schema,
+    results_schema = results_schema_prefix(config),
     cohort_table = config$cohort_table,
     target_id = config$target_cohort_id,
     cdm_schema = config$cdm_schema,
@@ -1734,7 +1734,14 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 # files to config$risk_score_output_folder.
 # =============================================================================
 run_integer_risk_score_pipeline <- function(config, connection_details) {
-  dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = FALSE)
+  dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = TRUE)
+  if (!dir.exists(config$risk_score_output_folder)) {
+    stop(
+      "Could not create output directory: ", config$risk_score_output_folder, "\n",
+      "Check that you have write access to: ",
+      dirname(dirname(config$risk_score_output_folder))
+    )
+  }
 
   message("\n=== Integer risk score pipeline ===")
   message("Reading score specification files ...")

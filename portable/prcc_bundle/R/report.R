@@ -1300,7 +1300,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            INNER JOIN dedup_person p ON p.person_id = t.subject_id
            WHERE t.cohort_definition_id = @target_id"
         ),
-        results_schema = config$results_schema,
+        results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
         cdm_schema     = config$cdm_schema,
         target_id      = config$target_cohort_id
@@ -1335,7 +1335,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
                       COALESCE(NULLIF(c.concept_name, ''), 'Unknown')
              ORDER BY n DESC, category"
           ),
-          results_schema = config$results_schema,
+          results_schema = results_schema_prefix(config),
           cohort_table   = config$cohort_table,
           cdm_schema     = config$cdm_schema,
           concept_col    = concept_col,
@@ -1418,7 +1418,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            FROM target t
            LEFT JOIN any_specific sp ON sp.person_id = t.subject_id
            WHERE sp.person_id IS NULL",
-        results_schema = config$results_schema,
+        results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
         cdm_schema     = config$cdm_schema,
         target_id      = config$target_cohort_id
@@ -1482,7 +1482,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
          INNER JOIN @cdm_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
           AND ca.ancestor_concept_id   = 4166196",
-        results_schema = config$results_schema,
+        results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
         cdm_schema     = config$cdm_schema,
         target_id      = config$target_cohort_id
@@ -2141,23 +2141,21 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       sql_fringe <- SqlRender::render(
         "SELECT
            p.person_id,
-           COALESCE(CONCAT(RTRIM(pat.FIRST), ' ', RTRIM(pat.LAST)), 'Unknown') AS patient_name,
            p.person_source_value                                                AS mrn,
            CAST(po.procedure_date AS DATE)                                      AS procedure_date,
            COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name
          FROM @cdm_schema.person p
-         LEFT JOIN synthea.patients pat
-           ON pat.id = p.person_source_value
          JOIN @cdm_schema.procedure_occurrence po
            ON po.person_id = p.person_id
-         JOIN @cdm_schema.concept_ancestor ca
+         JOIN @vocab_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
           AND ca.ancestor_concept_id   = 4159960
-         LEFT JOIN @cdm_schema.concept c
+         LEFT JOIN @vocab_schema.concept c
            ON c.concept_id = po.procedure_concept_id
          WHERE p.person_id IN (@id_list)",
-        cdm_schema = config$cdm_schema,
-        id_list    = id_str
+        cdm_schema   = config$cdm_schema,
+        vocab_schema = config$vocab_schema,
+        id_list      = id_str
       )
 
       raw <- DatabaseConnector::querySql(
@@ -2185,11 +2183,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       fp_df <- fp_df[order(fp_df$predicted_risk_lookup, decreasing = TRUE), ]
 
       fringe_tbl <- rbind(fn_df, fp_df)[,
-        c("group", "patient_name", "mrn",
+        c("group", "mrn",
           "procedure_date", "procedure_name", "predicted_risk_lookup")]
 
       names(fringe_tbl) <- c(
-        "Group", "Patient Name", "MRN",
+        "Group", "MRN",
         "Procedure Date", "Procedure", "Predicted Risk"
       )
       fringe_tbl[["Predicted Risk"]] <- round(as.numeric(fringe_tbl[["Predicted Risk"]]), 3)

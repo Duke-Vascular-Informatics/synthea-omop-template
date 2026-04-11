@@ -44,13 +44,11 @@ prepare_txlog_for_bulk_etl <- function(cfg,
   connection_details <- DatabaseConnector::createConnectionDetails(
     dbms     = cfg$dbms,
     server   = cfg$server,
-    user     = "",
-    password = "",
+    user     = cfg$user,
+    password = cfg$password,
     pathToDriver = cfg$jdbc_runtime_dir,
     extraSettings = paste0(
       "database=", cfg$database,
-      ";integratedSecurity=true",
-      ";authenticationScheme=NativeAuthentication",
       ";trustServerCertificate=true",
       ";portNumber=", cfg$sql_server_port
     )
@@ -205,13 +203,11 @@ prepare_tempdb_for_era_etl <- function(cfg,
   connection_details <- DatabaseConnector::createConnectionDetails(
     dbms     = cfg$dbms,
     server   = cfg$server,
-    user     = "",
-    password = "",
+    user     = cfg$user,
+    password = cfg$password,
     pathToDriver = cfg$jdbc_runtime_dir,
     extraSettings = paste0(
       "database=master",           # ALTER DATABASE tempdb requires master context
-      ";integratedSecurity=true",
-      ";authenticationScheme=NativeAuthentication",
       ";trustServerCertificate=true",
       ";portNumber=", cfg$sql_server_port
     )
@@ -314,13 +310,11 @@ create_vocab_synonyms <- function(cfg, target_schema, shared_vocab_schema = "omo
   connection_details <- DatabaseConnector::createConnectionDetails(
     dbms     = cfg$dbms,
     server   = cfg$server,
-    user     = "",
-    password = "",
+    user     = cfg$user,
+    password = cfg$password,
     pathToDriver = cfg$jdbc_runtime_dir,
     extraSettings = paste0(
       "database=", cfg$database,
-      ";integratedSecurity=true",
-      ";authenticationScheme=NativeAuthentication",
       ";trustServerCertificate=true",
       ";portNumber=", cfg$sql_server_port
     )

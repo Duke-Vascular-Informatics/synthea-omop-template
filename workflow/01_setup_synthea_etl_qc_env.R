@@ -43,6 +43,35 @@ source("R/drivers.R")
 source("R/connection.R")
 
 # -----------------------------------------------------------------------------
+# Chunk 2b: Clone synthea-pad repo into external/synthea if not already present.
+# Purpose:
+# - Ensure the Synthea checkout required by Steps 3 and 4 is available locally.
+# - Safe to run repeatedly: skips clone if external/synthea already exists and
+#   is a valid git repository.
+# Outcome:
+# - external/synthea contains the synthea-pad repo.
+# -----------------------------------------------------------------------------
+
+synthea_dir <- file.path(getwd(), "external", "synthea")
+synthea_git <- file.path(synthea_dir, ".git")
+synthea_repo_url <- "https://github.com/adam-mdmph/synthea-pad.git"
+
+if (dir.exists(synthea_git)) {
+  message("Synthea repo already present at: ", synthea_dir, " — skipping clone.")
+} else {
+  if (dir.exists(synthea_dir)) {
+    message("external/synthea exists but is not a git repo — removing and re-cloning ...")
+    unlink(synthea_dir, recursive = TRUE)
+  }
+  message("Cloning synthea-pad into external/synthea ...")
+  ret <- system2("git", c("clone", synthea_repo_url, synthea_dir), stdout = TRUE, stderr = TRUE)
+  if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
+    stop("git clone failed:\n", paste(ret, collapse = "\n"))
+  }
+  message("Synthea repo cloned to: ", synthea_dir)
+}
+
+# -----------------------------------------------------------------------------
 # Chunk 3: Ensure DatabaseConnector is available.
 # Purpose:
 # - Guard against edge cases where setup scripts complete but

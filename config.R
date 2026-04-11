@@ -9,8 +9,11 @@ get_validation_config <- function() {
   # ---------------------------------------------------------------------------
   # JDBC / Java setup – fully self-contained under this project's drivers/ folder.
   # On first run, R/drivers.R will download and extract the JDBC bundle here.
+  # java_home is read from JAVA_HOME env var (set automatically in the dev
+  # container); falls back to the Windows path for legacy Windows runs.
   # ---------------------------------------------------------------------------
-  java_home        <- "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot"
+  java_home        <- Sys.getenv("JAVA_HOME",
+                        unset = "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot")
   sql_server_jdbc_version <- "13.2.1"
   path_to_driver   <- file.path(getwd(), "drivers")
   jdbc_home        <- file.path(path_to_driver, "sqljdbc_13.2", "enu")
@@ -33,8 +36,12 @@ get_validation_config <- function() {
     jdbc_auth_dir           = file.path(jdbc_home, "auth", "x64"),
 
     # SQL Server connection
+    # MSSQL_HOST defaults to localhost (macOS/Windows direct); set to mssql_dev
+    # inside the dev container via the MSSQL_HOST environment variable.
     dbms             = "sql server",
-    server           = "localhost",
+    server           = Sys.getenv("MSSQL_HOST", unset = "localhost"),
+    user             = "SA",
+    password         = Sys.getenv("MSSQL_SA_PASSWORD", unset = "P@ssw0rd!"),
     database         = "omop_synth",
     sql_server_port  = 1433L,
 

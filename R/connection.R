@@ -5,29 +5,29 @@
 # not depend on any external project.
 # =============================================================================
 
-# Set Java environment variables and load the JDBC auth DLL required for
-# Windows Integrated Security (Kerberos / NTLM).
+# Set Java environment variables.
+# On Windows: also loads the JDBC auth DLL for Windows Integrated Security.
+# On Linux/macOS: just sets JAVA_HOME and the jar folder; SQL auth is used.
 configure_java <- function(config) {
   if (!dir.exists(config$java_home)) {
     stop("JAVA_HOME directory not found: ", config$java_home,
-         "\nUpdate java_home in config.R to match your JDK installation.")
+         "\nUpdate java_home in config.R or set the JAVA_HOME environment variable.")
   }
 
   Sys.setenv(JAVA_HOME = config$java_home)
   Sys.setenv(PATH = paste(
-    normalizePath(config$java_bin, winslash = "\\", mustWork = FALSE),
+    normalizePath(config$java_bin, winslash = "/", mustWork = FALSE),
     Sys.getenv("PATH"),
     sep = .Platform$path.sep
   ))
 
-  # Point Java to the JDBC auth DLL folder for integrated-security connections.
-  if (dir.exists(config$jdbc_auth_dir)) {
+  if (.Platform$OS.type == "windows" && dir.exists(config$jdbc_auth_dir)) {
     options(java.parameters = paste0(
       "-Djava.library.path=",
       normalizePath(config$jdbc_auth_dir, winslash = "/")
     ))
     Sys.setenv(PATH = paste(
-      normalizePath(config$jdbc_auth_dir, winslash = "\\"),
+      normalizePath(config$jdbc_auth_dir, winslash = "/"),
       Sys.getenv("PATH"),
       sep = .Platform$path.sep
     ))
@@ -44,8 +44,8 @@ configure_java <- function(config) {
   invisible(config)
 }
 
-# Build a DatabaseConnector connectionDetails object using Windows Integrated
-# Security (no username / password embedded in the script).
+# Build a DatabaseConnector connectionDetails object.
+# Uses SQL auth (SA user + password from config) on all platforms.
 build_connection_details <- function(config) {
   # Download and stage the JDBC bundle on first run; no-op on subsequent runs.
   ensure_jdbc_bundle(config)
@@ -54,15 +54,15 @@ build_connection_details <- function(config) {
   DatabaseConnector::createConnectionDetails(
     dbms         = config$dbms,
     server       = config$server,
-    user         = "",
-    password     = "",
+    user         = config$user,
+    password     = config$password,
     pathToDriver = config$jdbc_runtime_dir,
     extraSettings = paste0(
       "database=", config$database,
-      ";integratedSecurity=true",
-      ";authenticationScheme=NativeAuthentication",
       ";trustServerCertificate=true",
-      ";portNumber=", config$sql_server_port
+      ";portNumber=", config$sql_server_port,
+      ";connectRetryCount=3",
+      ";connectRetryInterval=10"
     )
   )
 }
@@ -85,6 +85,8 @@ is_transient_db_error <- function(err_msg) {
     "communications link failure",
     "broken pipe",
     "connection closed",
+    "connection is broken",
+    "recovery is not possible",
     "socket",
     "io exception",
     "cannot open database",

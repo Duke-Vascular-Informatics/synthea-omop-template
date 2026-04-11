@@ -14,22 +14,37 @@
 
 # JVM + JDBC setup must happen before DatabaseConnector first touches Java.
 local({
-  java_home <- "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot"
-  jdbc_auth_dir <- file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64")
+  java_home <- Sys.getenv(
+    "JAVA_HOME",
+    unset = "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot"
+  )
   jdbc_rt_dir <- file.path(getwd(), "drivers", "jdbc-runtime")
 
   Sys.setenv(JAVA_HOME = java_home)
   Sys.setenv(PATH = paste(
-    normalizePath(file.path(java_home, "bin"), winslash = "\\", mustWork = FALSE),
-    normalizePath(jdbc_auth_dir, winslash = "\\", mustWork = FALSE),
+    normalizePath(file.path(java_home, "bin"), winslash = "/", mustWork = FALSE),
     Sys.getenv("PATH"),
     sep = .Platform$path.sep
   ))
   options(java.parameters = paste0(
-    "-Djava.library.path=",
-    normalizePath(jdbc_auth_dir, winslash = "/", mustWork = FALSE)
+    "-Djava.home=",
+    normalizePath(java_home, winslash = "/", mustWork = FALSE)
   ))
   Sys.setenv(DATABASECONNECTOR_JAR_FOLDER = jdbc_rt_dir)
+
+  # Windows only: add JDBC auth DLL directory to PATH and java.library.path
+  if (.Platform$OS.type == "windows") {
+    jdbc_auth_dir <- file.path(getwd(), "drivers", "sqljdbc_13.2", "enu", "auth", "x64")
+    Sys.setenv(PATH = paste(
+      normalizePath(jdbc_auth_dir, winslash = "\\", mustWork = FALSE),
+      Sys.getenv("PATH"),
+      sep = .Platform$path.sep
+    ))
+    options(java.parameters = paste0(
+      "-Djava.library.path=",
+      normalizePath(jdbc_auth_dir, winslash = "/", mustWork = FALSE)
+    ))
+  }
 })
 
 source("renv/activate.R")

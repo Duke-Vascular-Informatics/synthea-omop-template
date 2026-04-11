@@ -92,7 +92,8 @@ required <- c(
   "officer",                # Word document assembly
   "flextable",              # Table formatting inside Word report
   "pROC",                   # AUROC computation
-  "PRROC"                   # AUPRC computation
+  "PRROC",                  # AUPRC computation
+  "writexl"                 # Excel export of fringe cases
 )
 
 missing_pkgs <- required[

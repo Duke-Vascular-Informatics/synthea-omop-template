@@ -29,6 +29,20 @@ drivers/etl-checkpoints/
 *.tmp
 *.log
 
+# OMOP Vocabulary CSV files — not licensed for redistribution.
+# The vocab lives outside the repo in OMOP_Dev/omop_vocab/ but exclude
+# any accidental copies or symlinks within the repo too.
+omop_vocab/
+**/CONCEPT.csv
+**/CONCEPT_ANCESTOR.csv
+**/CONCEPT_CLASS.csv
+**/CONCEPT_RELATIONSHIP.csv
+**/CONCEPT_SYNONYM.csv
+**/DOMAIN.csv
+**/DRUG_STRENGTH.csv
+**/RELATIONSHIP.csv
+**/VOCABULARY.csv
+
 # Generated error reports from DatabaseConnector
 errorReportSql.txt
 errorReportR.txt
@@ -36,6 +50,9 @@ errorReportR.txt
 # JAAS config — generated at runtime by R/connection.R; contains local paths
 jaas.conf
 portable/prcc_bundle/drivers/jaas.conf
+
+# External repos auto-cloned by Step 1 (synthea-pad) — not ours to commit
+external/
 
 # Generated portable bundle archives
 dist/*.zip

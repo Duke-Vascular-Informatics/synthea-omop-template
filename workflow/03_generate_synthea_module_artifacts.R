@@ -23,12 +23,12 @@
 #
 #   2. CONDITION / PROCEDURE CODES
 #      - PAD          : SNOMED 399957001  "Peripheral arterial occlusive disease"
-#      - Claudication : SNOMED 266261006  "Intermittent claudication"
+#      - Claudication : SNOMED 63491006   "Intermittent claudication"
 #      - Diabetes T2  : SNOMED 44054006   "Diabetes mellitus type 2"
 #      - Hypertension : SNOMED 38341003   "Hypertensive disorder, systemic arterial"
 #      - COPD         : SNOMED 13645005   "Chronic obstructive lung disease"
 #      - CHF          : SNOMED 84114007   "Heart failure"
-#      - Impaired mob.: SNOMED 129839007  "Impaired mobility"
+#      - Impaired mob.: SNOMED 82971005   "Impaired mobility"
 #      - Index proc.  : SNOMED 232723009  "Bypass of femoral artery to popliteal artery"
 #      - SSI          : SNOMED 76844004   "Infection of surgical wound"
 #      - Debridement  : SNOMED 118294005  "Debridement"
@@ -38,7 +38,7 @@
 #      the module and re-run this step.
 #
 #   3. OBSERVATION / MEASUREMENT CODES
-#      - ABI           : LOINC  59574-4   "Ankle-brachial index" (range 0.30–0.85)
+#      - ABI           : LOINC  77194-9   "Ankle-brachial index" (range 0.30–0.85)
 #      - Smoking status: LOINC  72166-2   "Tobacco smoking status"
 #        - Current smoker value : SNOMED 449868002
 #        - Never smoked value   : SNOMED 266919005
@@ -47,7 +47,7 @@
 #      - Weight        : LOINC  29463-7   "Body weight"
 #      - Wound culture : LOINC  6463-4    "Bacteria identified in Wound by Culture"
 #        - Organism value       : SNOMED 112283007 "Escherichia coli"
-#      - Urgency flag  : SNOMED 25876001  "Emergency operation"
+#      - Urgency flag  : SNOMED 73994005  "Emergency operation"
 #      Confirm value ranges and vocabulary mappings are consistent with your CDM.
 #
 #   4. MEDICATION CODES
@@ -274,12 +274,12 @@ required_concepts <- data.frame(
   code = c(
     "112828007", "16589005", "405482000", "47575002", "433202001",
     "39156-5", "8302-2", "29463-7",
-    "25876001",
-    "59574-4",
+    "73994005",
+    "77194-9",
     "112828007", "2673",
-    "44054006", "13645005", "84114007", "38341003", "129839007",
+    "44054006", "13645005", "84114007", "38341003", "82971005",
     "83185-9", "83186-7",
-    "266261006",
+    "63491006",
     "72166-2"
   )
 )
@@ -380,7 +380,8 @@ if (n_missing == 0L) {
 # -----------------------------------------------------------------------------
 # Regenerate the HTML diagram viewer from the module JSON.
 args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, "synthea/modules/pad_ssi.diagram.html")
-status <- system2(file.path(R.home("bin"), "Rscript.exe"), args = args)
+rscript_bin <- if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript"
+status <- system2(file.path(R.home("bin"), rscript_bin), args = args)
 if (!identical(status, 0L)) {
   stop("Failed to generate Synthea diagram HTML.")
 }

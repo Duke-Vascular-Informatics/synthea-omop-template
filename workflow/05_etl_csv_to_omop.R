@@ -204,13 +204,11 @@ if (isTRUE(target_cdm_schema_auto_increment)) {
     connection_details <- DatabaseConnector::createConnectionDetails(
       dbms = cfg$dbms,
       server = cfg$server,
-      user = "",
-      password = "",
+      user = cfg$user,
+      password = cfg$password,
       pathToDriver = cfg$jdbc_runtime_dir,
       extraSettings = paste0(
         "database=", cfg$database,
-        ";integratedSecurity=true",
-        ";authenticationScheme=NativeAuthentication",
         ";trustServerCertificate=true",
         ";portNumber=", cfg$sql_server_port
       )

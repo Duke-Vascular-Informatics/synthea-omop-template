@@ -4,6 +4,7 @@ This folder provides a consistent, reproducible sequence that maps directly to t
 
 1. `01_setup_synthea_etl_qc_env.R`
    - Install packages and initialize environment for Synthea generation, ETL, and data quality checks.
+   - **Automatically clones the [synthea-pad](https://github.com/adam-mdmph/synthea-pad) repo into `external/synthea/`** if not already present. No manual setup required.
 
 2. `02_define_omop_cohort_outcome_covariates.R`
    - Validate cohort/outcome SQL and covariate definition artifacts (OMOP concept-based files).
@@ -11,8 +12,9 @@ This folder provides a consistent, reproducible sequence that maps directly to t
 3. `03_generate_synthea_module_artifacts.R`
    - Validate the disease-specific Synthea module and regenerate Mermaid diagram artifacts.
 
-4. `04_generate_synthea_csv.ps1`
+4. `04_generate_synthea_csv.ps1` (Windows) / `04_generate_synthea_csv.sh` (Linux/macOS)
    - Generate Synthea synthetic patients in CSV format using the PAD/SSI module.
+   - Requires `external/synthea/` to be present (cloned automatically by Step 1).
 
 5. `05_etl_csv_to_omop.R`
    - ETL Synthea CSV output to OMOP CDM.
@@ -27,8 +29,13 @@ This folder provides a consistent, reproducible sequence that maps directly to t
 8. `08_run_analysis_and_manuscript_report.R`
    - Run analysis and generate manuscript-format Word report.
 
-9. `09_build_portable_analysis_bundle.ps1`
-   - Build portable analysis code bundle for OMOP-structured data reuse.
+9. `09_build_portable_analysis_bundle.sh` (Linux/macOS dev container) / `09_build_portable_analysis_bundle.ps1` (Windows legacy)
+   - Syncs the latest analysis code into `portable/prcc_bundle/`, then pushes it to the
+     `prcc-bundle` branch at `git@gitlab.dhe.duke.edu:apj20/pad-oler-ssi-val.git`.
+   - PRCC can then deploy with: `git clone --branch prcc-bundle <remote>`
+   - A dated zip fallback is also written to `dist/` for offline transfers.
+   - **Prerequisites:** set `PRCC_GITLAB_REMOTE`, `PRCC_GIT_USER_NAME`, `PRCC_GIT_USER_EMAIL`
+     in `OMOP_Dev/.env`. SSH key for `gitlab.dhe.duke.edu` must be loaded in your SSH agent.
 
 ## Standalone step execution
 
@@ -50,9 +57,12 @@ Rscript workflow/06_quality_check_defined_phenotypes.R --run_name=padssi-csv-202
 Rscript workflow/07_setup_analysis_env.R
 Rscript workflow/08_run_analysis_and_manuscript_report.R
 
-# PowerShell-based steps
+# PowerShell-based steps (Windows)
 powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
-powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
+
+# Bash equivalents (Linux/macOS dev container)
+bash workflow/04_generate_synthea_csv.sh
+bash workflow/09_build_portable_analysis_bundle.sh
 ```
 
 ## Step parameters
@@ -75,7 +85,6 @@ Rscript workflow/05_etl_csv_to_omop.R
 Rscript workflow/06_quality_check_defined_phenotypes.R
 Rscript workflow/07_setup_analysis_env.R
 Rscript workflow/08_run_analysis_and_manuscript_report.R
-powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
 ```
 
 Legacy one-off entrypoint scripts were archived under `scripts/archive/legacy_entrypoints/` and are no longer the supported path.
