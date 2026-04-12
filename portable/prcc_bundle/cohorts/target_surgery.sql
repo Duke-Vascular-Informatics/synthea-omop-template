@@ -19,10 +19,29 @@
 --   @study_start_date       Earliest admissible visit start date
 --   @study_end_date         Latest admissible visit start date
 --
--- NOTE: Concept ancestors used in this query:
---   4159960  = Procedure on blood vessel of lower extremity (procedure inclusion)
---              Covers descendants: 4012936 (fem-pop bypass), 4166196 (femo-tibial
---              bypass), 4231680 (aorto-femoral bypass), 4040974 (fem endarterectomy)
+-- NOTE: Concept ancestors used in this query (both required in IN clause):
+--   4236706  = Arterial bypass of lower limb artery (bypass procedures)
+--              SNOMED-CT; concept_class_id = 'Procedure'; standard_concept = 'S'
+--              Captures lower-extremity arterial bypass subtypes:
+--                4012936  Femoral-popliteal artery bypass graft
+--                4166196  Femorotibial vascular bypass, anterior or posterior
+--                4231680  Aorto-femoral arterial bypass
+--              Also includes axillary-femoral bypass variants (clinically valid —
+--              these revascularize the lower limb from an axillary inflow).
+--              Zero imaging descendants.
+--   4225375  = Endarterectomy of lower limb artery (endarterectomy procedures)
+--              SNOMED-CT; concept_class_id = 'Procedure'; standard_concept = 'S'
+--              Captures lower-extremity endarterectomy subtypes:
+--                4040974  Femoral endarterectomy
+--              Zero imaging descendants. Lower limb scoped.
+--
+--              Rejected alternatives:
+--                4159960 (Procedure on blood vessel of lower extremity): too broad —
+--                  includes imaging studies, venous procedures.
+--                4331725 (Operative procedure on artery of extremity): includes upper
+--                  extremity arterial procedures (brachial, radial, axillary).
+--                1242722 (Operation on femoral artery): includes 36 imaging/interventional
+--                  descendants (fluoroscopy-guided stents, thrombolysis, angioplasty).
 --   4334801  = Surgical site infection (SSI washout exclusion — SNOMED-CT 433202001)
 --              Covers: postoperative wound infection, superficial/deep/organ-space SSI
 --
@@ -30,7 +49,7 @@
 --   in the current OMOP vocabulary and have been replaced by 4334801.
 -- Verify in your omop_vocab.concept table with:
 --   SELECT concept_id, concept_name FROM omop_vocab.concept
---   WHERE concept_id IN (4159960, 4334801);
+--   WHERE concept_id IN (4236706, 4225375, 4334801);
 -- =============================================================================
 
 DELETE FROM @target_database_schema.@target_cohort_table
@@ -90,17 +109,21 @@ FROM (
           vo.visit_start_date
         ) >= 18
 
-    -- Open lower extremity revascularization during the qualifying visit.
-    -- Uses concept_ancestor rollup under 4159960 (Open lower extremity
-    -- revascularization) to match all four procedure subtypes in the module
-    -- (femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass,
-    -- femoral endarterectomy) via their standard OMOP concept IDs.
+    -- Arterial surgery of the lower extremity during the qualifying visit.
+    -- Uses concept_ancestor rollup under two lower-limb-specific arterial ancestors:
+    --   4236706 = Arterial bypass of lower limb artery (bypass subtypes)
+    --   4225375 = Endarterectomy of lower limb artery (endarterectomy subtypes)
+    -- Together these match all four procedure subtypes in the PAD module:
+    --   femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass,
+    --   femoral endarterectomy.
+    -- Both ancestors have zero imaging descendants and are explicitly lower limb
+    -- and artery scoped, excluding venous, upper extremity, and diagnostic procedures.
     AND EXISTS (
       SELECT 1
       FROM @cdm_database_schema.procedure_occurrence po
       INNER JOIN @cdm_database_schema.concept_ancestor ca
         ON ca.descendant_concept_id = po.procedure_concept_id
-      WHERE ca.ancestor_concept_id = 4159960
+      WHERE ca.ancestor_concept_id IN (4236706, 4225375)
         AND po.person_id    = vo.person_id
         AND po.procedure_date BETWEEN vo.visit_start_date
                                   AND ISNULL(vo.visit_end_date, vo.visit_start_date)

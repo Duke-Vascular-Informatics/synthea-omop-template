@@ -119,13 +119,15 @@ source("R/cohort_demographics.R")
         "No lookback required; demographic attribute."
       ),
       paste0(
-        "OMOP measurements: weight concept 3025315 and height concept 3036277. ",
-        "BMI computed as weight (kg) / height (m)². ",
-        "Flagged when 25 ≤ BMI < 30."
+        "BMI resolved with three-tier priority: ",
+        "(1) direct BMI measurement (LOINC 3038553, 36304833); ",
+        "(2) computed from weight (LOINC 3025315, 3013762, 3011054, 3026600) ",
+        "and height (LOINC 3036277, 3023540, 3015514) as weight_kg / height_m\u00b2. ",
+        "Flagged when 25 \u2264 BMI < 30."
       ),
       paste0(
-        "Same weight (3025315) and height (3036277) measurements as Overweight. ",
-        "Flagged when BMI ≥ 30. Mutually exclusive with Overweight."
+        "Same BMI resolution as Overweight (direct preferred, weight/height fallback). ",
+        "Flagged when BMI \u2265 30. Mutually exclusive with Overweight."
       ),
       paste0(
         "Concepts 4158569 (Emergency procedure) and 4250892 (Urgent procedure), ",
@@ -528,15 +530,21 @@ source("R/cohort_demographics.R")
     ),
     "Overweight (BMI 25 to <30)" = list(
       points = "+1",
-      definition = "BMI between 25 and <30 kg/m²",
-      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
-      derivation = "BMI computed from weight and height measurements; 25 ≤ BMI < 30"
+      definition = "BMI between 25 and <30 kg/m\u00b2",
+      omop_concept = paste0("Direct BMI: 3038553, 36304833; ",
+                            "Weight: 3025315, 3013762, 3011054, 3026600; ",
+                            "Height: 3036277, 3023540, 3015514"),
+      derivation = paste0("Direct BMI measurement preferred (LOINC 39156-5 / 59574-4); ",
+                          "computed from weight/height as fallback. 25 \u2264 BMI < 30.")
     ),
-    "Obese (BMI ≥30)" = list(
+    "Obese (BMI \u226530)" = list(
       points = "+3",
-      definition = "BMI ≥ 30 kg/m²",
-      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
-      derivation = "BMI computed from weight and height measurements; BMI ≥ 30"
+      definition = "BMI \u2265 30 kg/m\u00b2",
+      omop_concept = paste0("Direct BMI: 3038553, 36304833; ",
+                            "Weight: 3025315, 3013762, 3011054, 3026600; ",
+                            "Height: 3036277, 3023540, 3015514"),
+      derivation = paste0("Direct BMI measurement preferred (LOINC 39156-5 / 59574-4); ",
+                          "computed from weight/height as fallback. BMI \u2265 30.")
     ),
     "Urgent / emergency case" = list(
       points = "+1",
@@ -782,7 +790,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "The PAD SSI integer risk score comprises ten pre-operative and intra-operative components ",
       "(Table 2). Each component is mapped to one or more OMOP standard concept IDs with descendant ",
       "expansion via the concept_ancestor table where applicable. Components include: female sex ",
-      "(concept 8532); overweight (BMI 25 to <30, concepts 3025315 and 3036277); obesity (BMI ≥30); ",
+      "(concept 8532); overweight (BMI 25–<30) and obesity (BMI \u226530), each resolved from direct BMI measurement (LOINC 3038553) or computed from weight and height (LOINC 3025315 + 3036277, with additional EHR variants); ",
       "urgent or emergency procedure (concepts 4158569, 4250892); low ankle-brachial index ≤0.35 ",
       "(concepts 40489833, 46237026); prior lower-extremity revascularization within 10 years ",
       "(concepts 4236706 + 4225375 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
@@ -2246,7 +2254,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            p.person_id,
            p.person_source_value                                                AS mrn,
            CAST(po.procedure_date AS DATE)                                      AS procedure_date,
-           COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name
+           COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name,
+           YEAR(CAST(po.procedure_date AS DATE)) - p.year_of_birth             AS age_at_procedure
          FROM @cdm_schema.person p
          JOIN @cdm_schema.procedure_occurrence po
            ON po.person_id = p.person_id
@@ -2271,8 +2280,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       raw <- raw[order(raw$person_id, raw$procedure_date), ]
       raw <- raw[!duplicated(raw$person_id), ]
 
+      # Merge outcome + predicted risk from person_level
       pl_sub <- person_level[, c("subject_id", "predicted_risk_lookup", "outcome")]
       raw    <- merge(raw, pl_sub, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
+
+      # Merge individual score component columns from person_level
+      score_cols <- grep("^score_", names(person_level), value = TRUE)
+      if (length(score_cols) > 0) {
+        pl_scores <- person_level[, c("subject_id", score_cols), drop = FALSE]
+        raw <- merge(raw, pl_scores, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
+      }
 
       make_group <- function(ids, label) {
         sub        <- raw[raw$person_id %in% ids, ]
@@ -2285,29 +2302,125 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       fn_df <- fn_df[order(fn_df$predicted_risk_lookup), ]
       fp_df <- fp_df[order(fp_df$predicted_risk_lookup, decreasing = TRUE), ]
 
-      fringe_tbl <- rbind(fn_df, fp_df)[,
-        c("group", "mrn",
-          "procedure_date", "procedure_name", "predicted_risk_lookup")]
+      # Build display-friendly column names for score components
+      score_display_names <- c(
+        score_female                 = "Female Sex (pts)",
+        score_overweight             = "Overweight BMI 25-<30 (pts)",
+        score_obese                  = "Obese BMI >=30 (pts)",
+        score_urgnt                  = "Urgent Case (pts)",
+        score_abi_35                 = "ABI <=0.35 (pts)",
+        score_prrevasc_any           = "Prior Revascularization (pts)",
+        score_prolong_abx            = "Prolonged Antibiotics (pts)",
+        score_optime4h               = "Op Time >=4h (pts)",
+        score_mFI_high               = "High mFI (pts)",
+        score_indicationClaudication = "Indication: Claudication (pts)"
+      )
+      present_score_cols <- score_cols[score_cols %in% names(score_display_names)]
+      score_labels       <- unname(score_display_names[present_score_cols])
+
+      combined <- rbind(fn_df, fp_df)
+      fringe_tbl <- combined[,
+        c("group", "mrn", "age_at_procedure",
+          "procedure_date", "procedure_name", "predicted_risk_lookup",
+          present_score_cols),
+        drop = FALSE
+      ]
 
       names(fringe_tbl) <- c(
-        "Group", "MRN",
-        "Procedure Date", "Procedure", "Predicted Risk"
+        "Group", "MRN", "Age at Procedure",
+        "Procedure Date", "Procedure", "Predicted Risk",
+        score_labels
       )
       fringe_tbl[["Predicted Risk"]] <- round(as.numeric(fringe_tbl[["Predicted Risk"]]), 3)
 
-      # Write to dated Excel file alongside the report
+      # Prepend model_name and report_date columns
+      model_nm    <- if (!is.null(config$model_name)) config$model_name else NA_character_
+      report_date <- format(Sys.Date(), "%Y-%m-%d")
+      fringe_tbl  <- cbind(
+        "Model"       = model_nm,
+        "Report Date" = report_date,
+        fringe_tbl,
+        stringsAsFactors = FALSE
+      )
+
+      # Write to dated CSV file alongside the report
       export_date  <- format(Sys.Date(), "%Y%m%d")
       fringe_file  <- file.path(output_dir,
-                                paste0("pad_oler_ssi_fringe_", export_date, ".xlsx"))
-      writexl::write_xlsx(
-        list(
-          "Low risk with SSI"  = fringe_tbl[fringe_tbl$Group == "Low risk, SSI occurred", -1L],
-          "High risk no SSI"   = fringe_tbl[fringe_tbl$Group == "High risk, no SSI",      -1L]
-        ),
-        path = fringe_file
-      )
-      message("[report] Fringe case Excel written to: ",
+                                paste0("pad_oler_ssi_fringe_", export_date, ".csv"))
+      readr::write_csv(fringe_tbl, fringe_file)
+      message("[report] Fringe case CSV written to: ",
               normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
+
+      # ---- Supplemental Table: CDM Source ------------------------------------
+      tryCatch({
+        sql_cdm_src <- SqlRender::render(
+          "SELECT
+             cdm_source_name,
+             cdm_source_abbreviation,
+             cdm_holder,
+             source_release_date,
+             cdm_release_date,
+             cdm_version,
+             vocabulary_version
+           FROM @cdm_schema.cdm_source",
+          cdm_schema = config$cdm_schema
+        )
+        cdm_src_raw <- DatabaseConnector::querySql(
+          conn_f,
+          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
+        )
+        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
+
+        if (nrow(cdm_src_raw) > 0) {
+          cdm_src_display <- data.frame(
+            Field = c(
+              "CDM Source Name",
+              "Source Abbreviation",
+              "CDM Holder",
+              "Source Release Date",
+              "CDM Release Date",
+              "CDM Version",
+              "Vocabulary Version"
+            ),
+            Value = c(
+              as.character(cdm_src_raw$cdm_source_name[1]),
+              as.character(cdm_src_raw$cdm_source_abbreviation[1]),
+              as.character(cdm_src_raw$cdm_holder[1]),
+              as.character(cdm_src_raw$source_release_date[1]),
+              as.character(cdm_src_raw$cdm_release_date[1]),
+              as.character(cdm_src_raw$cdm_version[1]),
+              as.character(cdm_src_raw$vocabulary_version[1])
+            ),
+            stringsAsFactors = FALSE
+          )
+
+          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 10, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 4, part = "all") |>
+            flextable::width(j = "Field", width = 2.0) |>
+            flextable::width(j = "Value", width = 4.0) |>
+            flextable::set_table_properties(layout = "fixed")
+
+          doc <<- body_add_par(doc, "CDM Source", style = "heading 3")
+          doc <<- body_add_par(doc,
+            "Supplemental Table S2. CDM source metadata.",
+            style = "Normal")
+          doc <<- body_add_par(doc,
+            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance used ",
+                   "for this analysis. CDM Version and Vocabulary Version confirm compliance with ",
+                   "OMOP CDM v5.4 and the Athena vocabulary release used during ETL."),
+            style = "Normal")
+          doc <<- body_add_flextable(doc, cdm_src_ft)
+          doc <<- body_add_par(doc, "", style = "Normal")
+          message("[report] CDM source table added to supplemental section.")
+        }
+      }, error = function(e) {
+        message("[report] CDM source table skipped: ", conditionMessage(e))
+      })
 
     }, error = function(e) {
       message("[report] Fringe case Excel skipped: ", conditionMessage(e))

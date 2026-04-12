@@ -117,6 +117,7 @@ get_validation_config <- function() {
     # ---------------------------------------------------------------------------
     # Risk score pipeline settings
     # ---------------------------------------------------------------------------
+    model_name                 = "pad_oler_ssi",
     risk_score_components_file = file.path(getwd(), "risk_score", "components.csv"),
     risk_score_concepts_file   = file.path(getwd(), "risk_score", "component_concepts.csv"),
     risk_score_lookup_file     = file.path(getwd(), "risk_score", "risk_lookup.csv"),

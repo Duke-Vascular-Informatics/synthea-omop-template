@@ -297,8 +297,18 @@ verify_omop_concepts <- function(connection_details) {
 
       # ---- Risk score components (component_concepts.csv) ---------------------
       8532L,      # FEMALE — person.gender_concept_id (Gender domain)
-      3025315L,   # Body weight — LOINC 29463-7 (BMI denominator)
-      3036277L,   # Body height — LOINC 8302-2  (BMI denominator)
+      # BMI — direct measurement (bmi_direct role, preferred):
+      3038553L,   # Body mass index (BMI) [Ratio]          — LOINC 39156-5
+      36304833L,  # Body mass index (BMI) [Ratio] Estimated — LOINC 59574-4
+      # BMI — weight concepts (weight role, fallback):
+      3025315L,   # Body weight                            — LOINC 29463-7
+      3013762L,   # Body weight Measured                   — LOINC 3141-9
+      3011054L,   # Body weight Measured --without clothes — LOINC 8335-2
+      3026600L,   # Body weight Estimated                  — LOINC 8335-2 alt
+      # BMI — height concepts (height role, fallback):
+      3036277L,   # Body height                            — LOINC 8302-2
+      3023540L,   # Body height Measured                   — LOINC 3137-7
+      3015514L,   # Body height --standing                 — LOINC 8308-9
       4158569L,   # Emergency procedure — urgent case flag
       4250892L,   # Emergency operation — urgent case flag (alternate)
       40489833L,  # Ankle brachial pressure index — SNOMED 446841001
@@ -318,18 +328,20 @@ verify_omop_concepts <- function(connection_details) {
       442774L     # Intermittent claudication — indicationClaudication score component
     ),
     acceptable_std = c(
-      "S", "S", "S",      # cohort definitions (4236706, 4225375, 4334801)
-      "S", "S", "S",      # indication rollup
-      "S", "S", "S", "S", # procedure rollup
-      "S",                # gender
-      "S", "S",           # BMI measurements
-      "S", "S",           # urgent case
-      "S", "S",           # ABI
-      "C",                # ATC antibiotic class (Classification, not Standard)
-      "S", "S", "S", "S", # mFI functional status
-      "S", "S", "S",      # Barthel items
-      "S", "S", "S", "S", # mFI comorbidities
-      "S"                 # claudication score component
+      "S", "S", "S",            # cohort definitions (4236706, 4225375, 4334801)
+      "S", "S", "S",            # indication rollup
+      "S", "S", "S", "S",       # procedure rollup
+      "S",                      # gender
+      "S", "S",                 # BMI direct (3038553, 36304833)
+      "S", "S", "S", "S",       # BMI weight variants (3025315, 3013762, 3011054, 3026600)
+      "S", "S", "S",            # BMI height variants (3036277, 3023540, 3015514)
+      "S", "S",                 # urgent case
+      "S", "S",                 # ABI
+      "C",                      # ATC antibiotic class (Classification, not Standard)
+      "S", "S", "S", "S",       # mFI functional status
+      "S", "S", "S",            # Barthel items
+      "S", "S", "S", "S",       # mFI comorbidities
+      "S"                       # claudication score component
     ),
     stringsAsFactors = FALSE
   )

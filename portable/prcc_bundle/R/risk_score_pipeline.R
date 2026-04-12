@@ -282,146 +282,232 @@ ensure_concept_ancestor_indexes <- function(connection, config) {
 # -----------------------------------------------------------------------------
 # query_bmi_component_counts()
 #
-# Computes BMI from the most-recent paired weight and height measurements within
-# the component lookback window, then flags patients meeting the BMI criterion.
+# Resolves BMI for each patient using a three-tier priority strategy:
+#
+#   1. Direct BMI measurement (concept_role = "bmi_direct")
+#      — most recent value_as_number from the measurement table whose
+#        measurement_concept_id is in the bmi_direct concept set.
+#        Unit assumed to be kg/m² (OMOP 9531); no conversion applied.
+#        Use this when the EHR or ETL stores a pre-computed BMI value.
+#
+#   2. Computed BMI from weight + height (concept_role = "weight" / "height")
+#      — most-recent weight and most-recent height are paired and BMI is
+#        calculated as weight_kg / height_m².  Used as fallback when no
+#        direct BMI reading is available.
+#
+#   3. Neither — patient is not flagged for this component.
+#
+# Priority is implemented via a UNION ALL + ROW_NUMBER with an explicit
+# priority column (1 = direct, 2 = computed); the lowest priority value
+# per patient wins.
+#
+# BMI thresholds:
 #   overweight: 25 ≤ BMI < 30
 #   obese:      BMI ≥ 30
 #
-# Unit handling (SQL CASE WHEN):
-#   Weight — kilograms (OMOP unit 9529) used as-is;
-#            pounds (8739) converted via × 0.45359237.
-#   Height — metres (9546) used as-is;
-#            centimetres (8582) divided by 100;
-#            inches (9326, 9327, 9330) converted via × 0.0254.
+# Unit handling:
+#   Weight — kg (9529) as-is; lb (8739) × 0.45359237.
+#   Height — m  (9546) as-is; cm (8582) ÷ 100; in (9326, 9327, 9330) × 0.0254.
+#   BMI    — kg/m² (9531 or no unit) used directly from value_as_number.
 #
-# ROW_NUMBER() OVER (PARTITION BY subject_id ORDER BY measurement_date DESC)
-# ensures the most-recent measurement pair is used when multiple readings exist.
-# NULL height or weight, and non-positive values, produce NULL BMI and are
-# excluded (patient is not flagged for this component).
-#
-# concept_role = "weight" / "height" in component_concepts.csv is required for
-# this function; stop() is called if either role is absent.
+# concept_role column in component_concepts.csv is required.  At least one of
+# (bmi_direct) or (weight + height) must be present; stop() if neither is.
 # -----------------------------------------------------------------------------
 query_bmi_component_counts <- function(connection, config, component, component_concepts) {
   if (!"concept_role" %in% names(component_concepts)) {
-    stop("BMI-derived components require concept_role values: weight and height.")
+    stop("BMI-derived components require concept_role values in component_concepts.csv.")
   }
 
-  roles <- tolower(trimws(as.character(component_concepts$concept_role)))
-  weight_ids <- unique(component_concepts$concept_id[roles == "weight"])
-  height_ids <- unique(component_concepts$concept_id[roles == "height"])
-  weight_ids <- weight_ids[!is.na(weight_ids) & weight_ids > 0]
-  height_ids <- height_ids[!is.na(height_ids) & height_ids > 0]
+  roles          <- tolower(trimws(as.character(component_concepts$concept_role)))
+  weight_ids     <- unique(component_concepts$concept_id[roles == "weight"])
+  height_ids     <- unique(component_concepts$concept_id[roles == "height"])
+  bmi_direct_ids <- unique(component_concepts$concept_id[roles == "bmi_direct"])
 
-  if (length(weight_ids) == 0 || length(height_ids) == 0) {
+  weight_ids     <- weight_ids[!is.na(weight_ids) & weight_ids > 0]
+  height_ids     <- height_ids[!is.na(height_ids) & height_ids > 0]
+  bmi_direct_ids <- bmi_direct_ids[!is.na(bmi_direct_ids) & bmi_direct_ids > 0]
+
+  has_direct   <- length(bmi_direct_ids) > 0
+  has_computed <- length(weight_ids) > 0 && length(height_ids) > 0
+
+  if (!has_direct && !has_computed) {
     stop(
       "Component ", component$component_id,
-      " requires at least one weight and one height concept_id with concept_role set in component_concepts.csv"
+      ": component_concepts.csv must supply either bmi_direct concept(s) or ",
+      "both weight and height concept(s)."
     )
   }
 
   bmi_where_clause <- switch(
     component$component_id,
     overweight = "b.bmi >= 25 AND b.bmi < 30",
-    obese = "b.bmi >= 30",
+    obese      = "b.bmi >= 30",
     stop("Unsupported BMI-derived component_id: ", component$component_id)
   )
 
-  # OMOP standard UCUM units validated in this database instance.
-  kilogram_unit_id <- 9529L
-  pound_unit_ids <- c(8739L)
-  meter_unit_id <- 9546L
+  # OMOP standard UCUM unit concept IDs.
+  kilogram_unit_id  <- 9529L
+  pound_unit_ids    <- c(8739L)
+  meter_unit_id     <- 9546L
   centimeter_unit_id <- 8582L
-  inch_unit_ids <- c(9326L, 9327L, 9330L)
+  inch_unit_ids     <- c(9326L, 9327L, 9330L)
+
+  # ---------------------------------------------------------------------------
+  # Build the BMI source UNION. Each branch produces:
+  #   subject_id, bmi, priority (1 = direct, 2 = computed)
+  # A final ROW_NUMBER() picks the best (lowest priority) reading per patient.
+  # ---------------------------------------------------------------------------
+
+  # Branch 1 — direct BMI measurement (only if bmi_direct concepts exist)
+  direct_cte <- if (has_direct) {
+    paste0(
+      "           bmi_direct_concepts AS (\n",
+      "             SELECT CAST(id AS BIGINT) AS concept_id\n",
+      "             FROM (SELECT value AS id FROM string_split('", paste(bmi_direct_ids, collapse = ","), "', ',')) s\n",
+      "           ),\n",
+      "           direct_bmi_raw AS (\n",
+      "             SELECT t.subject_id,\n",
+      "                    m.value_as_number AS bmi,\n",
+      "                    m.measurement_date,\n",
+      "                    m.measurement_id\n",
+      "             FROM target_population t\n",
+      "             JOIN @cdm_schema.measurement m\n",
+      "               ON m.person_id = t.subject_id\n",
+      "             JOIN bmi_direct_concepts bc\n",
+      "               ON m.measurement_concept_id = bc.concept_id\n",
+      "             WHERE m.value_as_number IS NOT NULL\n",
+      "               AND m.value_as_number > 0\n",
+      "               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)\n",
+      "               AND m.measurement_date <= DATEADD(DAY, @lookback_end,   t.index_date)\n",
+      "           ),\n"
+    )
+  } else ""
+
+  # Branch 2 — computed BMI from weight + height (only if both concept sets exist)
+  computed_cte <- if (has_computed) {
+    paste0(
+      "           weight_concepts AS (\n",
+      "             SELECT CAST(id AS BIGINT) AS concept_id\n",
+      "             FROM (SELECT value AS id FROM string_split('", paste(weight_ids, collapse = ","), "', ',')) s\n",
+      "           ),\n",
+      "           height_concepts AS (\n",
+      "             SELECT CAST(id AS BIGINT) AS concept_id\n",
+      "             FROM (SELECT value AS id FROM string_split('", paste(height_ids, collapse = ","), "', ',')) s\n",
+      "           ),\n",
+      "           latest_weight AS (\n",
+      "             SELECT t.subject_id,\n",
+      "                    CASE\n",
+      "                      WHEN m.unit_concept_id = @kilogram_unit_id    THEN m.value_as_number\n",
+      "                      WHEN m.unit_concept_id IN (@pound_unit_ids)   THEN m.value_as_number * 0.45359237\n",
+      "                      ELSE NULL\n",
+      "                    END AS weight_kg,\n",
+      "                    m.measurement_date,\n",
+      "                    m.measurement_id,\n",
+      "                    ROW_NUMBER() OVER (\n",
+      "                      PARTITION BY t.subject_id\n",
+      "                      ORDER BY m.measurement_date DESC, m.measurement_id DESC\n",
+      "                    ) AS rn\n",
+      "             FROM target_population t\n",
+      "             JOIN @cdm_schema.measurement m ON m.person_id = t.subject_id\n",
+      "             JOIN weight_concepts wc ON m.measurement_concept_id = wc.concept_id\n",
+      "             WHERE m.value_as_number IS NOT NULL\n",
+      "               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)\n",
+      "               AND m.measurement_date <= DATEADD(DAY, @lookback_end,   t.index_date)\n",
+      "           ),\n",
+      "           latest_height AS (\n",
+      "             SELECT t.subject_id,\n",
+      "                    CASE\n",
+      "                      WHEN m.unit_concept_id = @meter_unit_id        THEN m.value_as_number\n",
+      "                      WHEN m.unit_concept_id = @centimeter_unit_id   THEN m.value_as_number / 100.0\n",
+      "                      WHEN m.unit_concept_id IN (@inch_unit_ids)     THEN m.value_as_number * 0.0254\n",
+      "                      ELSE NULL\n",
+      "                    END AS height_m,\n",
+      "                    m.measurement_date,\n",
+      "                    m.measurement_id,\n",
+      "                    ROW_NUMBER() OVER (\n",
+      "                      PARTITION BY t.subject_id\n",
+      "                      ORDER BY m.measurement_date DESC, m.measurement_id DESC\n",
+      "                    ) AS rn\n",
+      "             FROM target_population t\n",
+      "             JOIN @cdm_schema.measurement m ON m.person_id = t.subject_id\n",
+      "             JOIN height_concepts hc ON m.measurement_concept_id = hc.concept_id\n",
+      "             WHERE m.value_as_number IS NOT NULL\n",
+      "               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)\n",
+      "               AND m.measurement_date <= DATEADD(DAY, @lookback_end,   t.index_date)\n",
+      "           ),\n"
+    )
+  } else ""
+
+  # Build UNION branches
+  union_branches <- c()
+  if (has_direct) {
+    union_branches <- c(union_branches,
+      paste0(
+        "             SELECT subject_id, bmi, 1 AS priority, measurement_date AS bmi_date\n",
+        "             FROM direct_bmi_raw"
+      )
+    )
+  }
+  if (has_computed) {
+    union_branches <- c(union_branches,
+      paste0(
+        "             SELECT w.subject_id,\n",
+        "                    w.weight_kg / POWER(h.height_m, 2) AS bmi,\n",
+        "                    2 AS priority,\n",
+        "                    w.measurement_date AS bmi_date\n",
+        "             FROM latest_weight w\n",
+        "             JOIN latest_height h ON w.subject_id = h.subject_id\n",
+        "             WHERE w.rn = 1 AND h.rn = 1\n",
+        "               AND w.weight_kg IS NOT NULL AND h.height_m IS NOT NULL\n",
+        "               AND w.weight_kg > 0 AND h.height_m > 0"
+      )
+    )
+  }
+
+  sql <- paste0(
+    "WITH target_population AS (\n",
+    "             SELECT c.subject_id,\n",
+    "                    CAST(c.cohort_start_date AS DATE) AS index_date\n",
+    "             FROM @results_schema.@cohort_table c\n",
+    "             WHERE c.cohort_definition_id = @target_id\n",
+    "           ),\n",
+    direct_cte,
+    computed_cte,
+    "           bmi_ranked AS (\n",
+    "             SELECT subject_id, bmi, priority,\n",
+    "                    ROW_NUMBER() OVER (\n",
+    "                      PARTITION BY subject_id\n",
+    "                      ORDER BY priority ASC, bmi_date DESC\n",
+    "                    ) AS final_rn\n",
+    "             FROM (\n",
+    paste(union_branches, collapse = "\n             UNION ALL\n"),
+    "\n             ) all_bmi\n",
+    "             WHERE bmi IS NOT NULL AND bmi > 0\n",
+    "           ),\n",
+    "           bmi_values AS (\n",
+    "             SELECT subject_id, bmi\n",
+    "             FROM bmi_ranked\n",
+    "             WHERE final_rn = 1\n",
+    "           )\n",
+    "           SELECT b.subject_id,\n",
+    "                  1 AS event_count\n",
+    "           FROM bmi_values b\n",
+    "           WHERE ", bmi_where_clause
+  )
 
   sql <- SqlRender::render(
-    sql = "WITH target_population AS (
-             SELECT c.subject_id,
-                    CAST(c.cohort_start_date AS DATE) AS index_date
-             FROM @results_schema.@cohort_table c
-             WHERE c.cohort_definition_id = @target_id
-           ),
-           weight_concepts AS (
-             SELECT CAST(id AS BIGINT) AS concept_id
-             FROM (SELECT value AS id FROM string_split('@weight_concept_ids', ',')) s
-           ),
-           height_concepts AS (
-             SELECT CAST(id AS BIGINT) AS concept_id
-             FROM (SELECT value AS id FROM string_split('@height_concept_ids', ',')) s
-           ),
-           latest_weight AS (
-             SELECT t.subject_id,
-                    CASE
-                      WHEN m.unit_concept_id = @kilogram_unit_id THEN m.value_as_number
-                      WHEN m.unit_concept_id IN (@pound_unit_ids) THEN m.value_as_number * 0.45359237
-                      ELSE NULL
-                    END AS weight_kg,
-                    ROW_NUMBER() OVER (
-                      PARTITION BY t.subject_id
-                      ORDER BY m.measurement_date DESC, m.measurement_id DESC
-                    ) AS rn
-             FROM target_population t
-             JOIN @cdm_schema.measurement m
-               ON m.person_id = t.subject_id
-             JOIN weight_concepts wc
-               ON m.measurement_concept_id = wc.concept_id
-             WHERE m.value_as_number IS NOT NULL
-               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)
-               AND m.measurement_date <= DATEADD(DAY, @lookback_end, t.index_date)
-           ),
-           latest_height AS (
-             SELECT t.subject_id,
-                    CASE
-                      WHEN m.unit_concept_id = @meter_unit_id THEN m.value_as_number
-                      WHEN m.unit_concept_id = @centimeter_unit_id THEN m.value_as_number / 100.0
-                      WHEN m.unit_concept_id IN (@inch_unit_ids) THEN m.value_as_number * 0.0254
-                      ELSE NULL
-                    END AS height_m,
-                    ROW_NUMBER() OVER (
-                      PARTITION BY t.subject_id
-                      ORDER BY m.measurement_date DESC, m.measurement_id DESC
-                    ) AS rn
-             FROM target_population t
-             JOIN @cdm_schema.measurement m
-               ON m.person_id = t.subject_id
-             JOIN height_concepts hc
-               ON m.measurement_concept_id = hc.concept_id
-             WHERE m.value_as_number IS NOT NULL
-               AND m.measurement_date >= DATEADD(DAY, @lookback_start, t.index_date)
-               AND m.measurement_date <= DATEADD(DAY, @lookback_end, t.index_date)
-           ),
-           bmi_values AS (
-             SELECT w.subject_id,
-                    CASE
-                      WHEN h.height_m IS NULL OR w.weight_kg IS NULL THEN NULL
-                      WHEN h.height_m <= 0 THEN NULL
-                      WHEN w.weight_kg <= 0 THEN NULL
-                      ELSE w.weight_kg / POWER(h.height_m, 2)
-                    END AS bmi
-             FROM latest_weight w
-             JOIN latest_height h
-               ON w.subject_id = h.subject_id
-             WHERE w.rn = 1
-               AND h.rn = 1
-           )
-           SELECT b.subject_id,
-                  1 AS event_count
-           FROM bmi_values b
-           WHERE @bmi_where_clause",
-    results_schema = results_schema_prefix(config),
-    cohort_table = config$cohort_table,
-    target_id = config$target_cohort_id,
-    cdm_schema = config$cdm_schema,
-    weight_concept_ids = paste(weight_ids, collapse = ","),
-    height_concept_ids = paste(height_ids, collapse = ","),
-    kilogram_unit_id = kilogram_unit_id,
-    pound_unit_ids = paste(pound_unit_ids, collapse = ","),
-    meter_unit_id = meter_unit_id,
+    sql             = sql,
+    results_schema  = results_schema_prefix(config),
+    cohort_table    = config$cohort_table,
+    target_id       = config$target_cohort_id,
+    cdm_schema      = config$cdm_schema,
+    kilogram_unit_id  = kilogram_unit_id,
+    pound_unit_ids    = paste(pound_unit_ids,    collapse = ","),
+    meter_unit_id     = meter_unit_id,
     centimeter_unit_id = centimeter_unit_id,
-    inch_unit_ids = paste(inch_unit_ids, collapse = ","),
-    lookback_start = as.integer(component$lookback_start_day),
-    lookback_end = as.integer(component$lookback_end_day),
-    bmi_where_clause = bmi_where_clause
+    inch_unit_ids     = paste(inch_unit_ids,     collapse = ","),
+    lookback_start  = as.integer(component$lookback_start_day),
+    lookback_end    = as.integer(component$lookback_end_day)
   )
 
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
@@ -1619,9 +1705,22 @@ compute_subgroup_bias <- function(person_level,
   }
 
   # ---------------------------------------------------------------------------
+  # Step 4b — derive calendar year from index_date for temporal subgroup.
+  # ---------------------------------------------------------------------------
+  if ("index_date" %in% names(df)) {
+    year_val <- tryCatch(
+      as.integer(format(as.Date(df$index_date), "%Y")),
+      error = function(e) NA_integer_
+    )
+    if (!all(is.na(year_val))) {
+      df$year <- as.character(year_val)
+    }
+  }
+
+  # ---------------------------------------------------------------------------
   # Step 5 — bootstrap ECE for each non-empty, qualifying subgroup level.
   # ---------------------------------------------------------------------------
-  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication")
+  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year")
   # Keep only vars that were successfully added to df.
   subgroup_vars <- subgroup_vars[subgroup_vars %in% names(df)]
 
@@ -1696,16 +1795,19 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
   p <- ggplot2::ggplot(calibration_table, ggplot2::aes(x = predicted, y = observed)) +
     ggplot2::geom_point(size = 2) +
     ggplot2::geom_line() +
-    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
       title = paste("Calibration Plot:", model_name),
       x = "Mean predicted risk",
       y = "Observed event rate"
     ) +
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::coord_equal() +
     ggplot2::theme_minimal()
 
   out_file <- file.path(output_folder, paste0("calibration_", model_name, ".png"))
-  ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
+  ggplot2::ggsave(out_file, p, width = 5, height = 5, dpi = 150)
 }
 
 # =============================================================================

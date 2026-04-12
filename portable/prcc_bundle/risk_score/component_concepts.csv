@@ -4,12 +4,12 @@ component_id,concept_id,include_descendants,concept_role,value_concept_ids
 #
 # KNOWN GAPS — require clinical/informatics review before final analysis:
 #
-# optime4h (concept_id = 4159960):
+# optime4h (concept_ids = 4236706, 4225375):
 #   Operative time >= 4 hours is derived from the revascularization procedure
 #   itself using procedure_occurrence.procedure_end_datetime - procedure_datetime.
 #   The scoring pipeline must compute:
 #     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-#   for any procedure descended from 4159960, rather than a simple concept
+#   for any procedure descended from 4236706 OR 4225375, rather than a simple concept
 #   presence lookup.
 #
 #   SYNTHEA LIMITATION: Synthea records procedure durations at day granularity
@@ -63,23 +63,58 @@ component_id,concept_id,include_descendants,concept_role,value_concept_ids
 #   NOTE: Synthea does not generate Barthel assessment observations; these rows will
 #   produce no synthetic signal but are correct for real EHR data.
 female,8532,FALSE,,
+# BMI components — three-tier resolution: direct BMI preferred, then weight/height computed.
+# bmi_direct: stored pre-computed BMI measurement (kg/m²); used as priority 1.
+# weight    : raw body weight; converted to kg for BMI computation (priority 2 fallback).
+# height    : raw body height; converted to metres for BMI computation (priority 2 fallback).
+#
+# Direct BMI (LOINC):
+#   3038553  = Body mass index (BMI) [Ratio]       (LOINC 39156-5) — primary
+#   36304833 = Body mass index (BMI) [Ratio] Estimated (LOINC 59574-4) — alternate
+#
+# Weight (LOINC) — common EHR variants:
+#   3025315  = Body weight                          (LOINC 29463-7) — standard
+#   3013762  = Body weight Measured                 (LOINC  3141-9)
+#   3011054  = Body weight Measured --without clothes (LOINC 8335-2)
+#   3026600  = Body weight Estimated                (LOINC 8335-2 alt)
+#
+# Height (LOINC) — common EHR variants:
+#   3036277  = Body height                          (LOINC  8302-2) — standard
+#   3023540  = Body height Measured                 (LOINC  3137-7)
+#   3015514  = Body height --standing               (LOINC  8308-9)
+overweight,3038553,FALSE,bmi_direct,
+overweight,36304833,FALSE,bmi_direct,
 overweight,3025315,FALSE,weight,
+overweight,3013762,FALSE,weight,
+overweight,3011054,FALSE,weight,
+overweight,3026600,FALSE,weight,
 overweight,3036277,FALSE,height,
+overweight,3023540,FALSE,height,
+overweight,3015514,FALSE,height,
+obese,3038553,FALSE,bmi_direct,
+obese,36304833,FALSE,bmi_direct,
 obese,3025315,FALSE,weight,
+obese,3013762,FALSE,weight,
+obese,3011054,FALSE,weight,
+obese,3026600,FALSE,weight,
 obese,3036277,FALSE,height,
+obese,3023540,FALSE,height,
+obese,3015514,FALSE,height,
 urgnt,4158569,TRUE,,
 urgnt,4250892,TRUE,,
 abi_35,40489833,TRUE,,
 abi_35,46237026,TRUE,,
-prrevasc_any,4159960,TRUE,,
+prrevasc_any,4236706,TRUE,,
+prrevasc_any,4225375,TRUE,,
 prolong_abx,21603553,TRUE,,
 # optime4h: DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-# on any procedure descended from 4159960.
+# on any procedure descended from 4236706 OR 4225375.
 # Synthea generates sub-day procedure timestamps via the module's duration field
 # (confirmed: Femoro-popliteal 2-5h, Endarterectomy 1-3h, Aorto-femoral 2-4h,
 # Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
 # Valid synthetic signal is produced after re-running Steps 4 and 5.
-optime4h,4159960,TRUE,,
+optime4h,4236706,TRUE,,
+optime4h,4225375,TRUE,,
 mFI_high,201820,TRUE,diabetes,
 mFI_high,255573,TRUE,copd,
 mFI_high,316139,TRUE,chf,

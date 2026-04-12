@@ -119,13 +119,15 @@ source("R/cohort_demographics.R")
         "No lookback required; demographic attribute."
       ),
       paste0(
-        "OMOP measurements: weight concept 3025315 and height concept 3036277. ",
-        "BMI computed as weight (kg) / height (m)². ",
-        "Flagged when 25 ≤ BMI < 30."
+        "BMI resolved with three-tier priority: ",
+        "(1) direct BMI measurement (LOINC 3038553, 36304833); ",
+        "(2) computed from weight (LOINC 3025315, 3013762, 3011054, 3026600) ",
+        "and height (LOINC 3036277, 3023540, 3015514) as weight_kg / height_m\u00b2. ",
+        "Flagged when 25 \u2264 BMI < 30."
       ),
       paste0(
-        "Same weight (3025315) and height (3036277) measurements as Overweight. ",
-        "Flagged when BMI ≥ 30. Mutually exclusive with Overweight."
+        "Same BMI resolution as Overweight (direct preferred, weight/height fallback). ",
+        "Flagged when BMI \u2265 30. Mutually exclusive with Overweight."
       ),
       paste0(
         "Concepts 4158569 (Emergency procedure) and 4250892 (Urgent procedure), ",
@@ -137,9 +139,9 @@ source("R/cohort_demographics.R")
         "the measurement table. Record is counted when value_as_number < 0.35."
       ),
       paste0(
-        "Concept 4159960 (lower-extremity revascularization procedure) and all ",
-        "descendants in procedure_occurrence. Captures any prior endovascular or ",
-        "open revascularisation within a 10-year lookback."
+        "Concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 ",
+        "(Endarterectomy of lower limb artery) and all descendants in procedure_occurrence. ",
+        "Captures any prior lower-extremity arterial bypass or endarterectomy within a 10-year lookback."
       ),
       paste0(
         "Concept 21603553 (systemic antibiotic agent) and descendants in ",
@@ -341,11 +343,87 @@ source("R/cohort_demographics.R")
       x = "Mean predicted risk",
       y = "Observed event rate"
     ) +
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::coord_equal() +
     ggplot2::theme_minimal()
 
   out_file <- file.path(output_folder, file_name)
-  ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
+  ggplot2::ggsave(out_file, p, width = 5, height = 5, dpi = 150)
   out_file
+}
+
+# -----------------------------------------------------------------------------
+# .save_ssi_rate_by_year_plot()
+#
+# Builds a line graph of annual SSI rate (%) from the person-level data frame.
+# Requires an index_date column (YYYY-MM-DD) and an outcome column (0/1).
+# Years with < 10 procedures are omitted to avoid unstable rate estimates.
+# Returns NULL silently if the date column is absent or all years are suppressed.
+# -----------------------------------------------------------------------------
+.save_ssi_rate_by_year_plot <- function(person_level_df, output_folder) {
+  if (!all(c("index_date", "outcome") %in% names(person_level_df))) {
+    message("[report] SSI-by-year plot skipped: index_date or outcome column missing.")
+    return(NULL)
+  }
+
+  year_val <- tryCatch(
+    as.integer(format(as.Date(person_level_df$index_date), "%Y")),
+    error = function(e) NA_integer_
+  )
+
+  df_yr <- data.frame(
+    year    = year_val,
+    outcome = as.integer(person_level_df$outcome),
+    stringsAsFactors = FALSE
+  )
+  df_yr <- df_yr[!is.na(df_yr$year), ]
+
+  # Aggregate per year
+  yr_tbl <- do.call(rbind, lapply(sort(unique(df_yr$year)), function(y) {
+    sub  <- df_yr[df_yr$year == y, ]
+    n    <- nrow(sub)
+    events <- sum(sub$outcome, na.rm = TRUE)
+    data.frame(year = y, n = n, events = events,
+               ssi_rate = 100 * events / n,
+               stringsAsFactors = FALSE)
+  }))
+
+  # Suppress years with < 10 procedures
+  yr_tbl <- yr_tbl[yr_tbl$n >= 10, ]
+  if (nrow(yr_tbl) < 2) {
+    message("[report] SSI-by-year plot skipped: fewer than 2 years with >= 10 procedures.")
+    return(NULL)
+  }
+
+  p <- ggplot2::ggplot(yr_tbl, ggplot2::aes(x = year, y = ssi_rate)) +
+    ggplot2::geom_line(linewidth = 0.9, colour = "#1F3864") +
+    ggplot2::geom_point(size = 2.5,   colour = "#1F3864") +
+    ggplot2::scale_x_continuous(breaks = yr_tbl$year) +
+    ggplot2::scale_y_continuous(limits = c(0, NA),
+                                labels = function(x) paste0(round(x, 1), "%")) +
+    ggplot2::labs(
+      title   = "SSI Rate by Procedure Year",
+      x       = "Year of procedure",
+      y       = "30-day SSI rate (%)",
+      caption = paste0("N = ", sum(yr_tbl$n), " procedures; ",
+                       "years with < 10 procedures suppressed.")
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      axis.text.x     = ggplot2::element_text(angle = 45, hjust = 1),
+      plot.caption    = ggplot2::element_text(size = 8),
+      panel.grid.minor = ggplot2::element_blank()
+    )
+
+  out_file <- file.path(output_folder, "ssi_rate_by_year.png")
+  tryCatch({
+    ggplot2::ggsave(out_file, p, width = 7, height = 4.5, dpi = 150)
+    out_file
+  }, error = function(e) {
+    message("[report] Could not save SSI-by-year plot: ", conditionMessage(e))
+    NULL
+  })
 }
 
 # -----------------------------------------------------------------------------
@@ -452,15 +530,21 @@ source("R/cohort_demographics.R")
     ),
     "Overweight (BMI 25 to <30)" = list(
       points = "+1",
-      definition = "BMI between 25 and <30 kg/m²",
-      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
-      derivation = "BMI computed from weight and height measurements; 25 ≤ BMI < 30"
+      definition = "BMI between 25 and <30 kg/m\u00b2",
+      omop_concept = paste0("Direct BMI: 3038553, 36304833; ",
+                            "Weight: 3025315, 3013762, 3011054, 3026600; ",
+                            "Height: 3036277, 3023540, 3015514"),
+      derivation = paste0("Direct BMI measurement preferred (LOINC 39156-5 / 59574-4); ",
+                          "computed from weight/height as fallback. 25 \u2264 BMI < 30.")
     ),
-    "Obese (BMI ≥30)" = list(
+    "Obese (BMI \u226530)" = list(
       points = "+3",
-      definition = "BMI ≥ 30 kg/m²",
-      omop_concept = "Concepts 3025315 (weight), 3036277 (height)",
-      derivation = "BMI computed from weight and height measurements; BMI ≥ 30"
+      definition = "BMI \u2265 30 kg/m\u00b2",
+      omop_concept = paste0("Direct BMI: 3038553, 36304833; ",
+                            "Weight: 3025315, 3013762, 3011054, 3026600; ",
+                            "Height: 3036277, 3023540, 3015514"),
+      derivation = paste0("Direct BMI measurement preferred (LOINC 39156-5 / 59574-4); ",
+                          "computed from weight/height as fallback. BMI \u2265 30.")
     ),
     "Urgent / emergency case" = list(
       points = "+1",
@@ -477,7 +561,7 @@ source("R/cohort_demographics.R")
     "Prior revascularization (any)" = list(
       points = "+1",
       definition = "Any prior lower-extremity revascularization procedure",
-      omop_concept = "Concept 4159960 + descendants",
+      omop_concept = "Concepts 4236706 + 4225375 + descendants",
       derivation = "Procedure_occurrence within 10-year lookback"
     ),
     "Prolonged antibiotic exposure" = list(
@@ -673,9 +757,12 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
     paste0(
       "The target cohort comprised adults aged 18 years or older who underwent an inpatient ",
       "open lower-extremity revascularization procedure, defined using OMOP standard concept ",
-      "4159960 (Procedure on blood vessel of lower extremity) and all descendants via the ",
-      "concept_ancestor table. Qualifying procedure subtypes include femoral-popliteal bypass, ",
-      "femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. The index date ",
+      "4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) ",
+      "and all descendants via the concept_ancestor table. These concepts are scoped to operative ",
+      "procedures on arteries of the lower extremity only, excluding diagnostic imaging, venous ",
+      "procedures, and upper extremity arterial procedures. Qualifying procedure subtypes include ",
+      "femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. ",
+      "The index date ",
       "was defined as the start date of the first qualifying inpatient visit per person within ",
       "the study window. Persons with any surgical site infection (SSI) diagnosis (OMOP concept ",
       "4334801, SNOMED-CT 433202001) recorded in the 365 days prior to the index date were ",
@@ -703,10 +790,10 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "The PAD SSI integer risk score comprises ten pre-operative and intra-operative components ",
       "(Table 2). Each component is mapped to one or more OMOP standard concept IDs with descendant ",
       "expansion via the concept_ancestor table where applicable. Components include: female sex ",
-      "(concept 8532); overweight (BMI 25 to <30, concepts 3025315 and 3036277); obesity (BMI ≥30); ",
+      "(concept 8532); overweight (BMI 25–<30) and obesity (BMI \u226530), each resolved from direct BMI measurement (LOINC 3038553) or computed from weight and height (LOINC 3025315 + 3036277, with additional EHR variants); ",
       "urgent or emergency procedure (concepts 4158569, 4250892); low ankle-brachial index ≤0.35 ",
       "(concepts 40489833, 46237026); prior lower-extremity revascularization within 10 years ",
-      "(concept 4159960 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
+      "(concepts 4236706 + 4225375 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
       "(concept 21603553 + descendants); operative time ≥4 hours (procedure_start/end_datetime); ",
       "high modified Frailty Index (mFI >0.25, requiring ≥2 of: diabetes 201820, COPD 255573, ",
       "congestive heart failure 316139, hypertension 316866, functional impairment 4215267); and ",
@@ -1915,6 +2002,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     auc_override = metric_value("AUROC", "lookup")
   )
 
+  # Figure 1 — SSI rate by year (requires index_date in person_level)
+  ssi_year_plot_file <- .save_ssi_rate_by_year_plot(person_level, temp_figure_dir)
+
   if (file.exists(lookup_calibration_plot)) {
     file.copy(lookup_calibration_plot, lookup_calibration_plot_temp, overwrite = TRUE)
   } else if (file.exists(calibration_table_lookup_path)) {
@@ -1956,7 +2046,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
       # Remove legacy reports and standalone artifacts.
       if (tolower(tools::file_ext(nm)) == "docx" ||
-          nm %in% c("roc_curve.png", "calibration_lookup.png", "calibration_recalibrated.png", "pipeline_rerun.log")) {
+          nm %in% c("roc_curve.png", "calibration_lookup.png", "calibration_recalibrated.png",
+                "ssi_rate_by_year.png", "subgroup_forest_plot.png", "pipeline_rerun.log")) {
         unlink(f, force = TRUE)
       }
     }
@@ -1984,33 +2075,63 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
   doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity revascularization (OMOP concept 4159960 and descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy). The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
+  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. Both concepts are explicitly scoped to arterial procedures of the lower extremity, excluding diagnostic imaging and venous procedures. The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
   doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 90 days of the index date.", style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
   doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
   doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
+
+  # ---- Table 1: Demographics -----------------------------------------------
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 90 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
-  doc <- body_add_par(doc, "Table 1. Baseline characteristics of the external validation cohort.", style = "Normal")
+  doc <- body_add_par(doc, "Table 1. Demographics of the external validation cohort.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
+  # ---- Table 2: Features ---------------------------------------------------
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
-  doc <- body_add_par(doc, "Table 2. Predictor definitions and activation summary.", style = "Normal")
+  doc <- body_add_par(doc, "Table 2. Features: predictor definitions and activation summary.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, and observed activation in the validation cohort.", style = "Normal")
   doc <- body_add_flextable(doc, wrapped_predictor_ft(predictor_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  doc <- body_add_par(doc, "Summary metrics", style = "heading 3")
-  doc <- body_add_par(doc, "Table 3. Lookup-model discrimination and calibration metrics.", style = "Normal")
+  # ---- Table 3: Model Performance ------------------------------------------
+  doc <- body_add_par(doc, "Model performance", style = "heading 3")
+  doc <- body_add_par(doc, "Table 3. Model performance: lookup-model discrimination and calibration metrics.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Metrics are shown for the lookup model. 95% CI = 95% bootstrap percentile confidence interval (B\u2009=\u2009500 resamples). \u2014 indicates CI not available.", style = "Normal")
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Subgroup bias section -----------------------------------------------
+  # ---- Figure 1: SSI rate by year ------------------------------------------
+  if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
+    doc <- body_add_par(doc, "Figure 1. Annual SSI rate.", style = "Normal")
+    doc <- body_add_par(doc,
+      "Caption: 30-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
+      style = "Normal")
+    doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- Figure 2: AUC / ROC curve -------------------------------------------
+  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
+    doc <- body_add_par(doc, "Figure 2. Receiver operating characteristic (ROC) curve.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: ROC curve for the lookup model. AUROC value is sourced from metrics.csv (bootstrap 95% CI). Dashed diagonal = no-discrimination reference line.", style = "Normal")
+    doc <- body_add_img(doc, src = roc_plot_file, width = 4.5, height = 4.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- Figure 3: Calibration curve -----------------------------------------
+  if (file.exists(lookup_calibration_plot_temp)) {
+    doc <- body_add_par(doc, "Figure 3. Calibration plot for the published lookup mapping.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: Mean predicted risk (x-axis, 0\u20131) vs. observed event rate (y-axis, 0\u20131) by quantile bin. Dashed diagonal = perfect calibration. Both axes span the full 0\u20131 range.", style = "Normal")
+    doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 4.5, height = 4.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- Supplemental section ------------------------------------------------
   # Read subgroup_bias.csv if it was produced by the pipeline.
   subgroup_bias_path <- file.path(score_output_dir, "subgroup_bias.csv")
   subgroup_bias_df   <- NULL
@@ -2022,6 +2143,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   }
 
   if (!is.null(subgroup_bias_df) && nrow(subgroup_bias_df) > 0) {
+
+    doc <- body_add_par(doc, "Supplemental Material", style = "heading 2")
 
     # Overall ECE for reference line — read from metrics.csv.
     overall_ece_val <- tryCatch(
@@ -2068,14 +2191,14 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     doc <- body_add_par(doc,
       paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
              "Subgroups with fewer than 10 observed SSI events are suppressed. ",
-             "Overall ECE (dashed reference line in Figure 3) = ",
+             "Overall ECE (dashed reference line in Supplemental Figure S1) = ",
              round(overall_ece_val, 3), ". ",
              "95% CI = bootstrap percentile interval (B\u2009=\u2009200 resamples)."),
       style = "Normal")
     doc <- body_add_flextable(doc, bias_ft)
     doc <- body_add_par(doc, "", style = "Normal")
 
-    # Forest plot
+    # Supplemental Figure S1 — subgroup forest plot
     forest_png <- save_subgroup_forest_plot(
       subgroup_bias_df,
       overall_ece_val,
@@ -2084,32 +2207,20 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     if (!is.null(forest_png) && file.exists(forest_png)) {
       plot_height <- max(4.0, nrow(subgroup_bias_df) * 0.35 + 1.5)
       doc <- body_add_par(doc,
-        "Figure 3. Forest plot of ECE by subgroup.",
+        "Supplemental Figure S1. Subgroup calibration forest plot.",
         style = "Normal")
       doc <- body_add_par(doc,
-        paste0("Caption: Point estimates with 95% bootstrap percentile CIs (B\u2009=\u2009200). ",
-               "Dashed line = overall ECE for lookup model. ",
-               "Groups with < 10 SSI events are suppressed."),
+        paste0("Caption: Expected calibration error (ECE) with 95% bootstrap percentile CIs (B\u2009=\u2009200) ",
+               "by subgroup. Dashed vertical line = overall ECE for the lookup model. ",
+               "Subgroups with < 10 SSI events are suppressed. ",
+               "Subgroups include sex, race, ethnicity, age group, operative indication, ",
+               "and calendar year of procedure."),
         style = "Normal")
       doc <- body_add_img(doc, src = forest_png,
                           width  = 5.5,
-                          height = min(plot_height, 8.0))
+                          height = min(plot_height, 9.0))
       doc <- body_add_par(doc, "", style = "Normal")
     }
-  }
-
-  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
-    doc <- body_add_par(doc, "Figure 1. Receiver operating characteristic curve for the lookup model.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: ROC curve generated from lookup predicted probabilities and binary outcomes in person_level_scores.csv. The subtitle AUROC value is sourced from metrics.csv (lookup model).", style = "Normal")
-    doc <- body_add_img(doc, src = roc_plot_file, width = 5.5, height = 4.0)
-    doc <- body_add_par(doc, "", style = "Normal")
-  }
-
-  if (file.exists(lookup_calibration_plot_temp)) {
-    doc <- body_add_par(doc, "Figure 2. Calibration plot for the published lookup mapping.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: Calibration plot generated from calibration_table_lookup.csv with x = mean predicted risk and y = observed event rate by bin.", style = "Normal")
-    doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 5.5, height = 4.0)
-    doc <- body_add_par(doc, "", style = "Normal")
   }
 
   # ---- Fringe cases — Excel export (not in Word report) -------------------
@@ -2143,13 +2254,14 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            p.person_id,
            p.person_source_value                                                AS mrn,
            CAST(po.procedure_date AS DATE)                                      AS procedure_date,
-           COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name
+           COALESCE(c.concept_name, po.procedure_source_value, 'Unknown')       AS procedure_name,
+           YEAR(CAST(po.procedure_date AS DATE)) - p.year_of_birth             AS age_at_procedure
          FROM @cdm_schema.person p
          JOIN @cdm_schema.procedure_occurrence po
            ON po.person_id = p.person_id
          JOIN @vocab_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
-          AND ca.ancestor_concept_id   = 4159960
+          AND ca.ancestor_concept_id   IN (4236706, 4225375)
          LEFT JOIN @vocab_schema.concept c
            ON c.concept_id = po.procedure_concept_id
          WHERE p.person_id IN (@id_list)",
@@ -2168,8 +2280,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       raw <- raw[order(raw$person_id, raw$procedure_date), ]
       raw <- raw[!duplicated(raw$person_id), ]
 
+      # Merge outcome + predicted risk from person_level
       pl_sub <- person_level[, c("subject_id", "predicted_risk_lookup", "outcome")]
       raw    <- merge(raw, pl_sub, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
+
+      # Merge individual score component columns from person_level
+      score_cols <- grep("^score_", names(person_level), value = TRUE)
+      if (length(score_cols) > 0) {
+        pl_scores <- person_level[, c("subject_id", score_cols), drop = FALSE]
+        raw <- merge(raw, pl_scores, by.x = "person_id", by.y = "subject_id", all.x = TRUE)
+      }
 
       make_group <- function(ids, label) {
         sub        <- raw[raw$person_id %in% ids, ]
@@ -2182,29 +2302,125 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       fn_df <- fn_df[order(fn_df$predicted_risk_lookup), ]
       fp_df <- fp_df[order(fp_df$predicted_risk_lookup, decreasing = TRUE), ]
 
-      fringe_tbl <- rbind(fn_df, fp_df)[,
-        c("group", "mrn",
-          "procedure_date", "procedure_name", "predicted_risk_lookup")]
+      # Build display-friendly column names for score components
+      score_display_names <- c(
+        score_female                 = "Female Sex (pts)",
+        score_overweight             = "Overweight BMI 25-<30 (pts)",
+        score_obese                  = "Obese BMI >=30 (pts)",
+        score_urgnt                  = "Urgent Case (pts)",
+        score_abi_35                 = "ABI <=0.35 (pts)",
+        score_prrevasc_any           = "Prior Revascularization (pts)",
+        score_prolong_abx            = "Prolonged Antibiotics (pts)",
+        score_optime4h               = "Op Time >=4h (pts)",
+        score_mFI_high               = "High mFI (pts)",
+        score_indicationClaudication = "Indication: Claudication (pts)"
+      )
+      present_score_cols <- score_cols[score_cols %in% names(score_display_names)]
+      score_labels       <- unname(score_display_names[present_score_cols])
+
+      combined <- rbind(fn_df, fp_df)
+      fringe_tbl <- combined[,
+        c("group", "mrn", "age_at_procedure",
+          "procedure_date", "procedure_name", "predicted_risk_lookup",
+          present_score_cols),
+        drop = FALSE
+      ]
 
       names(fringe_tbl) <- c(
-        "Group", "MRN",
-        "Procedure Date", "Procedure", "Predicted Risk"
+        "Group", "MRN", "Age at Procedure",
+        "Procedure Date", "Procedure", "Predicted Risk",
+        score_labels
       )
       fringe_tbl[["Predicted Risk"]] <- round(as.numeric(fringe_tbl[["Predicted Risk"]]), 3)
 
-      # Write to dated Excel file alongside the report
+      # Prepend model_name and report_date columns
+      model_nm    <- if (!is.null(config$model_name)) config$model_name else NA_character_
+      report_date <- format(Sys.Date(), "%Y-%m-%d")
+      fringe_tbl  <- cbind(
+        "Model"       = model_nm,
+        "Report Date" = report_date,
+        fringe_tbl,
+        stringsAsFactors = FALSE
+      )
+
+      # Write to dated CSV file alongside the report
       export_date  <- format(Sys.Date(), "%Y%m%d")
       fringe_file  <- file.path(output_dir,
-                                paste0("pad_oler_ssi_fringe_", export_date, ".xlsx"))
-      writexl::write_xlsx(
-        list(
-          "Low risk with SSI"  = fringe_tbl[fringe_tbl$Group == "Low risk, SSI occurred", -1L],
-          "High risk no SSI"   = fringe_tbl[fringe_tbl$Group == "High risk, no SSI",      -1L]
-        ),
-        path = fringe_file
-      )
-      message("[report] Fringe case Excel written to: ",
+                                paste0("pad_oler_ssi_fringe_", export_date, ".csv"))
+      readr::write_csv(fringe_tbl, fringe_file)
+      message("[report] Fringe case CSV written to: ",
               normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
+
+      # ---- Supplemental Table: CDM Source ------------------------------------
+      tryCatch({
+        sql_cdm_src <- SqlRender::render(
+          "SELECT
+             cdm_source_name,
+             cdm_source_abbreviation,
+             cdm_holder,
+             source_release_date,
+             cdm_release_date,
+             cdm_version,
+             vocabulary_version
+           FROM @cdm_schema.cdm_source",
+          cdm_schema = config$cdm_schema
+        )
+        cdm_src_raw <- DatabaseConnector::querySql(
+          conn_f,
+          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
+        )
+        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
+
+        if (nrow(cdm_src_raw) > 0) {
+          cdm_src_display <- data.frame(
+            Field = c(
+              "CDM Source Name",
+              "Source Abbreviation",
+              "CDM Holder",
+              "Source Release Date",
+              "CDM Release Date",
+              "CDM Version",
+              "Vocabulary Version"
+            ),
+            Value = c(
+              as.character(cdm_src_raw$cdm_source_name[1]),
+              as.character(cdm_src_raw$cdm_source_abbreviation[1]),
+              as.character(cdm_src_raw$cdm_holder[1]),
+              as.character(cdm_src_raw$source_release_date[1]),
+              as.character(cdm_src_raw$cdm_release_date[1]),
+              as.character(cdm_src_raw$cdm_version[1]),
+              as.character(cdm_src_raw$vocabulary_version[1])
+            ),
+            stringsAsFactors = FALSE
+          )
+
+          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 10, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 4, part = "all") |>
+            flextable::width(j = "Field", width = 2.0) |>
+            flextable::width(j = "Value", width = 4.0) |>
+            flextable::set_table_properties(layout = "fixed")
+
+          doc <<- body_add_par(doc, "CDM Source", style = "heading 3")
+          doc <<- body_add_par(doc,
+            "Supplemental Table S2. CDM source metadata.",
+            style = "Normal")
+          doc <<- body_add_par(doc,
+            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance used ",
+                   "for this analysis. CDM Version and Vocabulary Version confirm compliance with ",
+                   "OMOP CDM v5.4 and the Athena vocabulary release used during ETL."),
+            style = "Normal")
+          doc <<- body_add_flextable(doc, cdm_src_ft)
+          doc <<- body_add_par(doc, "", style = "Normal")
+          message("[report] CDM source table added to supplemental section.")
+        }
+      }, error = function(e) {
+        message("[report] CDM source table skipped: ", conditionMessage(e))
+      })
 
     }, error = function(e) {
       message("[report] Fringe case Excel skipped: ", conditionMessage(e))
