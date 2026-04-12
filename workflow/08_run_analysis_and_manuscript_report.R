@@ -271,8 +271,12 @@ verify_omop_concepts <- function(connection_details) {
   concepts <- data.frame(
     concept_id = c(
       # ---- Cohort definitions -------------------------------------------------
-      4159960L,   # Procedure on blood vessel of lower extremity
-                  #   → target cohort inclusion ancestor (target_surgery.sql)
+      4236706L,   # Arterial bypass of lower limb artery (SNOMED)
+                  #   → target cohort bypass inclusion ancestor (target_surgery.sql)
+      4225375L,   # Endarterectomy of lower limb artery (SNOMED)
+                  #   → target cohort endarterectomy inclusion ancestor (target_surgery.sql)
+                  #   → replaces 4159960 (Procedure on blood vessel of lower extremity)
+                  #     which was too broad: included imaging studies and venous procedures
       4334801L,   # Surgical site infection (SNOMED 433202001)
                   #   → SSI washout exclusion (target_surgery.sql)
                   #   → outcome cohort ancestor (outcome_ssi.sql)
@@ -425,7 +429,7 @@ verify_omop_concepts <- function(connection_details) {
 #
 # build_cohorts() executes the two SqlRender-parameterised cohort SQL templates:
 #   cohorts/target_surgery.sql  — adults with qualifying inpatient open lower-
-#                                  extremity revascularisation (concept 4159960)
+#                                  extremity revascularisation (concepts 4236706, 4225375)
 #   cohorts/outcome_ssi.sql     — first SSI diagnosis within the study window
 #                                  (concept 4334801 and descendants)
 # Both cohort definitions DELETE their rows from the cohort table before

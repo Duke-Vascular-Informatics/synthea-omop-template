@@ -4,12 +4,12 @@ component_id,concept_id,include_descendants,concept_role,value_concept_ids
 #
 # KNOWN GAPS — require clinical/informatics review before final analysis:
 #
-# optime4h (concept_id = 4159960):
+# optime4h (concept_ids = 4236706, 4225375):
 #   Operative time >= 4 hours is derived from the revascularization procedure
 #   itself using procedure_occurrence.procedure_end_datetime - procedure_datetime.
 #   The scoring pipeline must compute:
 #     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-#   for any procedure descended from 4159960, rather than a simple concept
+#   for any procedure descended from 4236706 OR 4225375, rather than a simple concept
 #   presence lookup.
 #
 #   SYNTHEA LIMITATION: Synthea records procedure durations at day granularity
@@ -71,15 +71,17 @@ urgnt,4158569,TRUE,,
 urgnt,4250892,TRUE,,
 abi_35,40489833,TRUE,,
 abi_35,46237026,TRUE,,
-prrevasc_any,4159960,TRUE,,
+prrevasc_any,4236706,TRUE,,
+prrevasc_any,4225375,TRUE,,
 prolong_abx,21603553,TRUE,,
 # optime4h: DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-# on any procedure descended from 4159960.
+# on any procedure descended from 4236706 OR 4225375.
 # Synthea generates sub-day procedure timestamps via the module's duration field
 # (confirmed: Femoro-popliteal 2-5h, Endarterectomy 1-3h, Aorto-femoral 2-4h,
 # Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
 # Valid synthetic signal is produced after re-running Steps 4 and 5.
-optime4h,4159960,TRUE,,
+optime4h,4236706,TRUE,,
+optime4h,4225375,TRUE,,
 mFI_high,201820,TRUE,diabetes,
 mFI_high,255573,TRUE,copd,
 mFI_high,316139,TRUE,chf,

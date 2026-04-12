@@ -137,9 +137,9 @@ source("R/cohort_demographics.R")
         "the measurement table. Record is counted when value_as_number < 0.35."
       ),
       paste0(
-        "Concept 4159960 (lower-extremity revascularization procedure) and all ",
-        "descendants in procedure_occurrence. Captures any prior endovascular or ",
-        "open revascularisation within a 10-year lookback."
+        "Concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 ",
+        "(Endarterectomy of lower limb artery) and all descendants in procedure_occurrence. ",
+        "Captures any prior lower-extremity arterial bypass or endarterectomy within a 10-year lookback."
       ),
       paste0(
         "Concept 21603553 (systemic antibiotic agent) and descendants in ",
@@ -477,7 +477,7 @@ source("R/cohort_demographics.R")
     "Prior revascularization (any)" = list(
       points = "+1",
       definition = "Any prior lower-extremity revascularization procedure",
-      omop_concept = "Concept 4159960 + descendants",
+      omop_concept = "Concepts 4236706 + 4225375 + descendants",
       derivation = "Procedure_occurrence within 10-year lookback"
     ),
     "Prolonged antibiotic exposure" = list(
@@ -673,9 +673,12 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
     paste0(
       "The target cohort comprised adults aged 18 years or older who underwent an inpatient ",
       "open lower-extremity revascularization procedure, defined using OMOP standard concept ",
-      "4159960 (Procedure on blood vessel of lower extremity) and all descendants via the ",
-      "concept_ancestor table. Qualifying procedure subtypes include femoral-popliteal bypass, ",
-      "femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. The index date ",
+      "4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) ",
+      "and all descendants via the concept_ancestor table. These concepts are scoped to operative ",
+      "procedures on arteries of the lower extremity only, excluding diagnostic imaging, venous ",
+      "procedures, and upper extremity arterial procedures. Qualifying procedure subtypes include ",
+      "femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. ",
+      "The index date ",
       "was defined as the start date of the first qualifying inpatient visit per person within ",
       "the study window. Persons with any surgical site infection (SSI) diagnosis (OMOP concept ",
       "4334801, SNOMED-CT 433202001) recorded in the 365 days prior to the index date were ",
@@ -706,7 +709,7 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
       "(concept 8532); overweight (BMI 25 to <30, concepts 3025315 and 3036277); obesity (BMI ≥30); ",
       "urgent or emergency procedure (concepts 4158569, 4250892); low ankle-brachial index ≤0.35 ",
       "(concepts 40489833, 46237026); prior lower-extremity revascularization within 10 years ",
-      "(concept 4159960 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
+      "(concepts 4236706 + 4225375 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
       "(concept 21603553 + descendants); operative time ≥4 hours (procedure_start/end_datetime); ",
       "high modified Frailty Index (mFI >0.25, requiring ≥2 of: diabetes 201820, COPD 255573, ",
       "congestive heart failure 316139, hypertension 316866, functional impairment 4215267); and ",
@@ -1984,7 +1987,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
   doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity revascularization (OMOP concept 4159960 and descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy). The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
+  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. Both concepts are explicitly scoped to arterial procedures of the lower extremity, excluding diagnostic imaging and venous procedures. The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
   doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 90 days of the index date.", style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
   doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
@@ -2149,7 +2152,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            ON po.person_id = p.person_id
          JOIN @vocab_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
-          AND ca.ancestor_concept_id   = 4159960
+          AND ca.ancestor_concept_id   IN (4236706, 4225375)
          LEFT JOIN @vocab_schema.concept c
            ON c.concept_id = po.procedure_concept_id
          WHERE p.person_id IN (@id_list)",

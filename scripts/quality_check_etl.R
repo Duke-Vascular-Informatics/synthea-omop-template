@@ -327,7 +327,7 @@ summary_sql <- SqlRender::translate(SqlRender::render(
     "   ) AND EXISTS (\n",
     "     SELECT 1 FROM @cdm_schema.concept_ancestor ca\n",
     "     WHERE ca.descendant_concept_id = po.procedure_concept_id\n",
-    "       AND ca.ancestor_concept_id = 4159960\n",
+    "       AND ca.ancestor_concept_id IN (4236706, 4225375)\n",
     "   )) AS open_revascularization_rows,\n",
     "  (SELECT COUNT(*) FROM @cdm_schema.condition_occurrence co WHERE co.person_id IN (\n",
     "     SELECT p.person_id FROM @cdm_schema.person p WHERE ", person_filter, "\n",
@@ -421,12 +421,12 @@ cat("\n")
 ssi_person_sql <- SqlRender::translate(SqlRender::render(
   paste0(
     "SELECT\n",
-    "  -- Open lower extremity revascularization: concept_ancestor rollup under 4159960\n",
+    "  -- Arterial surgery of lower extremity: concept_ancestor rollup under 4236706 + 4225375\n",
     "  (SELECT COUNT(DISTINCT po.person_id)\n",
     "   FROM @cdm_schema.procedure_occurrence po\n",
     "   INNER JOIN @cdm_schema.concept_ancestor ca\n",
     "     ON ca.descendant_concept_id = po.procedure_concept_id\n",
-    "   WHERE ca.ancestor_concept_id = 4159960\n",
+    "   WHERE ca.ancestor_concept_id IN (4236706, 4225375)\n",
     "     AND po.person_id IN (SELECT p2.person_id FROM @cdm_schema.person p2 WHERE ", person_filter, ")\n",
     "  ) AS people_with_open_revascularization,\n",
     "  -- PAD: standard concept 317309 (Peripheral arterial disease)\n",
