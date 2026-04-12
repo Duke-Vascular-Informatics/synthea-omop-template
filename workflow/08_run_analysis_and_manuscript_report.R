@@ -318,7 +318,7 @@ verify_omop_concepts <- function(connection_details) {
       442774L     # Intermittent claudication — indicationClaudication score component
     ),
     acceptable_std = c(
-      "S", "S",           # cohort definitions
+      "S", "S", "S",      # cohort definitions (4236706, 4225375, 4334801)
       "S", "S", "S",      # indication rollup
       "S", "S", "S", "S", # procedure rollup
       "S",                # gender
