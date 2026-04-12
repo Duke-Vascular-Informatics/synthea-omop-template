@@ -1718,9 +1718,23 @@ compute_subgroup_bias <- function(person_level,
   }
 
   # ---------------------------------------------------------------------------
+  # Step 4c — derive procedure type subgroup from OMOP CDM.
+  # ---------------------------------------------------------------------------
+  proc_type_labels <- tryCatch(
+    fetch_proc_type_labels(connection, config),
+    error = function(e) {
+      message("[subgroup_bias] fetch_proc_type_labels failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (!is.null(proc_type_labels)) {
+    df <- merge(df, proc_type_labels, by = "subject_id", all.x = TRUE)
+  }
+
+  # ---------------------------------------------------------------------------
   # Step 5 — bootstrap ECE for each non-empty, qualifying subgroup level.
   # ---------------------------------------------------------------------------
-  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year")
+  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year", "proc_type")
   # Keep only vars that were successfully added to df.
   subgroup_vars <- subgroup_vars[subgroup_vars %in% names(df)]
 

@@ -1568,7 +1568,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
           AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
          INNER JOIN @cdm_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
-          AND ca.ancestor_concept_id   = 4166196",
+          AND ca.ancestor_concept_id   = 4166196
+         UNION ALL
+         SELECT 'Extra-anatomic bypass',    COUNT(DISTINCT t.subject_id)
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4050281",
         results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
         cdm_schema     = config$cdm_schema,
@@ -1744,7 +1753,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     aortobif_n <- lookup_n(pt_df, "Aortobifemoral bypass")
     endar_n    <- lookup_n(pt_df, "Femoral endarterectomy")
     fempop_n   <- lookup_n(pt_df, "Femoral-popliteal bypass")
-    femtib_n   <- lookup_n(pt_df, "Femorotibial bypass")
+    femtib_n    <- lookup_n(pt_df, "Femorotibial bypass")
+    extraanat_n <- lookup_n(pt_df, "Extra-anatomic bypass")
 
     # ---- Assemble table -------------------------------------------------------
     tbl <- rbind(
@@ -1770,7 +1780,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       sub_row("Aortobifemoral bypass",    aortobif_n, n_target),
       sub_row("Femoral endarterectomy",   endar_n,    n_target),
       sub_row("Femoral-popliteal bypass", fempop_n,   n_target),
-      sub_row("Femorotibial bypass",      femtib_n,   n_target),
+      sub_row("Femorotibial bypass",      femtib_n,    n_target),
+      sub_row("Extra-anatomic bypass",    extraanat_n, n_target),
       # 90-day outcome
       row1("90-day outcome", header = TRUE),
       sub_row("Surgical site infection", n_outcome, n_target),
@@ -1901,9 +1912,17 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     if (is.null(bias_df) || nrow(bias_df) == 0) return(NULL)
 
+    # Impose Table 1 ordering on subgroup facets.
+    var_order <- c("age_group", "sex", "race", "ethnicity",
+                   "indication", "proc_type", "year")
+    present_vars <- var_order[var_order %in% bias_df$subgroup_var]
+    extra_vars   <- setdiff(unique(bias_df$subgroup_var), present_vars)
+    ordered_vars <- c(present_vars, extra_vars)
+    bias_df$subgroup_var <- factor(bias_df$subgroup_var, levels = ordered_vars)
+
     # Build a combined label: "Sex: Female", "Race: Black", etc.
     bias_df$label <- paste0(
-      tools::toTitleCase(gsub("_", " ", bias_df$subgroup_var)),
+      tools::toTitleCase(gsub("_", " ", as.character(bias_df$subgroup_var))),
       ": ",
       bias_df$subgroup_level
     )
@@ -1916,8 +1935,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     # Facet labels: capitalise the subgroup variable name for display.
     facet_labels <- setNames(
-      tools::toTitleCase(gsub("_", " ", unique(bias_df$subgroup_var))),
-      unique(bias_df$subgroup_var)
+      tools::toTitleCase(gsub("_", " ", levels(bias_df$subgroup_var))),
+      levels(bias_df$subgroup_var)
     )
 
     p <- ggplot2::ggplot(bias_df,
@@ -2065,6 +2084,31 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
   report_file <- next_report_file(output_dir, report_base_name)
 
+  # Query CDM source metadata early so values are available for the methods text.
+  cdm_version_str        <- ""
+  vocabulary_version_str <- ""
+  if (!is.null(connection_details) && !is.null(config)) {
+    tryCatch({
+      conn_meta <- DatabaseConnector::connect(connection_details)
+      meta_raw  <- DatabaseConnector::querySql(
+        conn_meta,
+        SqlRender::translate(
+          SqlRender::render(
+            "SELECT cdm_version, vocabulary_version FROM @cdm_schema.cdm_source",
+            cdm_schema = config$cdm_schema
+          ),
+          targetDialect = "sql server"
+        )
+      )
+      DatabaseConnector::disconnect(conn_meta)
+      names(meta_raw) <- tolower(names(meta_raw))
+      if (nrow(meta_raw) > 0) {
+        cdm_version_str        <- as.character(meta_raw$cdm_version[1])
+        vocabulary_version_str <- as.character(meta_raw$vocabulary_version[1])
+      }
+    }, error = function(e) NULL)
+  }
+
   doc <- read_docx()
   doc <- body_add_par(doc, "Manuscript Draft: Methods and Results", style = "heading 1")
   doc <- body_add_par(doc, "PAD Open Lower Extremity Revascularization and 30-Day Surgical Site Infection Risk Score Evaluation", style = "Normal")
@@ -2072,14 +2116,51 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "", style = "Normal")
 
   doc <- body_add_par(doc, "Methods", style = "heading 2")
-  doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
-  doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
+  doc <- body_add_par(doc, "Data source", style = "heading 3")
+  doc <- body_add_par(doc, paste0(
+    "This analysis used patient-level data mapped to the Observational Medical Outcomes Partnership ",
+    "Common Data Model (OMOP CDM",
+    if (nzchar(cdm_version_str))        paste0("; CDM version: ", cdm_version_str)        else "",
+    if (nzchar(vocabulary_version_str)) paste0("; vocabulary release: ", vocabulary_version_str) else "",
+    "). All cohort definitions, concept mappings, and analytic scripts are compatible with any ",
+    "OMOP CDM v5 data source. Full data source metadata are reported in Supplemental Table S1."
+  ), style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. Both concepts are explicitly scoped to arterial procedures of the lower extremity, excluding diagnostic imaging and venous procedures. The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
-  doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 90 days of the index date.", style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "The target cohort comprised adults aged 18 years or older who underwent inpatient open ",
+    "lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of ",
+    "lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, ",
+    "including femoral-popliteal bypass, femorotibial bypass, aortobifemoral bypass, femoral ",
+    "endarterectomy, and extra-anatomic bypass (axillofemoral and femorofemoral). Both anchor ",
+    "concepts are explicitly scoped to arterial procedures of the lower extremity, excluding ",
+    "diagnostic imaging and venous procedures. The index date was the start of the first qualifying ",
+    "inpatient visit per person. Patients with any SSI diagnosis in the 365 days prior to index ",
+    "were excluded. Corresponding CPT-4 codes for each procedure subgroup are listed in ",
+    "Supplemental Table S2."
+  ), style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "The outcome cohort identified the first surgical site infection diagnosis (OMOP concept 4334801, ",
+    "SNOMED-CT 433202001, and descendants, capturing superficial incisional, deep incisional, and ",
+    "organ-space SSI per CDC/NHSN classification) within 90 days of the index date. Source ICD ",
+    "codes used to identify SSI prior to standardisation are listed in Supplemental Table S3."
+  ), style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
   doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
   doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
+  doc <- body_add_par(doc, "Subgroup analysis and bias assessment", style = "heading 3")
+  doc <- body_add_par(doc, paste0(
+    "Model calibration was assessed across prespecified patient subgroups to identify populations ",
+    "in which the lookup risk score may systematically over- or underestimate observed SSI risk. ",
+    "Subgroups evaluated included biological sex, race, ethnicity, age group (<65, 65\u201374, \u226575 years), ",
+    "operative indication (claudication vs. critical limb ischemia), procedure type (aortobifemoral ",
+    "bypass, femoral-popliteal bypass, femorotibial bypass, femoral endarterectomy, extra-anatomic ",
+    "bypass), and calendar year of the index procedure. Expected calibration error (ECE) was ",
+    "computed within each subgroup as the weighted mean absolute difference between grouped ",
+    "predicted and observed event rates across quantile-based bins. Uncertainty was quantified ",
+    "using 200 bootstrap resamples (percentile 95% CI). Subgroup levels with fewer than 10 ",
+    "observed SSI events were suppressed to avoid unreliable estimates. Results are presented in ",
+    "Supplemental Table S4 and Supplemental Figure S1."
+  ), style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
 
@@ -2087,7 +2168,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 90 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
   doc <- body_add_par(doc, "Table 1. Demographics of the external validation cohort.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196; extra-anatomic bypass: 4050281). Procedure sub-rows are not mutually exclusive.", style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
@@ -2142,9 +2223,245 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     )
   }
 
+  doc <- body_add_par(doc, "Supplemental Material", style = "heading 2")
+
+  # ---- S1–S3: DB-sourced tables (own connection; order: CDM, CPT, ICD) ------
+  if (!is.null(connection_details) && !is.null(config)) {
+    tryCatch({
+      conn_supp <- DatabaseConnector::connect(connection_details)
+      on.exit(try(DatabaseConnector::disconnect(conn_supp), silent = TRUE), add = TRUE)
+
+      # ---- Supplemental Table S1 — CDM Source --------------------------------
+      tryCatch({
+        sql_cdm_src <- SqlRender::render(
+          "SELECT cdm_source_name, cdm_source_abbreviation, cdm_holder,
+                  source_release_date, cdm_release_date, cdm_version,
+                  vocabulary_version
+           FROM @cdm_schema.cdm_source",
+          cdm_schema = config$cdm_schema
+        )
+        cdm_src_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
+        )
+        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
+        if (nrow(cdm_src_raw) > 0) {
+          cdm_src_display <- data.frame(
+            Field = c("CDM Source Name", "Source Abbreviation", "CDM Holder",
+                      "Source Release Date", "CDM Release Date",
+                      "CDM Version", "Vocabulary Version"),
+            Value = c(as.character(cdm_src_raw$cdm_source_name[1]),
+                      as.character(cdm_src_raw$cdm_source_abbreviation[1]),
+                      as.character(cdm_src_raw$cdm_holder[1]),
+                      as.character(cdm_src_raw$source_release_date[1]),
+                      as.character(cdm_src_raw$cdm_release_date[1]),
+                      as.character(cdm_src_raw$cdm_version[1]),
+                      as.character(cdm_src_raw$vocabulary_version[1])),
+            stringsAsFactors = FALSE
+          )
+          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 10, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 4, part = "all") |>
+            flextable::width(j = "Field", width = 2.0) |>
+            flextable::width(j = "Value", width = 4.0) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "CDM source metadata", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S1. CDM source metadata.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance ",
+                   "used for this analysis. CDM Version and Vocabulary Version confirm ",
+                   "compliance with OMOP CDM v5.4 and the Athena vocabulary release used ",
+                   "during ETL."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, cdm_src_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S1 (CDM source) added.")
+        }
+      }, error = function(e) {
+        message("[report] CDM source table skipped: ", conditionMessage(e))
+      })
+
+      # ---- Supplemental Table S2 — CPT codes by procedure subgroup -----------
+      # Uses concept_relationship ('Mapped from') to find CPT4 source codes
+      # that map to SNOMED standard descendants — CPT4 codes are source codes
+      # (standard_concept IS NULL), not in concept_ancestor as descendants.
+      tryCatch({
+        sql_cpt <- SqlRender::render(
+          "SELECT DISTINCT proc_group, cpt_code, cpt_description
+           FROM (
+             -- Branch 1: CPT4 codes that ARE in concept_ancestor as descendants
+             -- (covers CPT4s with standard_concept = 'S' in this vocabulary)
+             SELECT grp.proc_group,
+                    c.concept_code AS cpt_code,
+                    c.concept_name AS cpt_description
+             FROM (
+               SELECT 'Endarterectomy'           AS proc_group, 4225375 AS ancestor_id
+               UNION ALL SELECT 'Aortobifemoral bypass',        4231680
+               UNION ALL SELECT 'Femoral-popliteal bypass',     4012936
+               UNION ALL SELECT 'Femorotibial bypass',          4166196
+               UNION ALL SELECT 'Extra-anatomic bypass',        4050281
+             ) grp
+             INNER JOIN @vocab_schema.concept_ancestor ca
+               ON ca.ancestor_concept_id = grp.ancestor_id
+             INNER JOIN @vocab_schema.concept c
+               ON c.concept_id    = ca.descendant_concept_id
+              AND c.vocabulary_id IN ('CPT4','HCPCS')
+
+             UNION
+
+             -- Branch 2: CPT4 source codes that map TO standard SNOMED descendants
+             -- via concept_relationship (catches CPT4s not in concept_ancestor)
+             SELECT grp.proc_group,
+                    c.concept_code AS cpt_code,
+                    c.concept_name AS cpt_description
+             FROM (
+               SELECT 'Endarterectomy'           AS proc_group, 4225375 AS ancestor_id
+               UNION ALL SELECT 'Aortobifemoral bypass',        4231680
+               UNION ALL SELECT 'Femoral-popliteal bypass',     4012936
+               UNION ALL SELECT 'Femorotibial bypass',          4166196
+               UNION ALL SELECT 'Extra-anatomic bypass',        4050281
+             ) grp
+             INNER JOIN @vocab_schema.concept_ancestor ca
+               ON ca.ancestor_concept_id = grp.ancestor_id
+             INNER JOIN @vocab_schema.concept_relationship cr
+               ON cr.concept_id_2    = ca.descendant_concept_id
+              AND cr.relationship_id = 'Maps to'
+              AND cr.invalid_reason  IS NULL
+             INNER JOIN @vocab_schema.concept c
+               ON c.concept_id    = cr.concept_id_1
+              AND c.vocabulary_id IN ('CPT4','HCPCS')
+           ) combined
+           ORDER BY proc_group, cpt_code",
+          vocab_schema = config$vocab_schema
+        )
+        cpt_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_cpt, targetDialect = "sql server")
+        )
+        names(cpt_raw) <- tolower(names(cpt_raw))
+        if (nrow(cpt_raw) > 0) {
+          cpt_display <- data.frame(
+            "Procedure Group" = cpt_raw$proc_group,
+            "CPT Code"        = cpt_raw$cpt_code,
+            "Description"     = cpt_raw$cpt_description,
+            check.names = FALSE, stringsAsFactors = FALSE
+          )
+          cpt_ft <- flextable::flextable(cpt_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 9, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 3, part = "all") |>
+            flextable::width(j = "Procedure Group", width = 1.8) |>
+            flextable::width(j = "CPT Code",        width = 0.9) |>
+            flextable::width(j = "Description",     width = 3.8) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "Index procedure CPT codes", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S2. CPT codes for index procedure subgroups.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: CPT-4 codes identified via concept_relationship ('Mapped from') ",
+                   "from SNOMED concept-ancestor descendants of each procedure subgroup anchor ",
+                   "(endarterectomy: 4225375; aortobifemoral: 4231680; femoral-popliteal: 4012936; ",
+                   "femorotibial: 4166196; extra-anatomic bypass: 4050281). ",
+                   "A code may appear in more than one group."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, cpt_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S2 (CPT codes) added.")
+        }
+      }, error = function(e) {
+        message("[report] CPT supplemental table skipped: ", conditionMessage(e))
+      })
+
+      # ---- Supplemental Table S3 — ICD codes for SSI outcome concept ---------
+      tryCatch({
+        sql_icd <- SqlRender::render(
+          "SELECT DISTINCT
+             c.vocabulary_id,
+             c.concept_code  AS icd_code,
+             c.concept_name  AS icd_description
+           FROM @vocab_schema.concept_ancestor ca
+           INNER JOIN @vocab_schema.concept_relationship cr
+             ON cr.concept_id_2    = ca.descendant_concept_id
+            AND cr.relationship_id = 'Maps to'
+            AND cr.invalid_reason  IS NULL
+           INNER JOIN @vocab_schema.concept c
+             ON c.concept_id    = cr.concept_id_1
+            AND c.vocabulary_id IN ('ICD9CM','ICD10CM','ICD10PCS','ICD9Proc')
+           WHERE ca.ancestor_concept_id = 4334801
+             AND c.concept_code NOT LIKE 'O86%'
+             AND c.concept_code NOT LIKE 'T86.84%'
+           ORDER BY c.vocabulary_id, c.concept_code",
+          vocab_schema = config$vocab_schema
+        )
+        icd_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_icd, targetDialect = "sql server")
+        )
+        names(icd_raw) <- tolower(names(icd_raw))
+        if (nrow(icd_raw) > 0) {
+          icd_display <- data.frame(
+            "Vocabulary"  = icd_raw$vocabulary_id,
+            "ICD Code"    = icd_raw$icd_code,
+            "Description" = icd_raw$icd_description,
+            check.names = FALSE, stringsAsFactors = FALSE
+          )
+          icd_ft <- flextable::flextable(icd_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 9, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 3, part = "all") |>
+            flextable::width(j = "Vocabulary",  width = 1.0) |>
+            flextable::width(j = "ICD Code",    width = 1.2) |>
+            flextable::width(j = "Description", width = 4.3) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "SSI outcome ICD codes", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S3. ICD codes mapping to the surgical site infection outcome concept.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: Source ICD-9-CM and ICD-10-CM codes that map to OMOP concept 4334801 ",
+                   "(Surgical site infection, SNOMED-CT 433202001) or its descendants via ",
+                   "concept_relationship (relationship: 'Maps to'). These are the codes used to ",
+                   "identify the SSI outcome in source data prior to OMOP ETL standardisation."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, icd_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S3 (SSI ICD codes) added.")
+        }
+      }, error = function(e) {
+        message("[report] SSI ICD supplemental table skipped: ", conditionMessage(e))
+      })
+
+      DatabaseConnector::disconnect(conn_supp)
+    }, error = function(e) {
+      message("[report] Supplemental DB tables skipped: ", conditionMessage(e))
+    })
+  }
+
+  # ---- S4: Bias table, S5: Forest plot (from pre-loaded CSV) ----------------
   if (!is.null(subgroup_bias_df) && nrow(subgroup_bias_df) > 0) {
 
-    doc <- body_add_par(doc, "Supplemental Material", style = "heading 2")
+    # Sort rows to match Table 1 order: age_group, sex, race, ethnicity,
+    # indication, proc_type, year — any unlisted vars sort to the end.
+    subgroup_order <- c(age_group = 1, sex = 2, race = 3, ethnicity = 4,
+                        indication = 5, proc_type = 6, year = 7)
+    sort_key <- subgroup_order[match(subgroup_bias_df$subgroup_var,
+                                     names(subgroup_order))]
+    sort_key[is.na(sort_key)] <- 99L
+    subgroup_bias_df <- subgroup_bias_df[order(sort_key,
+                                               subgroup_bias_df$subgroup_level), ]
 
     # Overall ECE for reference line — read from metrics.csv.
     overall_ece_val <- tryCatch(
@@ -2186,7 +2503,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     doc <- body_add_par(doc, "Subgroup bias assessment", style = "heading 3")
     doc <- body_add_par(doc,
-      paste0("Table 4. Expected calibration error (ECE) by subgroup."),
+      "Supplemental Table S4. Expected calibration error (ECE) by subgroup.",
       style = "Normal")
     doc <- body_add_par(doc,
       paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
@@ -2206,6 +2523,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     )
     if (!is.null(forest_png) && file.exists(forest_png)) {
       plot_height <- max(4.0, nrow(subgroup_bias_df) * 0.35 + 1.5)
+      doc <- body_add_par(doc, "Subgroup calibration forest plot", style = "heading 3")
       doc <- body_add_par(doc,
         "Supplemental Figure S1. Subgroup calibration forest plot.",
         style = "Normal")
@@ -2351,79 +2669,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       message("[report] Fringe case CSV written to: ",
               normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
 
-      # ---- Supplemental Table: CDM Source ------------------------------------
-      tryCatch({
-        sql_cdm_src <- SqlRender::render(
-          "SELECT
-             cdm_source_name,
-             cdm_source_abbreviation,
-             cdm_holder,
-             source_release_date,
-             cdm_release_date,
-             cdm_version,
-             vocabulary_version
-           FROM @cdm_schema.cdm_source",
-          cdm_schema = config$cdm_schema
-        )
-        cdm_src_raw <- DatabaseConnector::querySql(
-          conn_f,
-          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
-        )
-        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
-
-        if (nrow(cdm_src_raw) > 0) {
-          cdm_src_display <- data.frame(
-            Field = c(
-              "CDM Source Name",
-              "Source Abbreviation",
-              "CDM Holder",
-              "Source Release Date",
-              "CDM Release Date",
-              "CDM Version",
-              "Vocabulary Version"
-            ),
-            Value = c(
-              as.character(cdm_src_raw$cdm_source_name[1]),
-              as.character(cdm_src_raw$cdm_source_abbreviation[1]),
-              as.character(cdm_src_raw$cdm_holder[1]),
-              as.character(cdm_src_raw$source_release_date[1]),
-              as.character(cdm_src_raw$cdm_release_date[1]),
-              as.character(cdm_src_raw$cdm_version[1]),
-              as.character(cdm_src_raw$vocabulary_version[1])
-            ),
-            stringsAsFactors = FALSE
-          )
-
-          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
-            flextable::bold(part = "header") |>
-            flextable::fontsize(size = 10, part = "all") |>
-            flextable::font(fontname = "Calibri", part = "all") |>
-            flextable::bg(part = "header", bg = "#1F3864") |>
-            flextable::color(part = "header", color = "white") |>
-            flextable::padding(padding = 4, part = "all") |>
-            flextable::width(j = "Field", width = 2.0) |>
-            flextable::width(j = "Value", width = 4.0) |>
-            flextable::set_table_properties(layout = "fixed")
-
-          doc <<- body_add_par(doc, "CDM Source", style = "heading 3")
-          doc <<- body_add_par(doc,
-            "Supplemental Table S2. CDM source metadata.",
-            style = "Normal")
-          doc <<- body_add_par(doc,
-            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance used ",
-                   "for this analysis. CDM Version and Vocabulary Version confirm compliance with ",
-                   "OMOP CDM v5.4 and the Athena vocabulary release used during ETL."),
-            style = "Normal")
-          doc <<- body_add_flextable(doc, cdm_src_ft)
-          doc <<- body_add_par(doc, "", style = "Normal")
-          message("[report] CDM source table added to supplemental section.")
-        }
-      }, error = function(e) {
-        message("[report] CDM source table skipped: ", conditionMessage(e))
-      })
-
     }, error = function(e) {
-      message("[report] Fringe case Excel skipped: ", conditionMessage(e))
+      message("[report] Fringe case CSV skipped: ", conditionMessage(e))
     })
   }
 
