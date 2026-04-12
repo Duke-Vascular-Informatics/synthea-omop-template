@@ -1619,9 +1619,22 @@ compute_subgroup_bias <- function(person_level,
   }
 
   # ---------------------------------------------------------------------------
+  # Step 4b — derive calendar year from index_date for temporal subgroup.
+  # ---------------------------------------------------------------------------
+  if ("index_date" %in% names(df)) {
+    year_val <- tryCatch(
+      as.integer(format(as.Date(df$index_date), "%Y")),
+      error = function(e) NA_integer_
+    )
+    if (!all(is.na(year_val))) {
+      df$year <- as.character(year_val)
+    }
+  }
+
+  # ---------------------------------------------------------------------------
   # Step 5 — bootstrap ECE for each non-empty, qualifying subgroup level.
   # ---------------------------------------------------------------------------
-  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication")
+  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year")
   # Keep only vars that were successfully added to df.
   subgroup_vars <- subgroup_vars[subgroup_vars %in% names(df)]
 
@@ -1696,16 +1709,19 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
   p <- ggplot2::ggplot(calibration_table, ggplot2::aes(x = predicted, y = observed)) +
     ggplot2::geom_point(size = 2) +
     ggplot2::geom_line() +
-    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
       title = paste("Calibration Plot:", model_name),
       x = "Mean predicted risk",
       y = "Observed event rate"
     ) +
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::coord_equal() +
     ggplot2::theme_minimal()
 
   out_file <- file.path(output_folder, paste0("calibration_", model_name, ".png"))
-  ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
+  ggplot2::ggsave(out_file, p, width = 5, height = 5, dpi = 150)
 }
 
 # =============================================================================
