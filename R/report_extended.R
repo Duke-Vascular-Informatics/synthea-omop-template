@@ -427,6 +427,95 @@ source("R/cohort_demographics.R")
 }
 
 # -----------------------------------------------------------------------------
+# .save_ssi_rate_by_month_plot()
+#
+# Builds a bar chart of 90-day SSI rate (%) by calendar month (Jan–Dec),
+# pooled across all years.  Each bar shows the observed SSI rate for procedures
+# indexed in that calendar month, annotated with the total procedure count.
+# Months with < 5 procedures are suppressed to avoid unstable estimates.
+# Returns NULL silently if the date column is absent or no months remain.
+# -----------------------------------------------------------------------------
+.save_ssi_rate_by_month_plot <- function(person_level_df, output_folder) {
+  if (!all(c("index_date", "outcome") %in% names(person_level_df))) {
+    message("[report] SSI-by-month plot skipped: index_date or outcome column missing.")
+    return(NULL)
+  }
+
+  month_val <- tryCatch(
+    as.integer(format(as.Date(person_level_df$index_date), "%m")),
+    error = function(e) NA_integer_
+  )
+
+  df_mo <- data.frame(
+    month   = month_val,
+    outcome = as.integer(person_level_df$outcome),
+    stringsAsFactors = FALSE
+  )
+  df_mo <- df_mo[!is.na(df_mo$month), ]
+
+  # Aggregate across all months 1–12 (keep all so x-axis is always Jan–Dec)
+  mo_tbl <- do.call(rbind, lapply(1:12, function(m) {
+    sub    <- df_mo[df_mo$month == m, ]
+    n      <- nrow(sub)
+    events <- sum(sub$outcome, na.rm = TRUE)
+    data.frame(
+      month    = m,
+      n        = n,
+      events   = events,
+      ssi_rate = if (n >= 5) 100 * events / n else NA_real_,
+      stringsAsFactors = FALSE
+    )
+  }))
+
+  mo_tbl$month_label <- factor(
+    mo_tbl$month,
+    levels = 1:12,
+    labels = c("Jan","Feb","Mar","Apr","May","Jun",
+               "Jul","Aug","Sep","Oct","Nov","Dec")
+  )
+
+  if (all(is.na(mo_tbl$ssi_rate))) {
+    message("[report] SSI-by-month plot skipped: all months suppressed (< 5 procedures each).")
+    return(NULL)
+  }
+
+  p <- ggplot2::ggplot(mo_tbl, ggplot2::aes(x = month_label, y = ssi_rate)) +
+    ggplot2::geom_col(fill = "#1F3864", width = 0.7, na.rm = TRUE) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = ifelse(!is.na(ssi_rate), paste0("n=", n), "")),
+      vjust = -0.4, size = 2.8, colour = "grey30", na.rm = TRUE
+    ) +
+    ggplot2::scale_y_continuous(
+      limits = c(0, NA),
+      expand = ggplot2::expansion(mult = c(0, 0.15)),
+      labels = function(x) paste0(round(x, 1), "%")
+    ) +
+    ggplot2::labs(
+      title   = "90-Day SSI Rate by Month of Procedure",
+      x       = "Month of index procedure",
+      y       = "90-day SSI rate (%)",
+      caption = paste0("Pooled across all study years (", min(df_mo$month, na.rm = TRUE),
+                       "\u2013", max(df_mo$month, na.rm = TRUE), "). ",
+                       "Months with < 5 procedures suppressed.")
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      plot.caption     = ggplot2::element_text(size = 8),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor   = ggplot2::element_blank()
+    )
+
+  out_file <- file.path(output_folder, "ssi_rate_by_month.png")
+  tryCatch({
+    ggplot2::ggsave(out_file, p, width = 7, height = 4.5, dpi = 150)
+    out_file
+  }, error = function(e) {
+    message("[report] Could not save SSI-by-month plot: ", conditionMessage(e))
+    NULL
+  })
+}
+
+# -----------------------------------------------------------------------------
 # .build_cohort_summary_table()
 #
 # Builds a flextable summary of overall cohort statistics from the person-level
@@ -2600,7 +2689,10 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   )
 
   # Figure 1 — SSI rate by year (requires index_date in person_level)
-  ssi_year_plot_file <- .save_ssi_rate_by_year_plot(person_level, temp_figure_dir)
+  ssi_year_plot_file  <- .save_ssi_rate_by_year_plot(person_level, temp_figure_dir)
+
+  # Supplemental — SSI rate by month of year
+  ssi_month_plot_file <- .save_ssi_rate_by_month_plot(person_level, temp_figure_dir)
 
   # Score distribution plot (supplemental S4)
   score_dist_plot_file <- save_score_distribution_plot(person_level, temp_figure_dir)
@@ -2766,7 +2858,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     "predicted and observed event rates across quantile-based bins. Uncertainty was quantified ",
     "using 200 bootstrap resamples (percentile 95% CI). Subgroup levels with fewer than 10 ",
     "observed SSI events were suppressed to avoid unreliable estimates. Results are presented in ",
-    "Supplemental Table S5 and Supplemental Figure S6."
+    "Supplemental Table S6 and Supplemental Figure S7."
   ), style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
@@ -3270,11 +3362,28 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     })
   }
 
-  # ---- S4: Score distribution plot -----------------------------------------
+  # ---- S4: SSI rate by month of year ----------------------------------------
+  if (!is.null(ssi_month_plot_file) && file.exists(ssi_month_plot_file)) {
+    doc <- body_add_par(doc, "SSI rate by month", style = "heading 3")
+    doc <- body_add_par(doc,
+      "Supplemental Figure S4. 90-day SSI rate by calendar month of procedure.",
+      style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: Observed 90-day surgical site infection rate (%) for each calendar month ",
+      "(January through December), pooled across all study years. Bar height represents the ",
+      "SSI rate; numbers above each bar show the total procedure count for that month. ",
+      "Months with fewer than 5 procedures are suppressed."
+    ), style = "Normal")
+    doc <- body_add_img(doc, src = ssi_month_plot_file, width = 5.5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Supplemental Figure S4 (SSI by month) added.")
+  }
+
+  # ---- S5: Score distribution plot -----------------------------------------
   if (!is.null(score_dist_plot_file) && file.exists(score_dist_plot_file)) {
     doc <- body_add_par(doc, "Score distribution", style = "heading 3")
     doc <- body_add_par(doc,
-      "Supplemental Figure S4. Distribution of predicted risk by outcome group.",
+      "Supplemental Figure S5. Distribution of predicted risk by outcome group.",
       style = "Normal")
     doc <- body_add_par(doc, paste0(
       "Caption: Overlapping density histograms of model-predicted 90-day SSI risk (x-axis) ",
@@ -3284,10 +3393,10 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     ), style = "Normal")
     doc <- body_add_img(doc, src = score_dist_plot_file, width = 5.5, height = 3.5)
     doc <- body_add_par(doc, "", style = "Normal")
-    message("[report] Supplemental Figure S4 (score distribution) added.")
+    message("[report] Supplemental Figure S5 (score distribution) added.")
   }
 
-  # ---- S5: Bias table, S6: Forest plot (from pre-loaded CSV) ----------------
+  # ---- S6: Bias table, S7: Forest plot (from pre-loaded CSV) ----------------
   if (!is.null(subgroup_bias_df) && nrow(subgroup_bias_df) > 0) {
 
     # Sort rows to match Table 1 order: age_group, sex, race, ethnicity,
@@ -3340,12 +3449,12 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     doc <- body_add_par(doc, "Subgroup bias assessment", style = "heading 3")
     doc <- body_add_par(doc,
-      "Supplemental Table S5. Expected calibration error (ECE) by subgroup.",
+      "Supplemental Table S6. Expected calibration error (ECE) by subgroup.",
       style = "Normal")
     doc <- body_add_par(doc,
       paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
              "Subgroups with fewer than 10 observed SSI events are suppressed. ",
-             "Overall ECE (dashed reference line in Supplemental Figure S6) = ",
+             "Overall ECE (dashed reference line in Supplemental Figure S7) = ",
              round(overall_ece_val, 3), ". ",
              "95% CI = bootstrap percentile interval (B\u2009=\u2009200 resamples)."),
       style = "Normal")
@@ -3362,7 +3471,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       plot_height <- max(4.0, nrow(subgroup_bias_df) * 0.35 + 1.5)
       doc <- body_add_par(doc, "Subgroup calibration forest plot", style = "heading 3")
       doc <- body_add_par(doc,
-        "Supplemental Figure S6. Subgroup calibration forest plot.",
+        "Supplemental Figure S7. Subgroup calibration forest plot.",
         style = "Normal")
       doc <- body_add_par(doc,
         paste0("Caption: Expected calibration error (ECE) with 95% bootstrap percentile CIs (B\u2009=\u2009200) ",
