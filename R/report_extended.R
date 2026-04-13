@@ -403,7 +403,7 @@ source("R/cohort_demographics.R")
     ggplot2::scale_y_continuous(limits = c(0, NA),
                                 labels = function(x) paste0(round(x, 1), "%")) +
     ggplot2::labs(
-      title   = "SSI Rate by Procedure Year",
+      title   = "90-Day SSI Rate by Procedure Year",
       x       = "Year of procedure",
       y       = "90-day SSI rate (%)",
       caption = paste0("N = ", sum(yr_tbl$n), " procedures; ",
@@ -1771,33 +1771,59 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         NULL
       })
 
-      # 5. SSI type breakdown: superficial / deep / organ-space
+      # 5. SSI type breakdown: superficial / deep / organ-space / unclassified
       # Ancestor concept IDs (SNOMED-CT, OMOP standard):
       #   43530818 = Superficial incisional surgical site infection
       #   4308542  = Postoperative wound infection - deep  (deep incisional proxy)
       #   43530820 = Organ-space surgical site infection
-      # Each patient is counted under their most-specific SSI type; a patient
-      # with only a non-classified SSI code is counted as 'Other / unclassified'.
+      # Counts are distinct patients whose SSI condition_concept_id is a
+      # descendant of the relevant ancestor.  Patients coded only at the parent
+      # level (e.g. 4334801) are captured in n_unclassified.
       sql_ssi_type <- SqlRender::render(
         paste0(
-          "WITH ", ssi_cte, "
+          "WITH ", ssi_cte, ",
+           typed AS (
+             SELECT DISTINCT
+               si.subject_id,
+               MAX(CASE WHEN ca_sup.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_superficial,
+               MAX(CASE WHEN ca_deep.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_deep,
+               MAX(CASE WHEN ca_org.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_organ
+             FROM ssi_w_index si
+             INNER JOIN @cdm_schema.condition_occurrence co
+               ON  co.person_id                       = si.subject_id
+               AND CAST(co.condition_start_date AS DATE) = si.ssi_date
+             INNER JOIN @cdm_schema.concept_ancestor ca_ssi
+               ON  ca_ssi.descendant_concept_id = co.condition_concept_id
+               AND ca_ssi.ancestor_concept_id   = 4334801
+             LEFT JOIN @cdm_schema.concept_ancestor ca_sup
+               ON  ca_sup.descendant_concept_id = co.condition_concept_id
+               AND ca_sup.ancestor_concept_id   = 43530818
+             LEFT JOIN @cdm_schema.concept_ancestor ca_deep
+               ON  ca_deep.descendant_concept_id = co.condition_concept_id
+               AND ca_deep.ancestor_concept_id   = 4308542
+             LEFT JOIN @cdm_schema.concept_ancestor ca_org
+               ON  ca_org.descendant_concept_id  = co.condition_concept_id
+               AND ca_org.ancestor_concept_id    = 43530820
+           ),
+           deduped AS (
+             SELECT subject_id,
+                    MAX(is_superficial) AS is_superficial,
+                    MAX(is_deep)        AS is_deep,
+                    MAX(is_organ)       AS is_organ
+             FROM typed
+             GROUP BY subject_id
+           )
            SELECT
-             SUM(CASE WHEN ca_sup.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END) AS n_superficial,
-             SUM(CASE WHEN ca_deep.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END) AS n_deep,
-             SUM(CASE WHEN ca_org.ancestor_concept_id  IS NOT NULL THEN 1 ELSE 0 END) AS n_organ
-           FROM ssi_w_index si
-           INNER JOIN @cdm_schema.condition_occurrence co
-             ON  co.person_id           = si.subject_id
-             AND CAST(co.condition_start_date AS DATE) = si.ssi_date
-           LEFT JOIN @cdm_schema.concept_ancestor ca_sup
-             ON  ca_sup.descendant_concept_id = co.condition_concept_id
-             AND ca_sup.ancestor_concept_id   = 43530818
-           LEFT JOIN @cdm_schema.concept_ancestor ca_deep
-             ON  ca_deep.descendant_concept_id = co.condition_concept_id
-             AND ca_deep.ancestor_concept_id   = 4308542
-           LEFT JOIN @cdm_schema.concept_ancestor ca_org
-             ON  ca_org.descendant_concept_id = co.condition_concept_id
-             AND ca_org.ancestor_concept_id   = 43530820"
+             SUM(is_superficial)                                       AS n_superficial,
+             SUM(is_deep)                                              AS n_deep,
+             SUM(is_organ)                                             AS n_organ,
+             SUM(CASE WHEN is_superficial = 0
+                       AND is_deep        = 0
+                       AND is_organ       = 0 THEN 1 ELSE 0 END)      AS n_unclassified
+           FROM deduped"
         ),
         results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
@@ -1817,16 +1843,17 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       })
 
       out <- list(
-        n_ssi         = if (!is.null(days_raw))     as.integer(days_raw$n_ssi[1])           else NA_integer_,
-        median_days   = if (!is.null(days_raw))     as.numeric(days_raw$median_days[1])     else NA_real_,
-        p25           = if (!is.null(days_raw))     as.numeric(days_raw$p25[1])             else NA_real_,
-        p75           = if (!is.null(days_raw))     as.numeric(days_raw$p75[1])             else NA_real_,
-        n_reoperation = if (!is.null(reop_raw))     as.integer(reop_raw$n_reoperation[1])   else NA_integer_,
-        n_readmission = if (!is.null(readm_raw))    as.integer(readm_raw$n_readmission[1])  else NA_integer_,
-        n_death       = if (!is.null(death_raw))    as.integer(death_raw$n_death[1])        else NA_integer_,
-        n_superficial = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_superficial[1]) else NA_integer_,
-        n_deep        = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_deep[1])        else NA_integer_,
-        n_organ       = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_organ[1])       else NA_integer_
+        n_ssi           = if (!is.null(days_raw))     as.integer(days_raw$n_ssi[1])              else NA_integer_,
+        median_days     = if (!is.null(days_raw))     as.numeric(days_raw$median_days[1])        else NA_real_,
+        p25             = if (!is.null(days_raw))     as.numeric(days_raw$p25[1])                else NA_real_,
+        p75             = if (!is.null(days_raw))     as.numeric(days_raw$p75[1])                else NA_real_,
+        n_reoperation   = if (!is.null(reop_raw))     as.integer(reop_raw$n_reoperation[1])      else NA_integer_,
+        n_readmission   = if (!is.null(readm_raw))    as.integer(readm_raw$n_readmission[1])     else NA_integer_,
+        n_death         = if (!is.null(death_raw))    as.integer(death_raw$n_death[1])           else NA_integer_,
+        n_superficial   = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_superficial[1])  else NA_integer_,
+        n_deep          = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_deep[1])         else NA_integer_,
+        n_organ         = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_organ[1])        else NA_integer_,
+        n_unclassified  = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_unclassified[1]) else NA_integer_
       )
     }, silent = TRUE)
 
@@ -2429,6 +2456,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         "    Superficial incisional, n (%)",
         "    Deep incisional, n (%)",
         "    Organ-space, n (%)",
+        "    Other / unclassified, n (%)",
         "Reoperation within 90 days following SSI, n (%)",
         "Readmission within 90 days following SSI, n (%)",
         "Death within 90 days of index operation, n (%)"
@@ -2436,12 +2464,13 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       Value = c(
         days_str,
         "",
-        fmt_n_pct(ssi_outcomes$n_superficial, n_ssi_denom),
-        fmt_n_pct(ssi_outcomes$n_deep,        n_ssi_denom),
-        fmt_n_pct(ssi_outcomes$n_organ,       n_ssi_denom),
-        fmt_n_pct(ssi_outcomes$n_reoperation, n_ssi_denom),
-        fmt_n_pct(ssi_outcomes$n_readmission, n_ssi_denom),
-        fmt_n_pct(ssi_outcomes$n_death,       n_ssi_denom)
+        fmt_n_pct(ssi_outcomes$n_superficial,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_deep,         n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_organ,        n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_unclassified, n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_reoperation,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_readmission,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_death,        n_ssi_denom)
       ),
       stringsAsFactors = FALSE
     )
@@ -2484,7 +2513,10 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         "procedure (n\u00a0=\u00a0", n_ssi_denom, "). ",
         "SSI type is classified by concept_ancestor rollup: superficial incisional ",
         "(OMOP concept 43530818), deep incisional (concept 4308542), organ-space ",
-        "(concept 43530820); counts reflect condition_occurrence records on the SSI date. ",
+        "(concept 43530820); 'Other / unclassified' captures patients whose SSI is ",
+        "coded only at the parent concept level (4334801) without a more specific ",
+        "descendant code. Counts reflect distinct patients; a patient may contribute ",
+        "to more than one type if multiple SSI codes are present on the SSI date. ",
         "Reoperation: any procedure_occurrence recorded after the SSI diagnosis date and ",
         "within 90 days of the index procedure date. ",
         "Readmission: any inpatient visit (OMOP visit_concept_id 9201) starting after the ",
