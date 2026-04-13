@@ -2304,7 +2304,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     "Common Data Model (OMOP CDM",
     if (nzchar(cdm_version_str))        paste0("; CDM version: ", cdm_version_str)        else "",
     if (nzchar(vocabulary_version_str)) paste0("; vocabulary release: ", vocabulary_version_str) else "",
-    "). All cohort definitions, concept mappings, and analytic scripts are compatible with any ",
+    "). The study window spanned ",
+    if (!is.null(config$study_start_date)) format(as.Date(config$study_start_date), "%B %d, %Y") else "N/A",
+    " to ",
+    if (!is.null(config$study_end_date))   format(as.Date(config$study_end_date),   "%B %d, %Y") else "N/A",
+    ". All cohort definitions, concept mappings, and analytic scripts are compatible with any ",
     "OMOP CDM v5 data source. Full data source metadata are reported in Supplemental Table S1."
   ), style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
@@ -2504,14 +2508,17 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
           cdm_src_display <- data.frame(
             Field = c("CDM Source Name", "Source Abbreviation", "CDM Holder",
                       "Source Release Date", "CDM Release Date",
-                      "CDM Version", "Vocabulary Version"),
+                      "CDM Version", "Vocabulary Version",
+                      "Study Start Date", "Study End Date"),
             Value = c(as.character(cdm_src_raw$cdm_source_name[1]),
                       as.character(cdm_src_raw$cdm_source_abbreviation[1]),
                       as.character(cdm_src_raw$cdm_holder[1]),
                       as.character(cdm_src_raw$source_release_date[1]),
                       as.character(cdm_src_raw$cdm_release_date[1]),
                       as.character(cdm_src_raw$cdm_version[1]),
-                      as.character(cdm_src_raw$vocabulary_version[1])),
+                      as.character(cdm_src_raw$vocabulary_version[1]),
+                      if (!is.null(config$study_start_date)) as.character(config$study_start_date) else "N/A",
+                      if (!is.null(config$study_end_date))   as.character(config$study_end_date)   else "N/A"),
             stringsAsFactors = FALSE
           )
           cdm_src_ft <- flextable::flextable(cdm_src_display) |>
