@@ -94,8 +94,8 @@ get_validation_config <- function() {
     # Study date window applied to both cohort instantiation and PLP data pull.
     # Adjust to match the date range of the original training study so that
     # temporal drift analysis is meaningful.
-    study_start_date = "2010-01-01",
-    study_end_date   = "2023-12-31",
+    study_start_date = "2017-01-01",
+    study_end_date   = "2025-12-31",
 
     # ---------------------------------------------------------------------------
     # Pre-trained model path

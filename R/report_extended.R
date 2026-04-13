@@ -405,7 +405,7 @@ source("R/cohort_demographics.R")
     ggplot2::labs(
       title   = "SSI Rate by Procedure Year",
       x       = "Year of procedure",
-      y       = "30-day SSI rate (%)",
+      y       = "90-day SSI rate (%)",
       caption = paste0("N = ", sum(yr_tbl$n), " procedures; ",
                        "years with < 10 procedures suppressed.")
     ) +
@@ -1771,14 +1771,62 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         NULL
       })
 
+      # 5. SSI type breakdown: superficial / deep / organ-space
+      # Ancestor concept IDs (SNOMED-CT, OMOP standard):
+      #   43530818 = Superficial incisional surgical site infection
+      #   4308542  = Postoperative wound infection - deep  (deep incisional proxy)
+      #   43530820 = Organ-space surgical site infection
+      # Each patient is counted under their most-specific SSI type; a patient
+      # with only a non-classified SSI code is counted as 'Other / unclassified'.
+      sql_ssi_type <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT
+             SUM(CASE WHEN ca_sup.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END) AS n_superficial,
+             SUM(CASE WHEN ca_deep.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END) AS n_deep,
+             SUM(CASE WHEN ca_org.ancestor_concept_id  IS NOT NULL THEN 1 ELSE 0 END) AS n_organ
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.condition_occurrence co
+             ON  co.person_id           = si.subject_id
+             AND CAST(co.condition_start_date AS DATE) = si.ssi_date
+           LEFT JOIN @cdm_schema.concept_ancestor ca_sup
+             ON  ca_sup.descendant_concept_id = co.condition_concept_id
+             AND ca_sup.ancestor_concept_id   = 43530818
+           LEFT JOIN @cdm_schema.concept_ancestor ca_deep
+             ON  ca_deep.descendant_concept_id = co.condition_concept_id
+             AND ca_deep.ancestor_concept_id   = 4308542
+           LEFT JOIN @cdm_schema.concept_ancestor ca_org
+             ON  ca_org.descendant_concept_id = co.condition_concept_id
+             AND ca_org.ancestor_concept_id   = 43530820"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      ssi_type_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_ssi_type, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] SSI type query failed: ", conditionMessage(e))
+        NULL
+      })
+
       out <- list(
-        n_ssi         = if (!is.null(days_raw)) as.integer(days_raw$n_ssi[1])          else NA_integer_,
-        median_days   = if (!is.null(days_raw)) as.numeric(days_raw$median_days[1])    else NA_real_,
-        p25           = if (!is.null(days_raw)) as.numeric(days_raw$p25[1])            else NA_real_,
-        p75           = if (!is.null(days_raw)) as.numeric(days_raw$p75[1])            else NA_real_,
-        n_reoperation = if (!is.null(reop_raw))  as.integer(reop_raw$n_reoperation[1]) else NA_integer_,
-        n_readmission = if (!is.null(readm_raw)) as.integer(readm_raw$n_readmission[1]) else NA_integer_,
-        n_death       = if (!is.null(death_raw)) as.integer(death_raw$n_death[1])       else NA_integer_
+        n_ssi         = if (!is.null(days_raw))     as.integer(days_raw$n_ssi[1])           else NA_integer_,
+        median_days   = if (!is.null(days_raw))     as.numeric(days_raw$median_days[1])     else NA_real_,
+        p25           = if (!is.null(days_raw))     as.numeric(days_raw$p25[1])             else NA_real_,
+        p75           = if (!is.null(days_raw))     as.numeric(days_raw$p75[1])             else NA_real_,
+        n_reoperation = if (!is.null(reop_raw))     as.integer(reop_raw$n_reoperation[1])   else NA_integer_,
+        n_readmission = if (!is.null(readm_raw))    as.integer(readm_raw$n_readmission[1])  else NA_integer_,
+        n_death       = if (!is.null(death_raw))    as.integer(death_raw$n_death[1])        else NA_integer_,
+        n_superficial = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_superficial[1]) else NA_integer_,
+        n_deep        = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_deep[1])        else NA_integer_,
+        n_organ       = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_organ[1])       else NA_integer_
       )
     }, silent = TRUE)
 
@@ -2377,18 +2425,30 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     ssi_outcome_tbl <- data.frame(
       Outcome = c(
         "Days from index operation to SSI, median (IQR)",
+        "SSI type",
+        "    Superficial incisional, n (%)",
+        "    Deep incisional, n (%)",
+        "    Organ-space, n (%)",
         "Reoperation within 90 days following SSI, n (%)",
         "Readmission within 90 days following SSI, n (%)",
         "Death within 90 days of index operation, n (%)"
       ),
       Value = c(
         days_str,
+        "",
+        fmt_n_pct(ssi_outcomes$n_superficial, n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_deep,        n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_organ,       n_ssi_denom),
         fmt_n_pct(ssi_outcomes$n_reoperation, n_ssi_denom),
         fmt_n_pct(ssi_outcomes$n_readmission, n_ssi_denom),
         fmt_n_pct(ssi_outcomes$n_death,       n_ssi_denom)
       ),
       stringsAsFactors = FALSE
     )
+
+    # Row indices for formatting
+    ssi_header_rows <- which(ssi_outcome_tbl$Outcome == "SSI type")
+    ssi_indent_rows <- grep("^    ", ssi_outcome_tbl$Outcome)
 
     ssi_out_ft <- flextable::flextable(ssi_outcome_tbl) |>
       flextable::bold(part = "header") |>
@@ -2398,6 +2458,10 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       flextable::color(part = "header", color = "white") |>
       flextable::align(align = "left", part = "all") |>
       flextable::padding(padding = 4, part = "all") |>
+      flextable::bold(i = ssi_header_rows, part = "body") |>
+      flextable::bg(i = ssi_header_rows, bg = "#F2F2F2", part = "body") |>
+      flextable::padding(i = ssi_indent_rows, j = "Outcome",
+                         padding.left = 18, part = "body") |>
       flextable::width(j = "Outcome", width = 3.5) |>
       flextable::width(j = "Value",   width = 1.5) |>
       flextable::set_table_properties(layout = "fixed")
@@ -2418,6 +2482,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       paste0(
         "Caption: Denominator is all patients with an SSI event attributed to the index ",
         "procedure (n\u00a0=\u00a0", n_ssi_denom, "). ",
+        "SSI type is classified by concept_ancestor rollup: superficial incisional ",
+        "(OMOP concept 43530818), deep incisional (concept 4308542), organ-space ",
+        "(concept 43530820); counts reflect condition_occurrence records on the SSI date. ",
         "Reoperation: any procedure_occurrence recorded after the SSI diagnosis date and ",
         "within 90 days of the index procedure date. ",
         "Readmission: any inpatient visit (OMOP visit_concept_id 9201) starting after the ",
@@ -2447,9 +2514,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
   # ---- Figure 1: SSI rate by year ------------------------------------------
   if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
-    doc <- body_add_par(doc, "Figure 1. Annual SSI rate.", style = "Normal")
+    doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
     doc <- body_add_par(doc,
-      "Caption: 30-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
+      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
       style = "Normal")
     doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
     doc <- body_add_par(doc, "", style = "Normal")
