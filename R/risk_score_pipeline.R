@@ -1101,6 +1101,7 @@ calculate_scores <- function(connection, config, specs) {
     component_name = character(),
     domain = character(),
     n_positive = integer(),
+    n_missing = integer(),
     mean_points = numeric(),
     stringsAsFactors = FALSE
   )
@@ -1130,6 +1131,12 @@ calculate_scores <- function(connection, config, specs) {
       by = "subject_id",
       all.x = TRUE
     )
+    # Count patients with no CDM records for this component BEFORE 0-imputation.
+    # These are patients for whom the lookback query returned nothing (truly absent
+    # from the CDM for this domain/concept), as distinct from patients who had a
+    # record but did not meet the activation threshold.
+    n_missing_comp <- sum(is.na(df$event_count))
+
     df$event_count[is.na(df$event_count)] <- 0L
 
     score_col <- paste0("score_", comp$component_id)
@@ -1148,6 +1155,7 @@ calculate_scores <- function(connection, config, specs) {
         component_name = comp$component_name,
         domain = comp$domain,
         n_positive = sum(is_activated, na.rm = TRUE),
+        n_missing = n_missing_comp,
         mean_points = mean(df[[score_col]], na.rm = TRUE),
         stringsAsFactors = FALSE
       )
