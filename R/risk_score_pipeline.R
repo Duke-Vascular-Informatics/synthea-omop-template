@@ -88,6 +88,17 @@ read_score_specs <- function(config) {
   components$min_count <- as.integer(components$min_count)
   components$points <- as.numeric(components$points)
 
+  # missing_is_negative: optional column added in components.csv.
+  # TRUE  = absence of CDM records for this component is a true negative
+  #         (e.g. sex, indication, prior procedures) — n_missing should be 0.
+  # FALSE = absence may reflect unmeasured data (e.g. BMI, ABI, op time).
+  # Defaults to FALSE when the column is absent (backward-compatible).
+  if (!"missing_is_negative" %in% names(components)) {
+    components$missing_is_negative <- FALSE
+  }
+  components$missing_is_negative <- tolower(trimws(as.character(components$missing_is_negative))) %in%
+    c("true", "1", "t", "yes", "y")
+
   concepts$concept_id <- as.integer(concepts$concept_id)
   concepts$include_descendants <- tolower(trimws(as.character(concepts$include_descendants))) %in% c("true", "1", "t", "yes", "y")
   if (!"concept_role" %in% names(concepts)) {
@@ -1132,10 +1143,13 @@ calculate_scores <- function(connection, config, specs) {
       all.x = TRUE
     )
     # Count patients with no CDM records for this component BEFORE 0-imputation.
-    # These are patients for whom the lookback query returned nothing (truly absent
-    # from the CDM for this domain/concept), as distinct from patients who had a
-    # record but did not meet the activation threshold.
-    n_missing_comp <- sum(is.na(df$event_count))
+    # When missing_is_negative = TRUE the component query only returns positive
+    # cases; all un-returned patients are true negatives, not missing data
+    # (e.g. male patients for the sex component, CLI patients for claudication).
+    # When FALSE, absent records may genuinely reflect unmeasured data
+    # (e.g. no BMI or ABI measurement in the lookback window).
+    missing_is_neg <- isTRUE(comp$missing_is_negative)
+    n_missing_comp <- if (missing_is_neg) 0L else sum(is.na(df$event_count))
 
     df$event_count[is.na(df$event_count)] <- 0L
 

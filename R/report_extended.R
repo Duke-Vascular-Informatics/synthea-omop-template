@@ -2337,8 +2337,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         width(j = "MissingCount", width = 0.65) |>
         width(j = "MissingPct",   width = 0.65) |>
         set_header_labels(
-          MissingCount = "Missing\nn",
-          MissingPct   = "Missing\n%"
+          MissingCount = "No CDM\nRecord\nn",
+          MissingPct   = "No CDM\nRecord\n%"
         )
     }
     ft |> set_table_properties(layout = "fixed")
@@ -2908,7 +2908,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   # ---- Table 3: Features ---------------------------------------------------
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
   doc <- body_add_par(doc, "Table 3. Features: predictor definitions and activation summary.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, and observed activation in the validation cohort.", style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, ",
+    "and observed activation in the validation cohort. ",
+    "The 'Missing n (%)' column shows patients with no qualifying CDM record for that component. ",
+    "For measurement-based components (BMI, ABI, operative time) this reflects the absence of any ",
+    "relevant measurement in the lookback window. ",
+    "For binary presence/absence components (sex, prior procedures, drug exposures, frailty, indication) ",
+    "absence is a true negative and missing is reported as 0."
+  ), style = "Normal")
   doc <- body_add_flextable(doc, wrapped_predictor_ft(predictor_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 

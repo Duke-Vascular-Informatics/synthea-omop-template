@@ -1,11 +1,11 @@
-component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points
-female,Female sex,observation,-3650,0,1,1
-overweight,BMI 25 to <30 (mutually exclusive with obese),measurement,-365,-1,1,1
-obese,BMI >=30 (mutually exclusive with overweight),measurement,-365,-1,1,3
-urgnt,Urgent case,procedure,-30,0,1,1
-abi_35,ABI <=0.35,measurement,-365,-1,1,1
-prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1
-prolong_abx,Prolonged antibiotic exposure,drug,-90,0,1,2
-optime4h,Operative time >=4h,procedure,-30,0,1,1
-mFI_high,High modified frailty index,observation,-365,-1,1,1
-indicationClaudication,Indication: claudication,condition,-365,0,1,-1
+component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points,missing_is_negative
+female,Female sex,observation,-3650,0,1,1,TRUE
+overweight,BMI 25 to <30 (mutually exclusive with obese),measurement,-365,-1,1,1,FALSE
+obese,BMI >=30 (mutually exclusive with overweight),measurement,-365,-1,1,3,FALSE
+urgnt,Urgent case,procedure,-30,0,1,1,TRUE
+abi_35,ABI <=0.35,measurement,-365,-1,1,1,FALSE
+prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1,TRUE
+prolong_abx,Prolonged antibiotic exposure,drug,-90,0,1,2,TRUE
+optime4h,Operative time >=4h,procedure,-30,0,1,1,FALSE
+mFI_high,High modified frailty index,observation,-365,-1,1,1,TRUE
+indicationClaudication,Indication: claudication,condition,-365,0,1,-1,TRUE
