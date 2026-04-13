@@ -1607,6 +1607,188 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     out
   }
 
+  # ---------------------------------------------------------------------------
+  # fetch_ssi_outcomes_from_omop()
+  #
+  # Queries post-operative outcome statistics for SSI patients:
+  #   1. Median days (with IQR) from the index procedure to SSI diagnosis
+  #   2. 90-day reoperation count: any procedure_occurrence after SSI date
+  #      and within 90 days of the index date
+  #   3. 90-day readmission count: inpatient visit (concept 9201) starting
+  #      after SSI date and within 90 days of the index date
+  #   4. 90-day mortality count: death record within 90 days of index date
+  #      among SSI patients
+  #
+  # Denominator for rates 2–4 is the number of SSI patients (n_ssi).
+  # ---------------------------------------------------------------------------
+  fetch_ssi_outcomes_from_omop <- function(config, connection_details) {
+    if (is.null(config) || is.null(connection_details)) return(NULL)
+
+    conn <- NULL
+    out  <- NULL
+    try({
+      conn <- DatabaseConnector::connect(connection_details)
+
+      # Shared CTE: SSI patients joined to their index procedure date.
+      # Only patients whose SSI falls within the 90-day prediction window are kept.
+      ssi_cte <- "ssi_w_index AS (
+        SELECT
+          s.subject_id,
+          t.cohort_start_date        AS index_date,
+          s.cohort_start_date        AS ssi_date,
+          DATEDIFF(DAY,
+            t.cohort_start_date,
+            s.cohort_start_date)     AS days_to_ssi
+        FROM @results_schema.@cohort_table s
+        INNER JOIN @results_schema.@cohort_table t
+          ON  t.subject_id           = s.subject_id
+          AND t.cohort_definition_id = @target_id
+        WHERE s.cohort_definition_id = @outcome_id
+          AND DATEDIFF(DAY, t.cohort_start_date, s.cohort_start_date)
+              BETWEEN 0 AND 90
+      )"
+
+      # 1. Days-to-SSI: count, median, IQR
+      # PERCENTILE_CONT in SQL Server is an analytic (window) function and requires
+      # OVER (). We select TOP 1 since the window function returns the same value
+      # for every row; COUNT(*) OVER () gives the total row count.
+      sql_days <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT TOP 1
+             COUNT(*) OVER ()                                                 AS n_ssi,
+             CAST(PERCENTILE_CONT(0.25)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS p25,
+             CAST(PERCENTILE_CONT(0.5)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS median_days,
+             CAST(PERCENTILE_CONT(0.75)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS p75
+           FROM ssi_w_index"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      days_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_days, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Days-to-SSI query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 2. 90-day reoperation: any procedure_occurrence after SSI date within window
+      sql_reop <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_reoperation
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.procedure_occurrence po
+             ON  po.person_id = si.subject_id
+             AND CAST(po.procedure_date AS DATE) > si.ssi_date
+             AND CAST(po.procedure_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      reop_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_reop, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Reoperation query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 3. 90-day readmission: inpatient visit (concept 9201) after SSI date within window
+      sql_readm <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_readmission
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.visit_occurrence vo
+             ON  vo.person_id        = si.subject_id
+             AND vo.visit_concept_id = 9201
+             AND CAST(vo.visit_start_date AS DATE) > si.ssi_date
+             AND CAST(vo.visit_start_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      readm_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_readm, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Readmission query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 4. 90-day mortality: death record within 90 days of index date (SSI patients only)
+      sql_death <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_death
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.death d
+             ON  d.person_id = si.subject_id
+             AND CAST(d.death_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      death_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_death, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Death query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      out <- list(
+        n_ssi         = if (!is.null(days_raw)) as.integer(days_raw$n_ssi[1])          else NA_integer_,
+        median_days   = if (!is.null(days_raw)) as.numeric(days_raw$median_days[1])    else NA_real_,
+        p25           = if (!is.null(days_raw)) as.numeric(days_raw$p25[1])            else NA_real_,
+        p75           = if (!is.null(days_raw)) as.numeric(days_raw$p75[1])            else NA_real_,
+        n_reoperation = if (!is.null(reop_raw))  as.integer(reop_raw$n_reoperation[1]) else NA_integer_,
+        n_readmission = if (!is.null(readm_raw)) as.integer(readm_raw$n_readmission[1]) else NA_integer_,
+        n_death       = if (!is.null(death_raw)) as.integer(death_raw$n_death[1])       else NA_integer_
+      )
+    }, silent = TRUE)
+
+    if (!is.null(conn)) {
+      try(DatabaseConnector::disconnect(conn), silent = TRUE)
+    }
+
+    out
+  }
+
   append_distribution_rows <- function(tbl, dist_df, label_prefix, denom, max_rows = 6L) {
     if (is.null(dist_df) || nrow(dist_df) == 0) {
       return(tbl)
@@ -2172,16 +2354,89 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Table 2: Features ---------------------------------------------------
+  # ---- Table 2: SSI Patient Outcomes ----------------------------------------
+  ssi_outcomes <- fetch_ssi_outcomes_from_omop(config, connection_details)
+  if (!is.null(ssi_outcomes) && !is.na(ssi_outcomes$n_ssi) && ssi_outcomes$n_ssi > 0) {
+    n_ssi_denom <- ssi_outcomes$n_ssi
+
+    days_str <- if (!is.na(ssi_outcomes$median_days)) {
+      paste0(
+        as.integer(round(ssi_outcomes$median_days)), " days",
+        " (IQR: ",
+        as.integer(round(ssi_outcomes$p25)),
+        "\u2013",
+        as.integer(round(ssi_outcomes$p75)),
+        ")"
+      )
+    } else "N/A"
+
+    ssi_outcome_tbl <- data.frame(
+      Outcome = c(
+        "Days from index operation to SSI, median (IQR)",
+        "Reoperation within 90 days following SSI, n (%)",
+        "Readmission within 90 days following SSI, n (%)",
+        "Death within 90 days of index operation, n (%)"
+      ),
+      Value = c(
+        days_str,
+        fmt_n_pct(ssi_outcomes$n_reoperation, n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_readmission, n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_death,       n_ssi_denom)
+      ),
+      stringsAsFactors = FALSE
+    )
+
+    ssi_out_ft <- flextable::flextable(ssi_outcome_tbl) |>
+      flextable::bold(part = "header") |>
+      flextable::fontsize(size = 10, part = "all") |>
+      flextable::font(fontname = "Calibri", part = "all") |>
+      flextable::bg(part = "header", bg = "#1F3864") |>
+      flextable::color(part = "header", color = "white") |>
+      flextable::align(align = "left", part = "all") |>
+      flextable::padding(padding = 4, part = "all") |>
+      flextable::width(j = "Outcome", width = 3.5) |>
+      flextable::width(j = "Value",   width = 1.5) |>
+      flextable::set_table_properties(layout = "fixed")
+
+    doc <- body_add_par(doc, "SSI patient outcomes", style = "heading 3")
+    doc <- body_add_par(doc,
+      paste0(
+        "Among the ", n_ssi_denom, " patients who developed SSI within the 90-day ",
+        "prediction window, Table 2 summarises key post-SSI clinical outcomes."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      "Table 2. SSI patient outcomes within the 90-day post-operative window.",
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      paste0(
+        "Caption: Denominator is all patients with an SSI event attributed to the index ",
+        "procedure (n\u00a0=\u00a0", n_ssi_denom, "). ",
+        "Reoperation: any procedure_occurrence recorded after the SSI diagnosis date and ",
+        "within 90 days of the index procedure date. ",
+        "Readmission: any inpatient visit (OMOP visit_concept_id 9201) starting after the ",
+        "SSI diagnosis date and within 90 days of the index procedure date. ",
+        "90-day mortality: death record within 90 days of the index procedure date."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_flextable(doc, ssi_out_ft)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Table 2 (SSI outcomes) added.")
+  }
+
+  # ---- Table 3: Features ---------------------------------------------------
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
-  doc <- body_add_par(doc, "Table 2. Features: predictor definitions and activation summary.", style = "Normal")
+  doc <- body_add_par(doc, "Table 3. Features: predictor definitions and activation summary.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, and observed activation in the validation cohort.", style = "Normal")
   doc <- body_add_flextable(doc, wrapped_predictor_ft(predictor_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Table 3: Model Performance ------------------------------------------
+  # ---- Table 4: Model Performance ------------------------------------------
   doc <- body_add_par(doc, "Model performance", style = "heading 3")
-  doc <- body_add_par(doc, "Table 3. Model performance: lookup-model discrimination and calibration metrics.", style = "Normal")
+  doc <- body_add_par(doc, "Table 4. Model performance: lookup-model discrimination and calibration metrics.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Metrics are shown for the lookup model. 95% CI = 95% bootstrap percentile confidence interval (B\u2009=\u2009500 resamples). \u2014 indicates CI not available.", style = "Normal")
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
