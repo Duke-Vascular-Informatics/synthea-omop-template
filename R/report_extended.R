@@ -3390,16 +3390,30 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       conn_f <- DatabaseConnector::connect(connection_details)
       on.exit(try(DatabaseConnector::disconnect(conn_f), silent = TRUE), add = TRUE)
 
-      # Identify the two fringe groups from person_level_scores
-      fn_mask <- person_level$outcome == 1 & !is.na(person_level$predicted_risk_lookup)
-      fn_ids  <- person_level$subject_id[fn_mask]
-      fn_risk <- person_level$predicted_risk_lookup[fn_mask]
+      # Restrict fringe candidates to index procedures in 2017–2019.
+      fringe_year_min <- 2017L
+      fringe_year_max <- 2019L
+      fringe_year_vec <- suppressWarnings(
+        as.integer(format(as.Date(person_level$index_date), "%Y"))
+      )
+      in_window <- !is.na(fringe_year_vec) &
+                   fringe_year_vec >= fringe_year_min &
+                   fringe_year_vec <= fringe_year_max
+      pl_fringe <- person_level[in_window, ]
+
+      # Identify the two fringe groups from person_level_scores (2017–2019 only)
+      fn_mask <- pl_fringe$outcome == 1 & !is.na(pl_fringe$predicted_risk_lookup)
+      fn_ids  <- pl_fringe$subject_id[fn_mask]
+      fn_risk <- pl_fringe$predicted_risk_lookup[fn_mask]
       fn_top  <- fn_ids[order(fn_risk)][seq_len(min(10L, sum(fn_mask)))]
 
-      fp_mask <- person_level$outcome == 0 & !is.na(person_level$predicted_risk_lookup)
-      fp_ids  <- person_level$subject_id[fp_mask]
-      fp_risk <- person_level$predicted_risk_lookup[fp_mask]
+      fp_mask <- pl_fringe$outcome == 0 & !is.na(pl_fringe$predicted_risk_lookup)
+      fp_ids  <- pl_fringe$subject_id[fp_mask]
+      fp_risk <- pl_fringe$predicted_risk_lookup[fp_mask]
       fp_top  <- fp_ids[order(fp_risk, decreasing = TRUE)][seq_len(min(10L, sum(fp_mask)))]
+
+      message(sprintf("[report] Fringe case filter: %d patients in %d\u2013%d (of %d total).",
+                      sum(in_window), fringe_year_min, fringe_year_max, nrow(person_level)))
 
       all_ids <- unique(c(fn_top, fp_top))
       id_str  <- paste(as.integer(all_ids), collapse = ",")
@@ -3501,7 +3515,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       # Write to dated CSV file alongside the report
       export_date  <- format(Sys.Date(), "%Y%m%d")
       fringe_file  <- file.path(output_dir,
-                                paste0("pad_oler_ssi_fringe_", export_date, ".csv"))
+                                paste0("pad_oler_ssi_fringe_",
+                                       fringe_year_min, "_", fringe_year_max,
+                                       "_", export_date, ".csv"))
       readr::write_csv(fringe_tbl, fringe_file)
       message("[report] Fringe case CSV written to: ",
               normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
