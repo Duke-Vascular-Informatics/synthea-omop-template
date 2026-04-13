@@ -699,21 +699,33 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
 # patient is then scored 0 for this component.
 # -----------------------------------------------------------------------------
 query_operative_time_component_counts <- function(connection, config, component, component_concepts) {
-  # Captures operative time > 240 minutes (4 hours) from either:
-  # 1. procedure_end_datetime (calculated duration from procedure_occurrence)
-  # 2. Measurement/Observation concepts for operative time
-  # Combines both sources to identify patients with prolonged operative time.
-  
+  # Captures operative time >= 4 hours (240 minutes) using two complementary
+  # sources, combined with UNION (de-duplicated):
+  #
+  #   Source 1 — procedure_occurrence datetime columns:
+  #     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) > 240
+  #     for the qualifying index procedure (concept_ancestor descendants of
+  #     the target procedure anchors 4236706 / 4225375) occurring at any
+  #     point during the inpatient admission (cohort_start_date to
+  #     cohort_end_date).  This window is used instead of a single-date match
+  #     because in many OMOP ETLs the index date is the admission start date
+  #     and the surgery occurs on a subsequent day of the same admission.
+  #
+  #   Source 2 — measurement table operative-time concepts:
+  #     Matching measurement_concept_id values (from component_concepts.csv)
+  #     with value_as_number > 240 within the component lookback window.
+
   concept_ids <- unique(component_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
   include_desc <- any(component_concepts$include_descendants)
-  
+
   operative_time_threshold_minutes <- 240  # 4 hours
-  
+
   sql <- SqlRender::render(
     sql = "WITH target_population AS (
              SELECT c.subject_id,
-                    CAST(c.cohort_start_date AS DATE) AS index_date
+                    CAST(c.cohort_start_date AS DATE) AS index_date,
+                    CAST(c.cohort_end_date   AS DATE) AS admission_end_date
              FROM @results_schema.@cohort_table c
              WHERE c.cohort_definition_id = @target_id
            ),
@@ -730,18 +742,28 @@ query_operative_time_component_counts <- function(connection, config, component,
                ON ca.ancestor_concept_id = i.concept_id
              WHERE @include_descendants = 1
            ),
+           -- Source 1: duration computed from procedure_datetime / procedure_end_datetime.
+           -- Searches the full inpatient admission window (index_date to admission_end_date)
+           -- rather than only the exact index date, because surgery typically occurs on
+           -- a day after the admission start date.
+           -- Restricted to the qualifying target procedure concepts so that unrelated
+           -- same-admission procedures do not falsely trigger the component.
            procedure_duration_mins AS (
-             -- Extract operative time from procedure_end_datetime if available
              SELECT DISTINCT t.subject_id
              FROM target_population t
              JOIN @cdm_schema.procedure_occurrence po
                ON po.person_id = t.subject_id
-             WHERE CAST(po.procedure_date AS DATE) = t.index_date
+             JOIN @cdm_schema.concept_ancestor ca_proc
+               ON ca_proc.descendant_concept_id = po.procedure_concept_id
+              AND ca_proc.ancestor_concept_id IN (4236706, 4225375)
+             WHERE CAST(po.procedure_date AS DATE) >= t.index_date
+               AND CAST(po.procedure_date AS DATE) <= DATEADD(DAY, 30, t.index_date)
+               AND po.procedure_datetime     IS NOT NULL
                AND po.procedure_end_datetime IS NOT NULL
                AND DATEDIFF(MINUTE, po.procedure_datetime, po.procedure_end_datetime) > @operative_time_threshold
            ),
+           -- Source 2: measured operative time stored as a measurement value.
            measurement_operative_time AS (
-             -- Extract operative time from measurement table (e.g., LOINC operative time)
              SELECT DISTINCT t.subject_id
              FROM target_population t
              JOIN @cdm_schema.measurement m
@@ -771,7 +793,7 @@ query_operative_time_component_counts <- function(connection, config, component,
     lookback_end = as.integer(component$lookback_end_day),
     operative_time_threshold = operative_time_threshold_minutes
   )
-  
+
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 

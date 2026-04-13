@@ -6,6 +6,6 @@ urgnt,Urgent case,procedure,-30,0,1,1,TRUE
 abi_35,ABI <=0.35,measurement,-365,-1,1,1,FALSE
 prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1,TRUE
 prolong_abx,Prolonged antibiotic exposure,drug,-90,0,1,2,TRUE
-optime4h,Operative time >=4h,procedure,-30,0,1,1,FALSE
+optime4h,Operative time >=4h,procedure,-30,0,1,1,TRUE
 mFI_high,High modified frailty index,observation,-365,-1,1,1,TRUE
 indicationClaudication,Indication: claudication,condition,-365,0,1,-1,TRUE
