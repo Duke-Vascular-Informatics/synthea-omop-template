@@ -4,6 +4,7 @@
   "service": "devcontainer",
   "workspaceFolder": "/workspace",
   "remoteEnv": {
+    "IN_DEV_CONTAINER": "true",
     "MSSQL_HOST": "mssql_dev",
     "SSH_AUTH_SOCK": "/run/host-services/ssh-auth.sock"
   },

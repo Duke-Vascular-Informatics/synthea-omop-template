@@ -515,7 +515,6 @@ if (isTRUE(opts$run_achilles)) {
         cdmVersion            = "5.4",
         numThreads            = opts$achilles_threads,
         defaultAnalysesOnly   = TRUE,
-        runHeel               = TRUE,
         createTable           = TRUE
       ),
       error = function(e) {
@@ -584,7 +583,6 @@ if (isTRUE(opts$run_dqd)) {
         writeToTable          = TRUE,
         writeTableName        = "dqdashboard_results",
         writeToCsv            = FALSE,
-        writeToFile           = TRUE,
         checkLevels           = c("TABLE", "FIELD", "CONCEPT"),
         cdmVersion            = "5.4"
       ),

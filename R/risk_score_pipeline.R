@@ -226,6 +226,69 @@ get_outcomes <- function(connection, config) {
 }
 
 # -----------------------------------------------------------------------------
+# get_ssi_type()
+#
+# For each patient who developed a 90-day SSI, identifies the CDC/NHSN sub-type
+# by looking for the first condition_occurrence (within the prediction window)
+# whose source or standard concept maps to one of the three specific SSI codes:
+#   Superficial incisional : SNOMED 609339001
+#   Deep incisional        : SNOMED 609340004
+#   Organ-space            : SNOMED 609341000
+#
+# Returns one row per patient with a non-NULL SSI outcome, with a column
+# ssi_type containing "Superficial", "Deep", or "Organ-space".
+# Patients without any of the three typed codes (i.e. only the parent SSI code)
+# are returned with ssi_type = NA and can be treated as unclassified.
+#
+# The result is left-joined onto person_level in calculate_scores() so all
+# patients (SSI and non-SSI) remain in the dataset; non-SSI patients get NA.
+# -----------------------------------------------------------------------------
+get_ssi_type <- function(connection, config) {
+  sql <- SqlRender::render(
+    sql = "SELECT t.subject_id,
+                  co.condition_start_date,
+                  CASE co.condition_source_value
+                    WHEN '609339001' THEN 'Superficial'
+                    WHEN '609340004' THEN 'Deep'
+                    WHEN '609341000' THEN 'Organ-space'
+                    ELSE NULL
+                  END AS ssi_type
+           FROM (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ) t
+           JOIN @cdm_schema.condition_occurrence co
+             ON  co.person_id = t.subject_id
+             AND co.condition_source_value IN ('609339001','609340004','609341000')
+             AND co.condition_start_date >= t.index_date
+             AND co.condition_start_date <= DATEADD(DAY, @prediction_window_days, t.index_date)
+           WHERE CASE co.condition_source_value
+                   WHEN '609339001' THEN 'Superficial'
+                   WHEN '609340004' THEN 'Deep'
+                   WHEN '609341000' THEN 'Organ-space'
+                   ELSE NULL
+                 END IS NOT NULL",
+    results_schema = results_schema_prefix(config),
+    cohort_table   = config$cohort_table,
+    cdm_schema     = config$cdm_schema,
+    target_id      = config$target_cohort_id,
+    prediction_window_days = config$prediction_window_days
+  )
+  df <- DatabaseConnector::querySql(
+    connection, SqlRender::translate(sql, targetDialect = "sql server")
+  )
+  names(df) <- tolower(names(df))
+  names(df)[names(df) == "subjectid"]             <- "subject_id"
+  names(df)[names(df) == "conditionstartdate"]    <- "condition_start_date"
+  # Keep the latest typed SSI event per patient within the window
+  df <- df[order(df$subject_id, df$condition_start_date, decreasing = c(FALSE, TRUE)), ]
+  df <- df[!duplicated(df$subject_id), c("subject_id", "ssi_type")]
+  df
+}
+
+# -----------------------------------------------------------------------------
 # ensure_concept_ancestor_indexes()
 #
 # Creates two non-clustered covering indexes on concept_ancestor if they do not
@@ -1202,6 +1265,22 @@ calculate_scores <- function(connection, config, specs) {
   component_matrix$total_score <- rowSums(component_matrix[, score_cols, drop = FALSE], na.rm = TRUE)
 
   person_level <- merge(outcomes, component_matrix, by = "subject_id", all.x = TRUE)
+
+  # Join SSI sub-type (Superficial / Deep / Organ-space) — NA for non-SSI patients
+  ssi_types <- tryCatch(
+    get_ssi_type(connection, config),
+    error = function(e) {
+      message("[pipeline] ssi_type lookup failed (non-fatal): ", conditionMessage(e))
+      data.frame(subject_id = integer(0), ssi_type = character(0),
+                 stringsAsFactors = FALSE)
+    }
+  )
+  if (nrow(ssi_types) > 0) {
+    person_level <- merge(person_level, ssi_types, by = "subject_id", all.x = TRUE)
+  } else {
+    person_level$ssi_type <- NA_character_
+  }
+
   list(person_level = person_level, component_summary = component_summary)
 }
 

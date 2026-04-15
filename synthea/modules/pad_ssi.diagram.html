@@ -81,33 +81,53 @@ flowchart TD
   n060["&lt;b&gt;Femoral Endarterectomy&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 16589005: Femoral endarterectomy"]
   n061["&lt;b&gt;Aorto Bifemoral Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 405482000: Aorto-femoral arterial bypass"]
   n062["&lt;b&gt;Femoro Tibial Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 47575002: Femorotibial vascular bypass, anterior or posterior"]
-  n063["&lt;b&gt;Pre Op Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
-  n064["&lt;b&gt;Post Op Inpatient Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n065["&lt;b&gt;End Surgical Admission&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n066["&lt;b&gt;Post Discharge Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n067["&lt;b&gt;Past 10 Years Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n068["&lt;b&gt;SSI Fixed Risk&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n069["&lt;b&gt;SSI Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 433202001: Surgical site infection"]
-  n070["&lt;b&gt;SSI Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
-  n071["&lt;b&gt;Wound Culture&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
-  n072["&lt;b&gt;SSI Antibiotic Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
-  n073["&lt;b&gt;End SSI Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n074["&lt;b&gt;SSI Treatment Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n075["&lt;b&gt;SSI Resolution Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
-  n076["&lt;b&gt;SSI Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
-  n077["&lt;b&gt;SSI Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
-  n078["&lt;b&gt;Reoperation Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 225148005: Surgical debridement of wound"]
-  n079["&lt;b&gt;End Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
-  n080["&lt;b&gt;Post Reoperation Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
-  n081["&lt;b&gt;SSI End From Reoperation&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
-  n082["&lt;b&gt;SSI Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
-  n083["&lt;b&gt;Terminal&lt;/b&gt;&lt;br/&gt;[Terminal]"]
+  n063["&lt;b&gt;Extra Anatomic Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 73985009: Extra-anatomic bypass of artery"]
+  n064["&lt;b&gt;Pre Op Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n065["&lt;b&gt;Post Op Inpatient Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n066["&lt;b&gt;End Surgical Admission&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n067["&lt;b&gt;Post Discharge Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n068["&lt;b&gt;Past 10 Years Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n069["&lt;b&gt;SSI Fixed Risk&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n070["&lt;b&gt;SSI Type Branch&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n071["&lt;b&gt;SSI Superficial Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609339001: Superficial incisional surgical site infection"]
+  n072["&lt;b&gt;SSI Superficial Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n073["&lt;b&gt;Wound Culture Superficial&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n074["&lt;b&gt;SSI Abx Superficial&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n075["&lt;b&gt;End SSI Superficial Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n076["&lt;b&gt;SSI Superficial Tx Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n077["&lt;b&gt;SSI Superficial Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n078["&lt;b&gt;SSI Abx End Superficial&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n079["&lt;b&gt;SSI Deep Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609340004: Deep incisional surgical site infection"]
+  n080["&lt;b&gt;SSI Deep Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n081["&lt;b&gt;Wound Culture Deep&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n082["&lt;b&gt;SSI Abx Deep&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n083["&lt;b&gt;End SSI Deep Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n084["&lt;b&gt;SSI Deep Admit Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n085["&lt;b&gt;SSI Deep Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n086["&lt;b&gt;Reoperation Deep&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 225148005: Surgical debridement of wound"]
+  n087["&lt;b&gt;SSI Deep Post Op Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n088["&lt;b&gt;End Deep Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n089["&lt;b&gt;SSI Deep Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n090["&lt;b&gt;SSI Abx End Deep&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n091["&lt;b&gt;SSI Organ Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609341000: Organ-space surgical site infection"]
+  n092["&lt;b&gt;SSI Organ Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n093["&lt;b&gt;Wound Culture Organ&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n094["&lt;b&gt;SSI Abx Organ&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n095["&lt;b&gt;End SSI Organ Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n096["&lt;b&gt;SSI Organ Admit Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n097["&lt;b&gt;SSI Organ Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n098["&lt;b&gt;Reoperation Organ&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 225148005: Surgical debridement of wound"]
+  n099["&lt;b&gt;SSI Organ Post Op Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n100["&lt;b&gt;End Organ Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n101["&lt;b&gt;SSI Organ Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n102["&lt;b&gt;SSI Abx End Organ&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n103["&lt;b&gt;Terminal&lt;/b&gt;&lt;br/&gt;[Terminal]"]
 
   n001 --&gt; n002
   n002 --&gt; n003
   n003 --&gt; n004
   n004 -- Age --&gt; n005
-  n004 -- else --&gt; n083
+  n004 -- else --&gt; n103
   n005 --&gt; n006
   n006 --&gt; n007
   n007 -- 10% --&gt; n008
@@ -162,10 +182,10 @@ flowchart TD
   n043 -- 10% --&gt; n044
   n043 -- 10% --&gt; n045
   n043 -- 80% --&gt; n048
-  n044 --&gt; n083
+  n044 --&gt; n103
   n045 --&gt; n046
   n046 --&gt; n047
-  n047 --&gt; n083
+  n047 --&gt; n103
   n048 -- 25% --&gt; n051
   n048 -- 75% --&gt; n049
   n049 --&gt; n050
@@ -178,36 +198,58 @@ flowchart TD
   n055 --&gt; n056
   n056 --&gt; n057
   n057 --&gt; n058
-  n058 -- 25% --&gt; n059
-  n058 -- 25% --&gt; n060
-  n058 -- 25% --&gt; n061
-  n058 -- 25% --&gt; n062
-  n059 --&gt; n063
-  n060 --&gt; n063
-  n061 --&gt; n063
-  n062 --&gt; n063
+  n058 -- 20% --&gt; n059
+  n058 -- 20% --&gt; n060
+  n058 -- 20% --&gt; n061
+  n058 -- 20% --&gt; n062
+  n058 -- 20% --&gt; n063
+  n059 --&gt; n064
+  n060 --&gt; n064
+  n061 --&gt; n064
+  n062 --&gt; n064
   n063 --&gt; n064
   n064 --&gt; n065
   n065 --&gt; n066
   n066 --&gt; n067
   n067 --&gt; n068
-  n068 -- 20% --&gt; n069
-  n068 -- 80% --&gt; n083
-  n069 --&gt; n070
-  n070 --&gt; n071
+  n068 --&gt; n069
+  n069 -- 20% --&gt; n070
+  n069 -- 80% --&gt; n103
+  n070 -- 30% --&gt; n071
+  n070 -- 30% --&gt; n079
+  n070 -- 40% --&gt; n091
   n071 --&gt; n072
   n072 --&gt; n073
   n073 --&gt; n074
   n074 --&gt; n075
-  n075 -- 85% --&gt; n076
-  n075 -- 15% --&gt; n077
-  n076 --&gt; n082
+  n075 --&gt; n076
+  n076 --&gt; n077
   n077 --&gt; n078
-  n078 --&gt; n079
+  n078 --&gt; n103
   n079 --&gt; n080
   n080 --&gt; n081
   n081 --&gt; n082
   n082 --&gt; n083
+  n083 --&gt; n084
+  n084 --&gt; n085
+  n085 --&gt; n086
+  n086 --&gt; n087
+  n087 --&gt; n088
+  n088 --&gt; n089
+  n089 --&gt; n090
+  n090 --&gt; n103
+  n091 --&gt; n092
+  n092 --&gt; n093
+  n093 --&gt; n094
+  n094 --&gt; n095
+  n095 --&gt; n096
+  n096 --&gt; n097
+  n097 --&gt; n098
+  n098 --&gt; n099
+  n099 --&gt; n100
+  n100 --&gt; n101
+  n101 --&gt; n102
+  n102 --&gt; n103
     </div>
   </div>
 

@@ -26,9 +26,8 @@
 #
 # Side effects:
 #   output_dir/pad-oler-ssi-val_report_<YYYYMMDD>[_N].docx  — Word report
-#   output_dir/pad_oler_ssi_fringe_<YYYYMMDD>.xlsx           — fringe-cases Excel
 #
-# Dependencies: officer, flextable, ggplot2, pROC, writexl (all via renv)
+# Dependencies: officer, flextable, ggplot2, pROC (all via renv)
 # =============================================================================
 
 library(officer)
@@ -295,7 +294,7 @@ source("R/cohort_demographics.R")
   )
   
   p <- ggplot2::ggplot(roc_data, ggplot2::aes(x = fpr, y = tpr)) +
-    ggplot2::geom_path(size = 1) +
+    ggplot2::geom_path(linewidth = 1) +
     ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
       title = "Receiver Operating Characteristic Curve",
@@ -372,53 +371,119 @@ source("R/cohort_demographics.R")
     error = function(e) NA_integer_
   )
 
+  # Build per-patient data frame with year and SSI type
+  # ssi_type is "Superficial", "Deep", or "Organ-space" for SSI cases; NA otherwise
+  has_type <- "ssi_type" %in% names(person_level_df)
   df_yr <- data.frame(
-    year    = year_val,
-    outcome = as.integer(person_level_df$outcome),
+    year     = year_val,
+    outcome  = as.integer(person_level_df$outcome),
+    ssi_type = if (has_type) person_level_df$ssi_type else NA_character_,
     stringsAsFactors = FALSE
   )
   df_yr <- df_yr[!is.na(df_yr$year), ]
 
-  # Aggregate per year
-  yr_tbl <- do.call(rbind, lapply(sort(unique(df_yr$year)), function(y) {
-    sub  <- df_yr[df_yr$year == y, ]
-    n    <- nrow(sub)
-    events <- sum(sub$outcome, na.rm = TRUE)
-    data.frame(year = y, n = n, events = events,
-               ssi_rate = 100 * events / n,
-               stringsAsFactors = FALSE)
+  # ggplot2 position_stack() draws the FIRST factor level on TOP and the LAST
+  # at the BOTTOM, so to get Superficial on top / Organ-space at the bottom
+  # the factor levels must be ordered Superficial → Deep → Organ-space.
+  ssi_levels <- c("Superficial", "Deep", "Organ-space")
+
+  # Aggregate individual SSI rate per year × SSI type.
+  # Denominator = all procedures that year; numerator = events of that sub-type.
+  all_years <- sort(unique(df_yr$year))
+  yr_type_tbl <- do.call(rbind, lapply(all_years, function(y) {
+    sub_yr <- df_yr[df_yr$year == y, ]
+    n_yr   <- nrow(sub_yr)
+    do.call(rbind, lapply(ssi_levels, function(tp) {
+      events <- sum(sub_yr$ssi_type == tp, na.rm = TRUE)
+      data.frame(
+        year     = y,
+        n        = n_yr,
+        ssi_type = tp,
+        events   = events,
+        ssi_rate = 100 * events / n_yr,
+        stringsAsFactors = FALSE
+      )
+    }))
   }))
 
   # Suppress years with < 10 procedures
-  yr_tbl <- yr_tbl[yr_tbl$n >= 10, ]
-  if (nrow(yr_tbl) < 2) {
+  yr_type_tbl <- yr_type_tbl[yr_type_tbl$n >= 10, ]
+  if (length(unique(yr_type_tbl$year)) < 2) {
     message("[report] SSI-by-year plot skipped: fewer than 2 years with >= 10 procedures.")
     return(NULL)
   }
 
-  p <- ggplot2::ggplot(yr_tbl, ggplot2::aes(x = year, y = ssi_rate)) +
-    ggplot2::geom_line(linewidth = 0.9, colour = "#1F3864") +
-    ggplot2::geom_point(size = 2.5,   colour = "#1F3864") +
-    ggplot2::scale_x_continuous(breaks = yr_tbl$year) +
-    ggplot2::scale_y_continuous(limits = c(0, NA),
-                                labels = function(x) paste0(round(x, 1), "%")) +
+  # Enforce stacking order — Superficial bottom, Organ-space top
+  yr_type_tbl$ssi_type <- factor(yr_type_tbl$ssi_type, levels = ssi_levels)
+
+  # Fill colours (bottom to top): teal, navy, red
+  fill_colours <- c(
+    "Superficial" = "#A8D5DC",   # light teal
+    "Deep"        = "#5B8DB8",   # mid blue
+    "Organ-space" = "#C0392B"    # red
+  )
+  line_colours <- c(
+    "Superficial" = "#2196A6",
+    "Deep"        = "#1F3864",
+    "Organ-space" = "#922B21"
+  )
+
+  total_procs <- sum(yr_type_tbl$n[!duplicated(yr_type_tbl[, c("year")])  ])
+  total_years <- length(unique(yr_type_tbl$year))
+
+  p <- ggplot2::ggplot(
+      yr_type_tbl,
+      ggplot2::aes(x = year, y = ssi_rate,
+                   fill = ssi_type, colour = ssi_type, group = ssi_type)
+    ) +
+    # Stacked shaded bands
+    ggplot2::geom_area(position = "stack", alpha = 0.55, linewidth = 0.3) +
+    # Bold boundary lines along the top edge of each band
+    ggplot2::geom_line(
+      ggplot2::aes(y = ssi_rate),
+      position = ggplot2::position_stack(),
+      linewidth = 0.9
+    ) +
+    # Points on each band's top edge
+    ggplot2::geom_point(
+      position = ggplot2::position_stack(),
+      size = 2.5, shape = 21,
+      fill = "white", stroke = 1.2
+    ) +
+    ggplot2::scale_fill_manual(
+      values = fill_colours,
+      breaks = ssi_levels,   # legend: Superficial top, Organ-space bottom
+      name   = "SSI type"
+    ) +
+    ggplot2::scale_colour_manual(
+      values = line_colours,
+      breaks = ssi_levels,
+      name   = "SSI type"
+    ) +
+    ggplot2::scale_x_continuous(breaks = sort(unique(yr_type_tbl$year))) +
+    ggplot2::scale_y_continuous(
+      limits = c(0, NA),
+      labels = function(x) paste0(round(x, 1), "%")
+    ) +
     ggplot2::labs(
-      title   = "90-Day SSI Rate by Procedure Year",
+      title   = "90-Day SSI Rate by Type and Procedure Year",
+      subtitle = "Top line = overall SSI rate; bands show contribution of each type",
       x       = "Year of procedure",
       y       = "90-day SSI rate (%)",
-      caption = paste0("N = ", sum(yr_tbl$n), " procedures; ",
-                       "years with < 10 procedures suppressed.")
+      caption = paste0("N = ", total_procs, " procedures across ", total_years,
+                       " years; years with < 10 procedures suppressed.")
     ) +
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(
-      axis.text.x     = ggplot2::element_text(angle = 45, hjust = 1),
-      plot.caption    = ggplot2::element_text(size = 8),
-      panel.grid.minor = ggplot2::element_blank()
+      axis.text.x      = ggplot2::element_text(angle = 45, hjust = 1),
+      plot.caption     = ggplot2::element_text(size = 8),
+      panel.grid.minor = ggplot2::element_blank(),
+      legend.position  = "bottom"
     )
 
   out_file <- file.path(output_folder, "ssi_rate_by_year.png")
   tryCatch({
-    ggplot2::ggsave(out_file, p, width = 7, height = 4.5, dpi = 150)
+    ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
     out_file
   }, error = function(e) {
     message("[report] Could not save SSI-by-year plot: ", conditionMessage(e))
@@ -2482,9 +2547,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     p <- ggplot2::ggplot(bias_df,
            ggplot2::aes(x = ece, y = label)) +
       ggplot2::geom_point(size = 2, colour = "black") +
-      ggplot2::geom_errorbarh(
+      ggplot2::geom_errorbar(
         ggplot2::aes(xmin = ci_lower, xmax = ci_upper),
-        height = 0.25, colour = "grey40"
+        width = 0.25, colour = "grey40", orientation = "y"
       ) +
       ggplot2::geom_vline(
         xintercept = overall_ece,

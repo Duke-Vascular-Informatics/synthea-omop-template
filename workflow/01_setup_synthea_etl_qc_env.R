@@ -27,6 +27,27 @@ source(bootstrap_path)
 set_workflow_root()
 
 # -----------------------------------------------------------------------------
+# Chunk 1b: Dev-container guard.
+# Purpose:
+# - Step 1 installs Java-dependent packages (rJava, DatabaseConnector) and
+#   connects to the SQL Server service defined in docker-compose.extend.yml.
+#   Both requirements are only satisfied inside the dev container.
+# - Running outside the container produces cryptic Java/JDBC errors; this
+#   guard surfaces the real problem immediately.
+# Outcome:
+# - Hard stop with actionable message if IN_DEV_CONTAINER is not "true".
+# - No-op (continues) when running inside the container.
+# -----------------------------------------------------------------------------
+if (!identical(Sys.getenv("IN_DEV_CONTAINER"), "true")) {
+  stop(
+    "This script must be run inside the dev container.\n",
+    "Open this repository in VS Code and select\n",
+    "  'Reopen in Container'\n",
+    "then re-run: Rscript workflow/01_setup_synthea_etl_qc_env.R"
+  )
+}
+
+# -----------------------------------------------------------------------------
 # Chunk 2: Run environment setup and load runtime helpers.
 # Purpose:
 # - Initialize renv and install required packages (CRAN-first, GitHub fallback)

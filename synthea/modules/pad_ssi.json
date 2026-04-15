@@ -31,9 +31,12 @@
     "  Target  : inpatient surgery for open lower extremity revascularization",
     "  Outcome : SSI diagnosis within 90 days of index surgery",
     "",
-    "SSI incidence assumptions:",
+    "SSI incidence and type assumptions:",
     "  Fixed SSI incidence after open surgery: 20%",
-    "  Requiring rehospitalization/re-op     : 15% of SSI cases",
+    "  SSI type distribution (of all SSI cases):",
+    "    Superficial incisional (SNOMED 609339001) : 30% — antibiotics only, outpatient resolution",
+    "    Deep incisional        (SNOMED 609340004) : 30% — readmission + operative debridement",
+    "    Organ-space            (SNOMED 609341000) : 40% — readmission + operative debridement",
     "",
     "Comorbidity prevalence assumptions in this surgical PAD population:",
     "  Current smoker                       : 35%",
@@ -64,6 +67,7 @@
     "  Femoral endarterectomy     : SNOMED-CT 16589005",
     "  Aortobifemoral bypass      : SNOMED-CT 405482000",
     "  Femoro-tibial bypass       : SNOMED-CT 47575002",
+    "  Extra-anatomic bypass      : SNOMED-CT 73985009",
     "  SSI condition          : SNOMED-CT 433202001",
     "  Debridement (re-op)    : SNOMED-CT 225148005",
     "  Ankle-brachial index   : LOINC     77194-9",
@@ -79,8 +83,10 @@
     "  Pre-surgical workup delay : 1-6 months after PAD diagnosis",
     "  Inpatient stay            : 3-7 days post-surgery",
     "  SSI onset window          : 5-83 days post-discharge (8-90 days post-surgery)",
-    "  SSI antibiotic course     : 7-14 days",
-    "  Rehospitalization stay    : 7-21 days",
+    "  Superficial antibiotic course  : 7-14 days (outpatient, then resolve)",
+    "  Deep/organ-space antibiotic    : initiated outpatient, continued through admission",
+    "  Outpatient-to-readmission gap  : 1-3 days (deep and organ-space only)",
+    "  Rehospitalization stay         : 7-21 days inside inpatient encounter (deep and organ-space only)",
     "",
     "Usage:",
     "  Copy to <synthea_home>/src/main/resources/modules/ and run Synthea normally.",
@@ -901,24 +907,34 @@
       "type": "Simple",
       "remarks": [
         "Open lower extremity revascularization procedure selection.",
-        "Four representative procedure types with equal probability (25% each):"
+        "Five representative procedure types with equal probability (20% each):",
+        "  1. Femoro-popliteal bypass      — SNOMED 112828007",
+        "  2. Femoral endarterectomy        — SNOMED 16589005",
+        "  3. Aortobifemoral bypass         — SNOMED 405482000",
+        "  4. Femoro-tibial bypass          — SNOMED 47575002",
+        "  5. Extra-anatomic arterial bypass — SNOMED 73985009",
+        "     (covers axillofemoral, axillobifemoral, and femorofemoral crossover)"
       ],
       "distributed_transition": [
         {
-          "distribution": 0.25,
+          "distribution": 0.20,
           "transition": "Femoro_Popliteal_Bypass"
         },
         {
-          "distribution": 0.25,
+          "distribution": 0.20,
           "transition": "Femoral_Endarterectomy"
         },
         {
-          "distribution": 0.25,
+          "distribution": 0.20,
           "transition": "Aorto_Bifemoral_Bypass"
         },
         {
-          "distribution": 0.25,
+          "distribution": 0.20,
           "transition": "Femoro_Tibial_Bypass"
+        },
+        {
+          "distribution": 0.20,
+          "transition": "Extra_Anatomic_Bypass"
         }
       ]
     },
@@ -979,6 +995,27 @@
       "direct_transition": "Pre_Op_Antibiotic_End"
     },
 
+    "Extra_Anatomic_Bypass": {
+      "type": "Procedure",
+      "reason": "PAD_Onset",
+      "remarks": [
+        "Extra-anatomic arterial bypass — routes the conduit outside the normal",
+        "anatomic plane. Covers axillofemoral, axillobifemoral, and femorofemoral",
+        "crossover bypass procedures.",
+        "SNOMED-CT 73985009 = Extra-anatomic bypass of artery",
+        "  (OMOP concept_id 4307475, domain: Procedure, standard_concept = S)."
+      ],
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "73985009",
+          "display": "Extra-anatomic bypass of artery"
+        }
+      ],
+      "duration": { "low": 2, "high": 4, "unit": "hours" },
+      "direct_transition": "Pre_Op_Antibiotic_End"
+    },
+
     "Pre_Op_Antibiotic_End": {
       "type": "MedicationEnd",
       "referenced_by_attribute": "prophylactic_antibiotic",
@@ -1027,31 +1064,51 @@
       "type": "Simple",
       "remarks": [
         "Fixed SSI incidence after open revascularization.",
-        "20% develop SSI within the follow-up window."
+        "20% develop SSI within the follow-up window.",
+        "SSI cases are then split by type: 30% superficial, 30% deep, 40% organ-space."
       ],
       "distributed_transition": [
-        { "distribution": 0.20, "transition": "SSI_Onset" },
+        { "distribution": 0.20, "transition": "SSI_Type_Branch" },
         { "distribution": 0.80, "transition": "Terminal" }
       ]
     },
 
-    "SSI_Onset": {
+    "SSI_Type_Branch": {
+      "type": "Simple",
+      "remarks": [
+        "Distributes SSI cases across the three CDC/NHSN SSI classifications:",
+        "  30% superficial incisional — treated with oral antibiotics, resolves without readmission",
+        "  30% deep incisional        — requires inpatient readmission and operative debridement",
+        "  40% organ-space            — requires inpatient readmission and operative debridement",
+        "SNOMED codes map to OMOP concept_ancestor hierarchy:",
+        "  Superficial: SNOMED 609339001 (concept 43530818)",
+        "  Deep:        SNOMED 609340004 (concept 43530819)",
+        "  Organ-space: SNOMED 609341000 (concept 43530820)"
+      ],
+      "distributed_transition": [
+        { "distribution": 0.30, "transition": "SSI_Superficial_Onset" },
+        { "distribution": 0.30, "transition": "SSI_Deep_Onset" },
+        { "distribution": 0.40, "transition": "SSI_Organ_Onset" }
+      ]
+    },
+
+    "SSI_Superficial_Onset": {
       "type": "ConditionOnset",
-      "target_encounter": "SSI_Encounter",
+      "target_encounter": "SSI_Superficial_Encounter",
       "codes": [
         {
           "system": "SNOMED-CT",
-          "code": "433202001",
-          "display": "Surgical site infection"
+          "code": "609339001",
+          "display": "Superficial incisional surgical site infection"
         }
       ],
-      "direct_transition": "SSI_Encounter"
+      "direct_transition": "SSI_Superficial_Encounter"
     },
 
-    "SSI_Encounter": {
+    "SSI_Superficial_Encounter": {
       "type": "Encounter",
       "encounter_class": "outpatient",
-      "reason": "SSI_Onset",
+      "reason": "SSI_Superficial_Onset",
       "codes": [
         {
           "system": "SNOMED-CT",
@@ -1059,10 +1116,10 @@
           "display": "Follow-up encounter"
         }
       ],
-      "direct_transition": "Wound_Culture"
+      "direct_transition": "Wound_Culture_Superficial"
     },
 
-    "Wound_Culture": {
+    "Wound_Culture_Superficial": {
       "type": "Observation",
       "category": "laboratory",
       "codes": [
@@ -1072,25 +1129,21 @@
           "display": "Bacteria identified in Wound by Culture"
         }
       ],
-      "remarks": [
-        "Nominal/coded observation — reports identified organism.",
-        "E. coli models a common gram-negative wound pathogen after vascular surgery."
-      ],
       "value_code": {
         "system": "SNOMED-CT",
         "code": "112283007",
         "display": "Escherichia coli"
       },
-      "direct_transition": "SSI_Antibiotic_Order"
+      "direct_transition": "SSI_Abx_Superficial"
     },
 
-    "SSI_Antibiotic_Order": {
+    "SSI_Abx_Superficial": {
       "type": "MedicationOrder",
-      "assign_to_attribute": "ssi_antibiotic",
-      "reason": "SSI_Onset",
+      "assign_to_attribute": "ssi_abx_superficial",
+      "reason": "SSI_Superficial_Onset",
       "remarks": [
-        "Cephalexin for outpatient SSI management.",
-        "Patients requiring IV therapy will be captured in SSI_Rehospitalization."
+        "Oral cephalexin for outpatient superficial SSI management.",
+        "Superficial SSIs resolve with antibiotics alone — no readmission required."
       ],
       "codes": [
         {
@@ -1099,43 +1152,115 @@
           "display": "cephalexin"
         }
       ],
-      "direct_transition": "End_SSI_Encounter"
+      "direct_transition": "End_SSI_Superficial_Encounter"
     },
 
-    "End_SSI_Encounter": {
+    "End_SSI_Superficial_Encounter": {
       "type": "EncounterEnd",
-      "direct_transition": "SSI_Treatment_Delay"
+      "direct_transition": "SSI_Superficial_Tx_Delay"
     },
 
-    "SSI_Treatment_Delay": {
+    "SSI_Superficial_Tx_Delay": {
       "type": "Delay",
-      "remarks": ["Standard antibiotic course for wound infection: 7-14 days."],
+      "remarks": ["Oral antibiotic course: 7-14 days."],
       "range": { "low": 7, "high": 14, "unit": "days" },
-      "direct_transition": "SSI_Resolution_Check"
+      "direct_transition": "SSI_Superficial_Resolution"
     },
 
-    "SSI_Resolution_Check": {
-      "type": "Simple",
-      "remarks": [
-        "85% of SSIs resolve with outpatient management.",
-        "15% require rehospitalization and operative debridement."
-      ],
-      "distributed_transition": [
-        { "distribution": 0.85, "transition": "SSI_Resolution" },
-        { "distribution": 0.15, "transition": "SSI_Rehospitalization" }
-      ]
-    },
-
-    "SSI_Resolution": {
+    "SSI_Superficial_Resolution": {
       "type": "ConditionEnd",
-      "condition_onset": "SSI_Onset",
-      "direct_transition": "SSI_Antibiotic_End"
+      "condition_onset": "SSI_Superficial_Onset",
+      "direct_transition": "SSI_Abx_End_Superficial"
     },
 
-    "SSI_Rehospitalization": {
+    "SSI_Abx_End_Superficial": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "ssi_abx_superficial",
+      "direct_transition": "Terminal"
+    },
+
+    "SSI_Deep_Onset": {
+      "type": "ConditionOnset",
+      "target_encounter": "SSI_Deep_Encounter",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "609340004",
+          "display": "Deep incisional surgical site infection"
+        }
+      ],
+      "direct_transition": "SSI_Deep_Encounter"
+    },
+
+    "SSI_Deep_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "outpatient",
+      "reason": "SSI_Deep_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "390906007",
+          "display": "Follow-up encounter"
+        }
+      ],
+      "direct_transition": "Wound_Culture_Deep"
+    },
+
+    "Wound_Culture_Deep": {
+      "type": "Observation",
+      "category": "laboratory",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "6463-4",
+          "display": "Bacteria identified in Wound by Culture"
+        }
+      ],
+      "value_code": {
+        "system": "SNOMED-CT",
+        "code": "112283007",
+        "display": "Escherichia coli"
+      },
+      "direct_transition": "SSI_Abx_Deep"
+    },
+
+    "SSI_Abx_Deep": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ssi_abx_deep",
+      "reason": "SSI_Deep_Onset",
+      "remarks": [
+        "Cephalexin initiated at outpatient diagnosis; continued through readmission.",
+        "Deep incisional SSIs require inpatient readmission and operative debridement."
+      ],
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2673",
+          "display": "cephalexin"
+        }
+      ],
+      "direct_transition": "End_SSI_Deep_Encounter"
+    },
+
+    "End_SSI_Deep_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "SSI_Deep_Admit_Delay"
+    },
+
+    "SSI_Deep_Admit_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Interval between outpatient SSI diagnosis and inpatient readmission: 1-3 days.",
+        "Allows time for workup, transfer arrangement, or same-day/next-day admission."
+      ],
+      "range": { "low": 1, "high": 3, "unit": "days" },
+      "direct_transition": "SSI_Deep_Rehospitalization"
+    },
+
+    "SSI_Deep_Rehospitalization": {
       "type": "Encounter",
       "encounter_class": "inpatient",
-      "reason": "SSI_Onset",
+      "reason": "SSI_Deep_Onset",
       "codes": [
         {
           "system": "SNOMED-CT",
@@ -1143,12 +1268,16 @@
           "display": "Hospital admission"
         }
       ],
-      "direct_transition": "Reoperation_Procedure"
+      "direct_transition": "Reoperation_Deep"
     },
 
-    "Reoperation_Procedure": {
+    "Reoperation_Deep": {
       "type": "Procedure",
-      "reason": "SSI_Onset",
+      "reason": "SSI_Deep_Onset",
+      "remarks": [
+        "Surgical debridement of deep incisional wound.",
+        "SNOMED 225148005 maps to OMOP SNOMED ancestor 36485005 (debridement)."
+      ],
       "codes": [
         {
           "system": "SNOMED-CT",
@@ -1157,29 +1286,172 @@
         }
       ],
       "duration": { "low": 30, "high": 120, "unit": "minutes" },
-      "direct_transition": "End_Rehospitalization"
+      "direct_transition": "SSI_Deep_Post_Op_Delay"
     },
 
-    "End_Rehospitalization": {
-      "type": "EncounterEnd",
-      "direct_transition": "Post_Reoperation_Delay"
-    },
-
-    "Post_Reoperation_Delay": {
+    "SSI_Deep_Post_Op_Delay": {
       "type": "Delay",
+      "remarks": [
+        "Post-operative inpatient stay duration: 7-21 days.",
+        "Delay is placed inside the inpatient encounter so the encounter start/end",
+        "dates reflect the full rehospitalization length-of-stay."
+      ],
       "range": { "low": 7, "high": 21, "unit": "days" },
-      "direct_transition": "SSI_End_From_Reoperation"
+      "direct_transition": "End_Deep_Rehospitalization"
     },
 
-    "SSI_End_From_Reoperation": {
+    "End_Deep_Rehospitalization": {
+      "type": "EncounterEnd",
+      "direct_transition": "SSI_Deep_Resolution"
+    },
+
+    "SSI_Deep_Resolution": {
       "type": "ConditionEnd",
-      "condition_onset": "SSI_Onset",
-      "direct_transition": "SSI_Antibiotic_End"
+      "condition_onset": "SSI_Deep_Onset",
+      "direct_transition": "SSI_Abx_End_Deep"
     },
 
-    "SSI_Antibiotic_End": {
+    "SSI_Abx_End_Deep": {
       "type": "MedicationEnd",
-      "referenced_by_attribute": "ssi_antibiotic",
+      "referenced_by_attribute": "ssi_abx_deep",
+      "direct_transition": "Terminal"
+    },
+
+    "SSI_Organ_Onset": {
+      "type": "ConditionOnset",
+      "target_encounter": "SSI_Organ_Encounter",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "609341000",
+          "display": "Organ-space surgical site infection"
+        }
+      ],
+      "direct_transition": "SSI_Organ_Encounter"
+    },
+
+    "SSI_Organ_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "outpatient",
+      "reason": "SSI_Organ_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "390906007",
+          "display": "Follow-up encounter"
+        }
+      ],
+      "direct_transition": "Wound_Culture_Organ"
+    },
+
+    "Wound_Culture_Organ": {
+      "type": "Observation",
+      "category": "laboratory",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "6463-4",
+          "display": "Bacteria identified in Wound by Culture"
+        }
+      ],
+      "value_code": {
+        "system": "SNOMED-CT",
+        "code": "112283007",
+        "display": "Escherichia coli"
+      },
+      "direct_transition": "SSI_Abx_Organ"
+    },
+
+    "SSI_Abx_Organ": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ssi_abx_organ",
+      "reason": "SSI_Organ_Onset",
+      "remarks": [
+        "Cephalexin initiated at outpatient diagnosis; continued through readmission.",
+        "Organ-space SSIs require inpatient readmission and operative intervention."
+      ],
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2673",
+          "display": "cephalexin"
+        }
+      ],
+      "direct_transition": "End_SSI_Organ_Encounter"
+    },
+
+    "End_SSI_Organ_Encounter": {
+      "type": "EncounterEnd",
+      "direct_transition": "SSI_Organ_Admit_Delay"
+    },
+
+    "SSI_Organ_Admit_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Interval between outpatient SSI diagnosis and inpatient readmission: 1-3 days.",
+        "Allows time for workup, transfer arrangement, or same-day/next-day admission."
+      ],
+      "range": { "low": 1, "high": 3, "unit": "days" },
+      "direct_transition": "SSI_Organ_Rehospitalization"
+    },
+
+    "SSI_Organ_Rehospitalization": {
+      "type": "Encounter",
+      "encounter_class": "inpatient",
+      "reason": "SSI_Organ_Onset",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "32485007",
+          "display": "Hospital admission"
+        }
+      ],
+      "direct_transition": "Reoperation_Organ"
+    },
+
+    "Reoperation_Organ": {
+      "type": "Procedure",
+      "reason": "SSI_Organ_Onset",
+      "remarks": [
+        "Operative debridement/exploration for organ-space SSI.",
+        "SNOMED 225148005 maps to OMOP SNOMED ancestor 36485005 (debridement)."
+      ],
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "225148005",
+          "display": "Surgical debridement of wound"
+        }
+      ],
+      "duration": { "low": 60, "high": 180, "unit": "minutes" },
+      "direct_transition": "SSI_Organ_Post_Op_Delay"
+    },
+
+    "SSI_Organ_Post_Op_Delay": {
+      "type": "Delay",
+      "remarks": [
+        "Post-operative inpatient stay duration: 7-21 days.",
+        "Delay is placed inside the inpatient encounter so the encounter start/end",
+        "dates reflect the full rehospitalization length-of-stay."
+      ],
+      "range": { "low": 7, "high": 21, "unit": "days" },
+      "direct_transition": "End_Organ_Rehospitalization"
+    },
+
+    "End_Organ_Rehospitalization": {
+      "type": "EncounterEnd",
+      "direct_transition": "SSI_Organ_Resolution"
+    },
+
+    "SSI_Organ_Resolution": {
+      "type": "ConditionEnd",
+      "condition_onset": "SSI_Organ_Onset",
+      "direct_transition": "SSI_Abx_End_Organ"
+    },
+
+    "SSI_Abx_End_Organ": {
+      "type": "MedicationEnd",
+      "referenced_by_attribute": "ssi_abx_organ",
       "direct_transition": "Terminal"
     },
 

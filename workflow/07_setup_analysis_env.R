@@ -78,6 +78,7 @@ if (file.exists("renv/activate.R")) source("renv/activate.R")
 #     library(ggplot2)
 #     library(pROC)
 #     SqlRender::render / ::translate
+#   Note: writexl was removed when Excel export was dropped from Step 8.
 #
 #   R/cohorts.R / R/cohort_demographics.R
 #     SqlRender::render / ::translate
@@ -92,8 +93,7 @@ required <- c(
   "officer",                # Word document assembly
   "flextable",              # Table formatting inside Word report
   "pROC",                   # AUROC computation
-  "PRROC",                  # AUPRC computation
-  "writexl"                 # Excel export of fringe cases
+  "PRROC"                   # AUPRC computation
 )
 
 missing_pkgs <- required[

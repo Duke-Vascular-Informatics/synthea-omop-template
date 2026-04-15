@@ -231,8 +231,11 @@ required_concepts <- data.frame(
     "Index procedure: femoral endarterectomy",
     "Index procedure: aortobifemoral bypass",
     "Index procedure: femoro-tibial bypass",
-    # --- Outcome cohort ---
-    "Outcome: SSI / surgical site infection",
+    "Index procedure: extra-anatomic bypass",
+    # --- Outcome cohort (three NHSN SSI sub-types) ---
+    "Outcome: SSI superficial incisional",
+    "Outcome: SSI deep incisional",
+    "Outcome: SSI organ-space",
     # --- Covariates: BMI / anthropometrics ---
     "BMI observation (obese / overweight covariate)",
     "Height observation (BMI calculation)",
@@ -259,8 +262,8 @@ required_concepts <- data.frame(
     "Tobacco smoking status observation"
   ),
   system = c(
-    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
-    "SNOMED-CT",
+    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
+    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
     "LOINC", "LOINC", "LOINC",
     "SNOMED-CT",
     "LOINC",
@@ -272,7 +275,8 @@ required_concepts <- data.frame(
     "LOINC"
   ),
   code = c(
-    "112828007", "16589005", "405482000", "47575002", "433202001",
+    "112828007", "16589005", "405482000", "47575002", "73985009",
+    "609339001", "609340004", "609341000",
     "39156-5", "8302-2", "29463-7",
     "73994005",
     "77194-9",
