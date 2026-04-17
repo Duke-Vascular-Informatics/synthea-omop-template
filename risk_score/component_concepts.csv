@@ -1,129 +1,100 @@
 component_id,concept_id,include_descendants,concept_role,value_concept_ids
-# Standard OMOP concept IDs per component (verified against omop_vocab.concept).
-# All concept IDs with include_descendants = TRUE use concept_ancestor rollup.
+# =============================================================================
+# risk_score/component_concepts.csv
+# OMOP CONCEPT ID MAPPINGS FOR COVARIATE COMPONENTS
 #
-# KNOWN GAPS — require clinical/informatics review before final analysis:
+# TODO [COVARIATES]: Map each component_id from components.csv to one or more
+# standard OMOP concept IDs. Replace all placeholder concept_id = 0 values with
+# verified concept IDs before running Step 2 or Step 8.
 #
-# optime4h (concept_ids = 4236706, 4225375):
-#   Operative time >= 4 hours is derived from the revascularization procedure
-#   itself using procedure_occurrence.procedure_end_datetime - procedure_datetime.
-#   The scoring pipeline must compute:
-#     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-#   for any procedure descended from 4236706 OR 4225375, rather than a simple concept
-#   presence lookup.
+# COLUMN DEFINITIONS
+# ──────────────────
+# component_id
+#   Must exactly match a component_id defined in components.csv.
+#   Multiple rows with the same component_id are combined with OR logic —
+#   the component is flagged if ANY of its concept rows matches.
 #
-#   SYNTHEA LIMITATION: Synthea records procedure durations at day granularity
-#   only (no clock time). procedure_datetime and procedure_end_datetime share the
-#   same date for same-day procedures (duration = 0 min) and differ by exactly
-#   1440 min when the procedure spans midnight. optime4h will not produce valid
-#   synthetic signal in Synthea-generated data, but the approach is correct for
-#   real EHR data where OR start/stop times are recorded.
+# concept_id
+#   Standard OMOP concept ID (concept.standard_concept = 'S').
+#   Exception: ATC drug class ancestors use standard_concept = 'C' (Classification).
+#   Use 0 as a placeholder — Step 2 will warn you that 0s remain.
 #
-# mFI_high / functional_status — multi-concept OR mapping [vocab query]:
-#   The feature is satisfied if ANY of the four concept sets below is documented
-#   for the patient (scoring pipeline evaluates all mFI_high rows as OR logic).
-#   All four concept_ids and their descendant hierarchies were confirmed safe
-#   against omop_vocab on 2026-04-02.
+# include_descendants
+#   TRUE  = use concept_ancestor rollup: the component matches this concept AND
+#           all its descendants in the OMOP hierarchy. Recommended for most
+#           clinical concepts (conditions, procedures, drug classes).
+#   FALSE = exact concept match only. Use for gender (person table lookup),
+#           specific LOINC codes with no hierarchy, or when descendants include
+#           unrelated concepts.
 #
-#   4086506  Frailty (SNOMED-CT)          — descendants: Frail elderly,
-#              Clinical frailty scale, Mild/Moderate/Severe frailty (5 concepts)
-#   4159704  Functional independence measure (SNOMED-CT) — no descendants
-#   4167605  Barthel index (SNOMED-CT)    — descendants: Modified Barthel,
-#              UK Barthel index (2 concepts)
-#   4306934  Impaired mobility (SNOMED-CT) — descendants: Bed-ridden,
-#              Confined to chair, Impaired bed/wheelchair mobility,
-#              Mobile outside with aid, Mobility poor/very poor,
-#              Needs walking aid in home, Reduced mobility (9 concepts)
+# concept_role
+#   Optional tag describing the role of this concept within the component.
+#   Leave blank for simple presence/absence components.
+#   Use for:
+#     • Measurement sub-types — "bmi_direct", "weight", "height"
+#       (the pipeline uses these to resolve BMI from weight + height when
+#       a direct BMI measurement is absent)
+#     • Multi-domain components — a label grouping related concepts under
+#       the same component (e.g. "diabetes", "copd", "functional_status")
 #
-#   NOTE: 36712925 (Decline in functional status) was evaluated and excluded —
-#   its descendant hierarchy contains 280+ unrelated concepts (syncope,
-#   hypoparathyroidism, ovarian failure, etc.).
+# value_concept_ids
+#   Optional. Semicolon-separated list of qualifying value_as_concept_id values
+#   for observation-table lookups where the concept itself is not sufficient
+#   (e.g. a Barthel assessment where you need specific impaired answer values).
+#   Leave blank for all condition, procedure, drug, and most measurement rows.
 #
-# Barthel sub-items (observation table, value_concept_ids column) [vocab query]:
-#   Three LOINC panel items (LOINC 96762-0) are also included under functional_status.
-#   These are queried from observation WHERE value_as_concept_id is in the impaired
-#   answer set (all answers EXCEPT Independent / No problems / Mobility not observed).
-#   The value_concept_ids column lists the qualifying (impaired) answer concept_ids,
-#   semicolon-separated.  The pipeline uses observation.value_as_concept_id IN (...)
-#   instead of a simple concept presence lookup.
+# CONCEPT LOOKUP QUERIES
+# ──────────────────────
+# Find the right concept for a clinical entity:
 #
-#   42529379  Transferring - functional ability   (LOINC 83185-9)
-#     Impaired answers: 45885227 Dependent, 1620353 Major help, 1620433 Minor help,
-#       1620749 Unable no sitting balance, 45882405 Needed some help
-#   42529380  Ambulation - functional ability     (LOINC 83186-7)
-#     Impaired answers: 3968781 Ambulates with assistive device/assistance,
-#       3968689 Ambulates with unsteady gait, 45885227 Dependent, 1621081 Immobile/<50yds,
-#       45882405 Needed some help, 3968837 Unable to ambulate/transfer,
-#       1620501 Walks with help of one person >50yds, 1621102 Wheelchair independent >50yds,
-#       3968806 Mobility impairment observed
-#   1616510   Stairs - functional ability         (LOINC 96758-8)
-#     Impaired answers: 1989937 Impossible, 1620720 Needs help, 1990215 One step at a time,
-#       1989914 Slightly impaired, 21498877 Unable
+#   SELECT concept_id, concept_name, vocabulary_id, domain_id, standard_concept
+#   FROM omop_vocab.concept
+#   WHERE concept_name LIKE '%your covariate name%'
+#     AND standard_concept = 'S'
+#     AND invalid_reason IS NULL
+#     AND domain_id IN ('Condition', 'Procedure', 'Drug', 'Measurement', 'Observation');
 #
-#   NOTE: Synthea does not generate Barthel assessment observations; these rows will
-#   produce no synthetic signal but are correct for real EHR data.
-female,8532,FALSE,,
-# BMI components — three-tier resolution: direct BMI preferred, then weight/height computed.
-# bmi_direct: stored pre-computed BMI measurement (kg/m²); used as priority 1.
-# weight    : raw body weight; converted to kg for BMI computation (priority 2 fallback).
-# height    : raw body height; converted to metres for BMI computation (priority 2 fallback).
+# Check descendants of a candidate ancestor (to confirm scope is correct):
 #
-# Direct BMI (LOINC):
-#   3038553  = Body mass index (BMI) [Ratio]       (LOINC 39156-5) — primary
-#   36304833 = Body mass index (BMI) [Ratio] Estimated (LOINC 59574-4) — alternate
+#   SELECT c.concept_id, c.concept_name, ca.min_levels_of_separation
+#   FROM omop_vocab.concept_ancestor ca
+#   INNER JOIN omop_vocab.concept c ON c.concept_id = ca.descendant_concept_id
+#   WHERE ca.ancestor_concept_id = <candidate_concept_id>
+#   ORDER BY ca.min_levels_of_separation;
 #
-# Weight (LOINC) — common EHR variants:
-#   3025315  = Body weight                          (LOINC 29463-7) — standard
-#   3013762  = Body weight Measured                 (LOINC  3141-9)
-#   3011054  = Body weight Measured --without clothes (LOINC 8335-2)
-#   3026600  = Body weight Estimated                (LOINC 8335-2 alt)
+# Find ATC drug class ancestors (for drug components with include_descendants = TRUE):
 #
-# Height (LOINC) — common EHR variants:
-#   3036277  = Body height                          (LOINC  8302-2) — standard
-#   3023540  = Body height Measured                 (LOINC  3137-7)
-#   3015514  = Body height --standing               (LOINC  8308-9)
-overweight,3038553,FALSE,bmi_direct,
-overweight,36304833,FALSE,bmi_direct,
-overweight,3025315,FALSE,weight,
-overweight,3013762,FALSE,weight,
-overweight,3011054,FALSE,weight,
-overweight,3026600,FALSE,weight,
-overweight,3036277,FALSE,height,
-overweight,3023540,FALSE,height,
-overweight,3015514,FALSE,height,
-obese,3038553,FALSE,bmi_direct,
-obese,36304833,FALSE,bmi_direct,
-obese,3025315,FALSE,weight,
-obese,3013762,FALSE,weight,
-obese,3011054,FALSE,weight,
-obese,3026600,FALSE,weight,
-obese,3036277,FALSE,height,
-obese,3023540,FALSE,height,
-obese,3015514,FALSE,height,
-urgnt,4158569,TRUE,,
-urgnt,4250892,TRUE,,
-abi_35,40489833,TRUE,,
-abi_35,46237026,TRUE,,
-prrevasc_any,4236706,TRUE,,
-prrevasc_any,4225375,TRUE,,
-prolong_abx,21603553,TRUE,,
-# optime4h: DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) >= 240
-# on any procedure descended from 4236706 OR 4225375.
-# Synthea generates sub-day procedure timestamps via the module's duration field
-# (confirmed: Femoro-popliteal 2-5h, Endarterectomy 1-3h, Aorto-femoral 2-4h,
-# Femoro-tibial 2-5h). SQL Server casts Synthea's ISO 8601+Z format correctly.
-# Valid synthetic signal is produced after re-running Steps 4 and 5.
-optime4h,4236706,TRUE,,
-optime4h,4225375,TRUE,,
-mFI_high,201820,TRUE,diabetes,
-mFI_high,255573,TRUE,copd,
-mFI_high,316139,TRUE,chf,
-mFI_high,316866,TRUE,hypertension,
-mFI_high,4086506,TRUE,functional_status,
-mFI_high,4159704,FALSE,functional_status,
-mFI_high,4167605,TRUE,functional_status,
-mFI_high,4306934,TRUE,functional_status,
-mFI_high,42529379,FALSE,functional_status,45885227;1620353;1620433;1620749;45882405
-mFI_high,42529380,FALSE,functional_status,3968781;3968689;45885227;1621081;45882405;3968837;1620501;1621102;3968806
-mFI_high,1616510,FALSE,functional_status,1989937;1620720;1990215;1989914;21498877
-indicationClaudication,442774,TRUE,,
+#   SELECT concept_id, concept_name, vocabulary_id, standard_concept
+#   FROM omop_vocab.concept
+#   WHERE vocabulary_id = 'ATC'
+#     AND standard_concept = 'C'
+#     AND concept_name LIKE '%antibiotic%';
+#
+# SPECIAL COMPONENT TYPES
+# ────────────────────────
+# Gender / sex component (from person table, not a clinical domain):
+#   The pipeline handles gender by querying person.gender_concept_id directly.
+#   Use concept_id = 8532 (Female) or 8507 (Male) with include_descendants = FALSE.
+#   Example:
+#     female,8532,FALSE,,
+#
+# Computed measurement component (BMI from weight + height):
+#   Use concept_role to tag each measurement type. The pipeline resolves BMI
+#   in priority order: bmi_direct first, then weight + height.
+#   See components.csv for the BMI threshold logic (overweight / obese).
+#
+# Operative time / duration component (derived from procedure timestamps):
+#   The pipeline computes DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime)
+#   for procedures descended from the listed ancestor concept IDs.
+#   No value_concept_ids needed; the duration threshold is in components.csv points logic.
+# =============================================================================
+#
+# TODO [COVARIATES]: Replace the placeholder rows (concept_id = 0) with your
+# verified standard OMOP concept IDs. Each component_id must match a row in
+# components.csv. Use the concept lookup queries above to find the right IDs.
+#
+# EXAMPLE ROWS — replace with your study-specific concept mappings:
+covariate_1,0,TRUE,,
+covariate_2,0,TRUE,,
+covariate_3,0,TRUE,,
+covariate_4,0,TRUE,,

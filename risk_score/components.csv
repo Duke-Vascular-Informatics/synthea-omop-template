@@ -1,11 +1,77 @@
 component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points,missing_is_negative
-female,Female sex,observation,-3650,0,1,1,TRUE
-overweight,BMI 25 to <30 (mutually exclusive with obese),measurement,-365,-1,1,1,FALSE
-obese,BMI >=30 (mutually exclusive with overweight),measurement,-365,-1,1,3,FALSE
-urgnt,Urgent case,procedure,-30,0,1,1,TRUE
-abi_35,ABI <=0.35,measurement,-365,-1,1,1,FALSE
-prrevasc_any,Prior revascularization (any),procedure,-3650,-1,1,1,TRUE
-prolong_abx,Prolonged antibiotic exposure,drug,-90,0,1,2,TRUE
-optime4h,Operative time >=4h,procedure,-30,0,1,1,TRUE
-mFI_high,High modified frailty index,observation,-365,-1,1,1,TRUE
-indicationClaudication,Indication: claudication,condition,-365,0,1,-1,TRUE
+# =============================================================================
+# risk_score/components.csv
+# COVARIATE / PREDICTOR COMPONENT DEFINITIONS
+#
+# TODO [COVARIATES]: Replace the placeholder rows below with your study's
+# covariate and predictor definitions. Each row defines one scored component.
+#
+# COLUMN DEFINITIONS
+# ──────────────────
+# component_id
+#   Short unique identifier for this component.
+#   Rules: lowercase, letters/numbers/underscores only, no spaces.
+#   Must match the component_id values used in component_concepts.csv.
+#   Examples: "female", "diabetes", "prior_hosp", "urgnt_case"
+#
+# component_name
+#   Human-readable label used in reports and output tables.
+#   Examples: "Female sex", "Diabetes mellitus", "Prior hospitalization"
+#
+# domain
+#   OMOP CDM domain to query for this component.
+#   Valid values: condition | procedure | drug | measurement | observation
+#   The pipeline queries the corresponding OMOP table:
+#     condition   → condition_occurrence
+#     procedure   → procedure_occurrence
+#     drug        → drug_exposure
+#     measurement → measurement
+#     observation → observation
+#
+# lookback_start_day
+#   Start of the lookback window relative to the index date (cohort_start_date).
+#   Negative = days before index. 0 = index date itself.
+#   Examples: -365 (1 year prior), -3650 (10 years prior), -30 (30 days prior)
+#
+# lookback_end_day
+#   End of the lookback window relative to the index date.
+#   -1 = the day before index (for strictly prior events).
+#    0 = include events on the index date.
+#   Examples: -1 (up to but not including index), 0 (through index date)
+#
+# min_count
+#   Minimum number of qualifying records required to count the component as
+#   present. Almost always 1.
+#
+# points
+#   Integer score points assigned when this component is present.
+#   Use positive values for risk factors (e.g. 1, 2, 3).
+#   Use negative values for protective factors (e.g. -1).
+#
+# missing_is_negative
+#   TRUE  = absence of any qualifying record means the component is absent.
+#           This is the default and appropriate for most components.
+#   FALSE = used for computed/derived components where a missing value should
+#           not be treated as negative (e.g. BMI computed from weight/height).
+#
+# NOTES
+# ─────
+# • Mutually exclusive categories (e.g. overweight vs. obese) should be
+#   separate rows with distinct component_ids. The pipeline assigns points
+#   independently; define logic in component_concepts.csv concept_role if needed.
+# • For measurement-based components (BMI, lab values), use domain = measurement
+#   and define the threshold logic in component_concepts.csv (value_concept_ids)
+#   or in the pipeline's measurement handler.
+# • For multi-concept OR components (e.g. any of 4 frailty indicators), add
+#   multiple rows in component_concepts.csv with the same component_id.
+# =============================================================================
+#
+# TODO [COVARIATES]: Replace the example rows below with your study covariates.
+# Keep the header row above and delete all example rows before running Step 2.
+# Add one row per distinct scored component (or sub-category).
+#
+# EXAMPLE ROWS — replace with your study-specific components:
+covariate_1,Covariate 1 — replace with descriptive name,condition,-365,-1,1,1,TRUE
+covariate_2,Covariate 2 — replace with descriptive name,procedure,-30,0,1,1,TRUE
+covariate_3,Covariate 3 — replace with descriptive name,drug,-90,0,1,2,TRUE
+covariate_4,Covariate 4 (protective factor example),condition,-365,0,1,-1,TRUE

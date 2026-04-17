@@ -1,8 +1,8 @@
 # =============================================================================
 # R/cohorts.R
-# Create the results schema / cohort table and instantiate the target (surgery)
-# and outcome (SSI) cohorts using parameterised OHDSI SQL executed via
-# SqlRender and DatabaseConnector.
+# Create the results schema / cohort table and instantiate the study cohorts
+# (target, comparator if defined, outcome) using parameterised OHDSI SQL
+# executed via SqlRender and DatabaseConnector.
 #
 # CROSS-DATABASE SUPPORT:
 # When results_database in config differs from database (the CDM database),
@@ -222,6 +222,7 @@ build_cohorts <- function(connection, config) {
     study_end_date         = config$study_end_date
   )
 
+  # ---- Target cohort --------------------------------------------------------
   if (isTRUE(config$use_atlas_cohorts)) {
     copy_atlas_cohort(
       connection            = connection,
@@ -231,56 +232,88 @@ build_cohorts <- function(connection, config) {
       label                 = paste0(
         "Target – ATLAS cohort ",
         config$atlas_target_cohort_id,
-        " -> destination id ",
-        config$target_cohort_id
+        " -> id ", config$target_cohort_id
       )
     )
   } else {
     instantiate_cohort(
       connection    = connection,
-      sql_file      = file.path("cohorts", "target_surgery.sql"),
+      sql_file      = config$target_cohort_sql,
       render_params = c(common_params,
                         list(target_cohort_id = config$target_cohort_id)),
-      label         = "Target – Inpatient surgical procedure"
+      label         = paste0("Target cohort (id ", config$target_cohort_id, ")")
     )
   }
 
-  if (isTRUE(config$use_atlas_cohorts) && !is.na(config$atlas_outcome_cohort_id)) {
-    copy_atlas_cohort(
-      connection            = connection,
-      config                = config,
-      source_cohort_id      = config$atlas_outcome_cohort_id,
-      destination_cohort_id = config$outcome_cohort_id,
-      label                 = paste0(
-        "Outcome – ATLAS cohort ",
-        config$atlas_outcome_cohort_id,
-        " -> destination id ",
-        config$outcome_cohort_id
-      )
-    )
-  } else {
+  # ---- Comparator cohort (causal inference; skipped when NULL or NA) --------
+  has_comparator <- !is.null(config$comparator_cohort_sql) &&
+                    !is.na(config$comparator_cohort_id)
+  if (has_comparator) {
     instantiate_cohort(
       connection    = connection,
-      sql_file      = file.path("cohorts", "outcome_ssi.sql"),
+      sql_file      = config$comparator_cohort_sql,
       render_params = c(common_params,
-                        list(outcome_cohort_id = config$outcome_cohort_id)),
-      label         = "Outcome – Surgical site infection"
+                        list(comparator_cohort_id = config$comparator_cohort_id)),
+      label         = paste0("Comparator cohort (id ", config$comparator_cohort_id, ")")
     )
   }
 
-  target_n  <- count_cohort(connection, config, config$target_cohort_id,
-                             "Surgery target cohort")
-  outcome_n <- count_cohort(connection, config, config$outcome_cohort_id,
-                             "SSI outcome cohort")
+  # ---- Outcome cohort (skipped for cohort characterization) -----------------
+  has_outcome <- !is.null(config$outcome_cohort_sql) &&
+                 !is.na(config$outcome_cohort_id)
+  if (has_outcome) {
+    if (isTRUE(config$use_atlas_cohorts) && !is.na(config$atlas_outcome_cohort_id)) {
+      copy_atlas_cohort(
+        connection            = connection,
+        config                = config,
+        source_cohort_id      = config$atlas_outcome_cohort_id,
+        destination_cohort_id = config$outcome_cohort_id,
+        label                 = paste0(
+          "Outcome – ATLAS cohort ",
+          config$atlas_outcome_cohort_id,
+          " -> id ", config$outcome_cohort_id
+        )
+      )
+    } else {
+      instantiate_cohort(
+        connection    = connection,
+        sql_file      = config$outcome_cohort_sql,
+        render_params = c(common_params,
+                          list(outcome_cohort_id = config$outcome_cohort_id)),
+        label         = paste0("Outcome cohort (id ", config$outcome_cohort_id, ")")
+      )
+    }
+  }
 
+  # ---- Row counts ------------------------------------------------------------
+  target_n <- count_cohort(connection, config, config$target_cohort_id,
+                            "Target cohort")
   if (target_n == 0) {
-    warning("Target cohort is EMPTY.  Check that cdm_schema is correct and ",
-            "that visit_occurrence / procedure_occurrence are populated.")
-  }
-  if (outcome_n == 0) {
-    warning("Outcome cohort is EMPTY.  Check SSI concept IDs in ",
-            "cohorts/outcome_ssi.sql against your cdm_synthea.concept table.")
+    warning(
+      "Target cohort is EMPTY. Check that cdm_schema ('", config$cdm_schema,
+      "') is correct and that the relevant CDM tables are populated.\n",
+      "  SQL file: ", config$target_cohort_sql
+    )
   }
 
-  invisible(list(target_n = target_n, outcome_n = outcome_n))
+  outcome_n <- if (has_outcome)
+    count_cohort(connection, config, config$outcome_cohort_id, "Outcome cohort")
+  else NA_integer_
+
+  if (has_outcome && outcome_n == 0) {
+    warning(
+      "Outcome cohort is EMPTY. Check the concept IDs in '",
+      config$outcome_cohort_sql, "'."
+    )
+  }
+
+  comparator_n <- if (has_comparator)
+    count_cohort(connection, config, config$comparator_cohort_id, "Comparator cohort")
+  else NA_integer_
+
+  invisible(list(
+    target_n     = target_n,
+    comparator_n = comparator_n,
+    outcome_n    = outcome_n
+  ))
 }

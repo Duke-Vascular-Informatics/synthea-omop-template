@@ -2,33 +2,32 @@
 # =============================================================================
 # workflow/07_setup_analysis_env.R
 #
-# Step 7: Verify the analysis environment before running Step 8.
+# Step 7: Verify that all R packages required by Step 8 are installed.
 #
 # PURPOSE
 # -------
-# Confirms that every R package required by Step 8 is installed and that the
-# SQL Server JDBC driver bundle is present in the project-local drivers/
-# folder.  Step 7 does NOT install Synthea, ETL, or ML-training packages —
-# those belong to earlier workflow steps.
+# Checks that every package your Step 8 analysis needs is present in the renv
+# library. Fails fast with an actionable message if anything is missing, so
+# you discover installation gaps before running the full analysis.
+#
+# This step does NOT install packages. Run setup/install_packages.R first.
 #
 # PREREQUISITES
 # -------------
 #   - renv has been initialised (setup/setup_renv.R run once).
 #   - Project packages have been installed (setup/install_packages.R run once).
-#   - Java >= 11 is installed and JAVA_HOME is configured in config.R.
+#   - Java >= 11 is installed and JAVA_HOME is set (required for
+#     DatabaseConnector regardless of analysis type).
 #
 # EXECUTION
 # ---------
 #   Rscript workflow/07_setup_analysis_env.R
-#   (Run from the project root, or source interactively from RStudio.)
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# 1. Locate and source the workflow bootstrap
+# 1. Workflow bootstrap
 # -----------------------------------------------------------------------------
-# Resolves the project root from the --file= argument when called via Rscript,
-# and falls back to the conventional relative path when sourced interactively.
 bootstrap_path <- local({
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(file_arg) > 0) {
@@ -48,54 +47,77 @@ set_workflow_root()
 # -----------------------------------------------------------------------------
 # 2. Activate renv
 # -----------------------------------------------------------------------------
-# Pins every package to the version recorded in renv.lock, ensuring the same
-# library state as when the project was last snapshotted.  Safe to call on
-# every run — renv is a no-op if already active.
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 
 # -----------------------------------------------------------------------------
-# 3. Verify all packages required by Step 8
+# 3. Package list
 # -----------------------------------------------------------------------------
-# This is the exact set of packages loaded or called (via ::) across the four
-# R source files that Step 8 executes:
+# TODO [PACKAGES]: List every R package that Step 8 loads or calls.
 #
-#   workflow/08_run_analysis_and_manuscript_report.R
-#     library(DatabaseConnector)
-#     library(PatientLevelPrediction)
+# DatabaseConnector and SqlRender are almost always required for OMOP studies
+# and are included by default. Add your analysis-specific packages below.
 #
-#   R/risk_score_pipeline.R
-#     SqlRender::render / ::translate
-#     DatabaseConnector::querySql / ::connect / ::disconnect
-#     dplyr (data manipulation)
-#     readr::write_csv
-#     pROC::roc / ::auc
-#     PRROC::pr.curve
+# Reference lists by study design:
 #
-#   R/report_extended.R
-#     library(officer)
-#     library(flextable)
-#     library(ggplot2)
-#     library(pROC)
-#     SqlRender::render / ::translate
-#   Note: writexl was removed when Excel export was dropped from Step 8.
+#   Cohort characterization
+#   ────────────────────────
+#   "FeatureExtraction"   — standardised covariate extraction from OMOP CDM
+#   "CohortDiagnostics"   — cohort characterization and diagnostics
+#   "Eunomia"             — synthetic OMOP CDM for testing (optional)
 #
-#   R/cohorts.R / R/cohort_demographics.R
-#     SqlRender::render / ::translate
-#     DatabaseConnector::querySql
+#   Prognostic modelling
+#   ────────────────────
+#   "PatientLevelPrediction"  — full supervised learning pipeline for OMOP
+#   "FeatureExtraction"       — covariate extraction (dependency of PLP)
+#   "pROC"                    — AUROC computation
+#   "PRROC"                   — AUPRC computation
+#   "ggplot2"                 — calibration and ROC plots
+#   "officer" / "flextable"   — Word report generation
+#
+#   Causal inference
+#   ────────────────
+#   "CohortMethod"            — comparative cohort (new-user) design
+#   "SelfControlledCaseSeries" — SCCS design
+#   "EvidenceSynthesis"       — meta-analysis across databases
+#   "FeatureExtraction"       — propensity score covariate extraction
+#
+#   General utilities (add as needed)
+#   ──────────────────────────────────
+#   "dplyr"    — data manipulation
+#   "readr"    — CSV I/O
+#   "tidyr"    — data reshaping
+#   "ggplot2"  — plotting
+#   "officer"  — Word documents
+#   "flextable" — formatted tables in Word / HTML
+#   "openxlsx" / "writexl" — Excel output
+
 required <- c(
-  "DatabaseConnector",      # JDBC database connectivity (>= 6.0)
-  "SqlRender",              # SQL dialect translation and parameterisation
-  "PatientLevelPrediction", # cohort-building helpers used by R/cohorts.R
-  "dplyr",                  # data manipulation in score pipeline
-  "ggplot2",                # calibration and ROC plots
-  "readr",                  # CSV I/O for score output files
-  "officer",                # Word document assembly
-  "flextable",              # Table formatting inside Word report
-  "pROC",                   # AUROC computation
-  "PRROC"                   # AUPRC computation
+  # --- Always required for OMOP database access ---
+  "DatabaseConnector",   # JDBC connectivity to OMOP CDM
+  "SqlRender",           # SQL dialect translation and parameterisation
+
+  # --- TODO [PACKAGES]: Add your analysis packages below ---
+  # "PatientLevelPrediction",
+  # "FeatureExtraction",
+  # "CohortMethod",
+  # "CohortDiagnostics",
+  # "dplyr",
+  # "ggplot2",
+  # "officer",
+  # "flextable",
+  # "pROC",
+  # "PRROC",
+  NULL  # trailing NULL so every line above can end with a comma safely
 )
 
+# Remove any NULLs (from the trailing NULL above).
+required <- required[!vapply(required, is.null, logical(1L))]
+
+
+# -----------------------------------------------------------------------------
+# 4. Check packages
+# -----------------------------------------------------------------------------
 missing_pkgs <- required[
   !vapply(required, requireNamespace, logical(1L), quietly = TRUE)
 ]
@@ -104,41 +126,34 @@ if (length(missing_pkgs) > 0) {
   stop(
     "The following packages required by Step 8 are not installed:\n",
     paste0("  - ", missing_pkgs, collapse = "\n"),
-    "\n\nRun setup/install_packages.R in a fresh R session to install them,",
+    "\n\nAdd them to setup/install_packages.R and re-run that script,",
     "\nthen re-run Step 7."
   )
 }
 
-message("Package check passed. All ", length(required),
-        " required packages are installed:")
+message("Package check passed. ", length(required), " package(s) verified:")
 for (pkg in required) {
-  ver <- tryCatch(
-    as.character(utils::packageVersion(pkg)),
-    error = function(e) "?"
-  )
-  message(sprintf("  %-30s %s", pkg, ver))
+  ver <- tryCatch(as.character(utils::packageVersion(pkg)), error = function(e) "?")
+  message(sprintf("  %-35s %s", pkg, ver))
 }
 
 
 # -----------------------------------------------------------------------------
-# 4. Verify the JDBC driver bundle
+# 5. Verify JDBC driver bundle
 # -----------------------------------------------------------------------------
-# ensure_jdbc_bundle() (R/drivers.R) checks whether the mssql-jdbc runtime jar
-# exists in drivers/jdbc-runtime/.  If it does not, it downloads and extracts
-# the official Microsoft JDBC zip (once) — subsequent calls are instant.
-# This step must succeed before Step 8 can open any database connection.
+# DatabaseConnector requires a JDBC driver regardless of analysis type.
+# ensure_jdbc_bundle() downloads it once if not already present.
 source("config.R")
 source("R/drivers.R")
 config <- get_validation_config()
 ensure_jdbc_bundle(config)
 message("JDBC driver verified: ",
         file.path(config$jdbc_runtime_dir,
-                  paste0("mssql-jdbc-", config$sql_server_jdbc_version,
-                         ".jre11.jar")))
+                  paste0("mssql-jdbc-", config$sql_server_jdbc_version, ".jre11.jar")))
 
 
 # -----------------------------------------------------------------------------
-# 5. Done
+# 6. Done
 # -----------------------------------------------------------------------------
 message("\nStep 7 complete: analysis environment is ready for Step 8.")
 message("Next: Rscript workflow/08_run_analysis_and_manuscript_report.R")
