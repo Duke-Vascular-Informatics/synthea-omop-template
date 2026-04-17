@@ -1,90 +1,151 @@
-# End-to-End Workflow (Numbered 1-9)
+# workflow/ — Numbered Study Steps (01–09)
 
-This folder provides a consistent, reproducible sequence that maps directly to the study lifecycle.
+Each script is a self-contained step in the study lifecycle. Scripts auto-resolve
+the project root from their own file path, so they can be run from any shell
+working directory.
 
-1. `01_setup_synthea_etl_qc_env.R`
-   - Install packages and initialize environment for Synthea generation, ETL, and data quality checks.
-   - **Automatically clones the [synthea-pad](https://github.com/adam-mdmph/synthea-pad) repo into `external/synthea/`** if not already present. No manual setup required.
+---
 
-2. `02_define_omop_cohort_outcome_covariates.R`
-   - Validate cohort/outcome SQL and covariate definition artifacts (OMOP concept-based files).
+## Steps at a glance
 
-3. `03_generate_synthea_module_artifacts.R`
-   - Validate the disease-specific Synthea module and regenerate Mermaid diagram artifacts.
+| Step | Script | Customize? | Purpose |
+|------|--------|:----------:|---------|
+| 1 | `01_setup_synthea_etl_qc_env.R` | — | Install packages, verify DB connectivity, provision JDBC driver |
+| **2** | **`02_define_omop_cohort_outcome_covariates.R`** | **Yes** | Declare study design, validate cohort SQL and covariate files |
+| 3 | `03_generate_synthea_module_artifacts.R` | — | Validate Synthea disease module JSON and regenerate HTML diagram |
+| 4 | `04_generate_synthea_csv.ps1` / `.sh` | — | Generate synthetic patients (skip if using real CDM data) |
+| 5 | `05_etl_csv_to_omop.R` | — | ETL Synthea CSV → OMOP CDM tables (skip if using real CDM data) |
+| 6 | `06_quality_check_defined_phenotypes.R` | — | Post-ETL data quality and phenotype validation checks |
+| **7** | **`07_setup_analysis_env.R`** | **Yes** | Add your analysis packages to the `required` vector |
+| **8** | **`08_run_analysis_and_manuscript_report.R`** | **Yes** | Write your analysis code (Sections 7–9) |
+| 9 | `09_build_portable_analysis_bundle.ps1` / `.sh` | — | Package a self-contained bundle for deployment to external sites |
 
-4. `04_generate_synthea_csv.ps1` (Windows) / `04_generate_synthea_csv.sh` (Linux/macOS)
-   - Generate Synthea synthetic patients in CSV format using the PAD/SSI module.
-   - Requires `external/synthea/` to be present (cloned automatically by Step 1).
+Steps 2, 7, and 8 contain `TODO` blocks that you fill in for each study.
+Steps 1, 3–6, and 9 are infrastructure and do not normally need changes.
 
-5. `05_etl_csv_to_omop.R`
-   - ETL Synthea CSV output to OMOP CDM.
-   - Requires vocabularies to be preloaded by external `vocab_omop_etl`.
+---
 
-6. `06_quality_check_defined_phenotypes.R`
-   - Run data quality checks aligned to the defined cohort/outcome/covariate framework.
+## Execution
 
-7. `07_setup_analysis_env.R`
-   - Install/verify packages and environment required for integer risk score external validation analysis.
-
-8. `08_run_analysis_and_manuscript_report.R`
-   - Run analysis and generate manuscript-format Word report.
-
-9. `09_build_portable_analysis_bundle.sh` (Linux/macOS dev container) / `09_build_portable_analysis_bundle.ps1` (Windows legacy)
-   - Syncs the latest analysis code into `portable/prcc_bundle/`, then pushes it to the
-     `prcc-bundle` branch at `git@gitlab.dhe.duke.edu:apj20/pad-oler-ssi-val.git`.
-   - PRCC can then deploy with: `git clone --branch prcc-bundle <remote>`
-   - A dated zip fallback is also written to `dist/` for offline transfers.
-   - **Prerequisites:** set `PRCC_GITLAB_REMOTE`, `PRCC_GIT_USER_NAME`, `PRCC_GIT_USER_EMAIL`
-     in `OMOP_Dev/.env`. SSH key for `gitlab.dhe.duke.edu` must be loaded in your SSH agent.
-
-## Standalone step execution
-
-Each step script is standalone and can be run directly.
-Each script auto-resolves the repository root from its own location, so you can run it from any current working directory.
-
-Step 8 generates a shareable Word report (`.docx`) under `output/risk_score_eval/`.
-
-Examples:
-
-```powershell
-# R-based steps
+```bash
+# Run all steps in sequence (from project root)
 Rscript workflow/01_setup_synthea_etl_qc_env.R
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
+
+# Steps 3–6 only needed when generating synthetic data (skip for real CDM)
 Rscript workflow/03_generate_synthea_module_artifacts.R
-Rscript workflow/05_etl_csv_to_omop.R "C:/Users/rapiduser/source/repos/synthea/output/csv" "padssi-csv-20260324-120000"
-Rscript workflow/05_etl_csv_to_omop.R --csv_input_dir=C:/Users/rapiduser/source/repos/synthea/output/csv --run_name=padssi-csv-20260324-120000 --reset_before_etl=true
-Rscript workflow/06_quality_check_defined_phenotypes.R --run_name=padssi-csv-20260324-120000 --enforce_thresholds=true --min_person_rows=100 --min_open_revascularization_rows=50 --min_ssi_condition_rows=5 --min_mapped_condition_pct=50
+bash   workflow/04_generate_synthea_csv.sh       # macOS/Linux
+# powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1  # Windows
+Rscript workflow/05_etl_csv_to_omop.R
+Rscript workflow/06_quality_check_defined_phenotypes.R
+
+# Analysis
 Rscript workflow/07_setup_analysis_env.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R
-
-# PowerShell-based steps (Windows)
-powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
-
-# Bash equivalents (Linux/macOS dev container)
-bash workflow/04_generate_synthea_csv.sh
-bash workflow/09_build_portable_analysis_bundle.sh
+Rscript workflow/08_run_analysis_and_manuscript_report.R  # FRESH R session required
 ```
+
+> **Step 8 must be run in a fresh R session.** The Java/JDBC session guard at the
+> top of the script will stop execution if any Java-related namespace is already
+> loaded. Open a new R session or run via `Rscript` from the terminal.
+
+---
+
+## Step 2 — Study definition (`02_define_omop_cohort_outcome_covariates.R`)
+
+The primary customization checkpoint before running any analysis. Contains three
+user-facing sections at the top of the file:
+
+**Section A — Study design**
+Set `study_design` to one of:
+- `"cohort_characterization"` — single cohort, no outcome required
+- `"prognostic_model"` — target cohort + outcome + covariates
+- `"causal_inference"` — target + comparator + outcome + covariates
+- `"descriptive"` — target + comparator, no formal outcome
+- `"custom"` — any other design; minimal validation
+
+**Section B — Phenotype artifact paths**
+Set file paths to your cohort SQL files and covariate CSVs. Paths are relative to
+the project root. Set any path to `NULL` to mark it as not applicable for your design.
+
+**Section C — Study parameters**
+Set `prediction_window_days`, `min_prior_observation_days`, `covariate_lookback_days`,
+and any other study-specific numeric parameters.
+
+The validation logic (Chunks 3–5) adapts to your study design: a
+`cohort_characterization` run will not warn about a missing outcome cohort, a
+`causal_inference` run will warn if the comparator path is NULL, etc.
+
+Run Step 2 early and often as you fill in your phenotype files — it catches
+placeholder `concept_id = 0` values and structural issues before Step 8.
+
+---
+
+## Step 7 — Analysis environment (`07_setup_analysis_env.R`)
+
+Add your analysis packages to the `required` vector. `DatabaseConnector` and
+`SqlRender` are included by default. Reference lists for common designs:
+
+```r
+# Cohort characterization
+"FeatureExtraction", "CohortDiagnostics"
+
+# Prognostic modelling
+"PatientLevelPrediction", "FeatureExtraction", "pROC", "PRROC", "ggplot2",
+"officer", "flextable"
+
+# Causal inference
+"CohortMethod", "FeatureExtraction", "EvidenceSynthesis"
+```
+
+---
+
+## Step 8 — Analysis (`08_run_analysis_and_manuscript_report.R`)
+
+Sections 1–6 are pre-wired infrastructure (bootstrap, Java guard, renv, config,
+connection, cohort instantiation). **Do not modify these.**
+
+Fill in the three blank sections:
+
+| Section | What goes here |
+|---------|----------------|
+| **7 — YOUR ANALYSIS** | Call your analysis functions (PLP, CohortMethod, FeatureExtraction, custom code) |
+| **8 — YOUR OUTPUT** | Write results to `config$output_folder` (CSVs, Word report, plots, Excel) |
+| **9 — DONE** | Update the completion message to reflect what was produced |
+
+Starter patterns for all three study designs are provided as commented examples
+in the file — uncomment and adapt the block that matches your design.
+
+### Available objects at the start of Section 7
+
+| Object | Type | Description |
+|--------|------|-------------|
+| `config` | named list | All study settings from `config.R` |
+| `connection_details` | ConnectionDetails | DatabaseConnector credentials object |
+| `config$cdm_schema` | character | CDM schema name |
+| `config$results_schema` | character | Results schema name |
+| `config$cohort_table` | character | Cohort table name |
+| `config$target_cohort_id` | integer | Cohort definition ID for target population |
+| `config$comparator_cohort_id` | integer or NA | Cohort definition ID for comparator (NA if not defined) |
+| `config$outcome_cohort_id` | integer | Cohort definition ID for outcome |
+| `config$prediction_window_days` | integer | Follow-up window in days |
+| `config$output_folder` | character | Output directory path |
+
+---
 
 ## Step parameters
 
-- `workflow/04_generate_synthea_csv.ps1`: `-SyntheaHome`, `-Population`, `-AgeRange`, `-State`
-- `workflow/05_etl_csv_to_omop.R`: arg1 = `csv_input_dir`, arg2 = `run_name`; optional named args `--csv_input_dir=...`, `--run_name=...`, `--reset_before_etl=true|false`
-- `workflow/05_etl_csv_to_omop.R`: vocabulary loading flags are deprecated and ignored (`--force_reload_vocab`, `--vocab_file_loc`)
-- `workflow/06_quality_check_defined_phenotypes.R`: pass-through args accepted by `scripts/quality_check_etl.R`, including `--run_name=...`, `--enforce_thresholds=true|false`, `--min_person_rows=...`, `--min_open_revascularization_rows=...`, `--min_ssi_condition_rows=...`, `--min_mapped_condition_pct=...`
-
-## Typical execution order
-
-From project root (PowerShell + Rscript):
-
-```powershell
-Rscript workflow/01_setup_synthea_etl_qc_env.R
-Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-Rscript workflow/03_generate_synthea_module_artifacts.R
-powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
-Rscript workflow/05_etl_csv_to_omop.R
-Rscript workflow/06_quality_check_defined_phenotypes.R
-Rscript workflow/07_setup_analysis_env.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R
+**Step 5** (`05_etl_csv_to_omop.R`):
+```bash
+Rscript workflow/05_etl_csv_to_omop.R \
+  --csv_input_dir=/path/to/synthea/output/csv \
+  --run_name=my_study_run_001 \
+  --reset_before_etl=true
 ```
 
-Legacy one-off entrypoint scripts were archived under `scripts/archive/legacy_entrypoints/` and are no longer the supported path.
+**Step 6** (`06_quality_check_defined_phenotypes.R`):
+```bash
+Rscript workflow/06_quality_check_defined_phenotypes.R \
+  --run_name=my_study_run_001 \
+  --enforce_thresholds=true \
+  --min_person_rows=100
+```

@@ -1,15 +1,33 @@
-# PAD/OLER SSI Validation Study — Copilot Instructions
+# OMOP Study Template — Copilot / Claude Code Instructions
 
-This is an R-based OHDSI external validation study for a Surgical Site Infection (SSI)
-prediction model in patients with peripheral arterial disease (PAD). The codebase is
-intentionally self-contained and offline-capable.
+This is a **GitHub Template Repository** for observational studies on an OMOP CDM v5.4
+SQL Server database. It supports cohort characterization, prognostic modelling, and
+causal inference using the OHDSI R toolstack. The codebase is intentionally self-contained
+and offline-capable.
+
+## Study Context
+
+This repository is a template. Study-specific content lives in:
+- `config.R` — all settings (schemas, cohort IDs, SQL paths, study dates, output folder)
+- `cohorts/` — SQL cohort definitions (target, comparator, outcome)
+- `risk_score/` — covariate definition CSVs and score lookup table
+- `workflow/02` — study design declaration and artifact validation
+- `workflow/07` — analysis package list
+- `workflow/08` — analysis code (Sections 7–9)
+
+Infrastructure is pre-wired and should not be modified:
+- `R/drivers.R`, `R/connection.R`, `R/cohorts.R` — database and cohort helpers
+- `setup/`, `.devcontainer/` — renv and Docker environment
+- `workflow/01`, `03–06`, `09` — ETL, QC, and packaging steps
+
+When helping with this project, always read `config.R` first to understand the current
+study's schema names, cohort IDs, and file paths before suggesting any code.
 
 ## Language and Runtime
 
 - All analysis code is written in **R**. Do not suggest Python, Julia, or any other language.
 - R version: **4.5.x**. Do not use syntax or packages unavailable in R 4.5.
-- Java 17 (Eclipse Adoptium) is required for `DatabaseConnector`/`rJava` — path is
-  `C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot`.
+- Java 17 (Eclipse Adoptium) is required for `DatabaseConnector` / `rJava`.
 
 ## Package Management
 
@@ -19,62 +37,61 @@ intentionally self-contained and offline-capable.
 - CRAN packages must be installed from the mirror `https://archive.linux.duke.edu/cran/`.
   Do not suggest the default `https://cloud.r-project.org` or any other mirror.
 - See `setup/install_packages.R` for the canonical install workflow.
-
-## GitHub Package Fallback
-
-Some OHDSI packages are not on CRAN and must be installed from GitHub when unavailable on CRAN.
-
-- Use CRAN first (via `renv::install()`), then fall back to `remotes::install_github()` for non-CRAN packages.
-- Current GitHub fallback packages in `setup/install_packages.R`:
-  - `FeatureExtraction` (`OHDSI/FeatureExtraction`, `v3.6.0`)
-  - `CohortGenerator` (`OHDSI/CohortGenerator`, `v0.9.0`)
-  - `PatientLevelPrediction` (`OHDSI/PatientLevelPrediction`, `v6.4.0`)
-  - `ETLSyntheaBuilder` (`OHDSI/ETL-Synthea`, `v2.1.0`)
+- OHDSI packages not on CRAN ship as prebuilt binaries in `internal_repo/bin/`.
 
 ## Architecture
 
-- `config.R` — single source of truth for all settings (connection, schema names, cohort IDs,
-  file paths). Always read config via `get_validation_config()`.
-- `R/` — all reusable R functions (cohorts, database helpers, risk score pipeline).
-- `run_validation.R` — entry point for PLP external validation.
-- `run_risk_score_pipeline.R` — entry point for integer risk score evaluation.
-- `risk_score/` — CSV spec files defining score components, concept mappings, and risk lookup.
-- `cohorts/` — SQL cohort definitions (used when ATLAS cohorts are unavailable).
-- `output/` — all analysis outputs (gitignored).
+- `config.R` — single source of truth; always read via `get_validation_config()`.
+- `R/cohorts.R` — `build_cohorts()` reads SQL file paths from `config$target_cohort_sql`,
+  `config$comparator_cohort_sql`, `config$outcome_cohort_sql`. Do not hardcode paths.
+- `workflow/08` sections 1–6 are pre-wired infrastructure; sections 7–9 are user code.
+- All outputs go to `config$output_folder`. Do not hardcode output paths.
 
 ## Database
 
-- DBMS: **SQL Server 2019** (`localhost:1434`, database `omop_synth`).
-- CDM schema: `cdm_synthea` (OMOP CDM v5).
-- Results schema: `plp_results`.
-- See `omop-ohdsi.instructions.md` for OMOP/OHDSI coding conventions.
+- DBMS: **SQL Server** (connection details from `get_validation_config()`).
+- Vocabulary schema: `omop_vocab` (shared across studies).
+- CDM schema, results schema, and cohort table are all set in `config.R`.
+- Use `DatabaseConnector::connect(connection_details)` / `disconnect()` — never leave
+  connections open across functions.
+- Use `SqlRender::render()` + `SqlRender::translate(sql, "sql server")` for all SQL.
 
-## Clinical Code Mapping
+## Clinical Concept Mapping
 
-- When mapping clinical terms or source codes (for example SNOMED, ICD, CPT, LOINC), do **not** rely on pretrained model memory.
-- Always derive concept mappings from the live OMOP vocabulary in this database.
+- Do **not** rely on pretrained knowledge for OMOP concept IDs.
+- Always derive concept mappings from the live vocabulary in the connected database.
 - Required lookup workflow:
-  1. Query `cdm_synthea.concept` to identify candidate concepts and confirm `standard_concept` status.
-  2. Use `cdm_synthea.concept_relationship` to map source/non-standard concepts to standard concepts and verify relationship semantics.
-  3. Use `cdm_synthea.concept_ancestor` to expand descendants/ancestors when building concept sets.
-- Do not hard-code concept IDs unless they have been validated against these tables in the current database instance.
+  1. Query `omop_vocab.concept` to identify candidates and confirm `standard_concept = 'S'`.
+  2. Use `omop_vocab.concept_ancestor` to expand descendants when building concept sets.
+  3. Verify `invalid_reason IS NULL` before committing any concept ID to code or CSV.
+- Use the `/concept-lookup` slash command (`.github/prompts/concept-lookup.prompt.md`)
+  before writing any concept ID into code or CSV files.
+
+## Template Customization Assistance
+
+When a user is setting up a new study from this template:
+
+1. Read `config.R` and identify which `TODO [CONFIG]:` items have not yet been filled in
+   (still contain placeholder values like `"my_study"`, `"cdm_my_study"`, `0` concept IDs).
+2. Read the cohort SQL files referenced in `config$target_cohort_sql` and
+   `config$outcome_cohort_sql` and flag any remaining `concept_id = 0` placeholders.
+3. Check `risk_score/components.csv` for placeholder rows (`component_id` matching
+   `covariate_1`, `covariate_2`, etc.).
+4. Check `risk_score/component_concepts.csv` for `concept_id = 0` rows.
+5. Summarize what is complete and what still needs filling in before running Step 8.
 
 ## Security and Safety
 
 - Never hardcode credentials; all connection parameters come from `get_validation_config()`.
-- Do not add calls to external URLs or APIs beyond the JDBC driver download in `R/drivers.R`.
-- Do not write PHI or PII to disk — output CSVs contain only aggregate statistics.
+- Do not add calls to external URLs beyond the JDBC driver download in `R/drivers.R`.
+- Do not write PHI or PII to disk — output files should contain only aggregate statistics.
+- Outputs go to `config$output_folder`, which is gitignored.
 
 ## Version Control
 
-After completing any major code change (new features, bug fixes, refactors, documentation
-updates, or file additions/deletions), always stage, commit, and push the affected files to
-GitHub:
+After completing any code change, stage, commit, and push the affected files:
 
-1. Stage only the relevant changed files (do not blanket-stage unrelated untracked files).
+1. Stage only the relevant changed files — do not blanket-stage untracked files.
 2. Write a concise conventional commit message: `<type>: <short description>`
    — types: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`.
 3. Push to `origin main`.
-
-Use the GitKraken MCP git tools (`mcp_gitkraken_git_add_or_commit`, `mcp_gitkraken_git_push`)
-for staging, committing, and pushing unless the user explicitly asks to use the terminal.
