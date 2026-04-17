@@ -29,6 +29,23 @@
 --     43530820 Organ-space surgical site infection                     (3)
 --     42538804 Organ surgical site infection                           (3)
 --
+-- EXCLUSIONS (concept-based):
+--
+--   1. Obstetric surgical wound infections — excluded via SNOMED ancestor:
+--        4062133  Infection of obstetric surgical wound  (SNOMED standard)
+--      All descendants of 4062133 are excluded using a NOT EXISTS / concept_ancestor
+--      sub-query. These correspond to ICD-10-CM O86.x codes.
+--
+--   2. Corneal transplant infections — excluded via ICD10CM source concept IDs:
+--        725618  Corneal transplant infection, right eye
+--        725619  Corneal transplant infection, left eye
+--        725620  Corneal transplant infection, bilateral
+--        725621  Corneal transplant infection, unspecified eye
+--      These ICD-10-CM codes (T86.842x) map directly to the parent concept 4334801
+--      (no more specific SNOMED descendant exists), so they are excluded using
+--      condition_source_concept_id. This is still a concept-based approach — OMOP
+--      concept IDs are used, not raw code strings.
+--
 -- NOTE: Previously used ancestor IDs (4201004, 4318887, 40480632, 4110523)
 --   are NOT present or map to unrelated concepts in the current OMOP vocabulary
 --   (v5.0 2024-10-01 and later). They have been replaced by 4334801.
@@ -72,5 +89,19 @@ FROM (
     ca.ancestor_concept_id = 4334801   -- Surgical site infection (SNOMED 433202001)
     AND co.condition_start_date >= CAST('@study_start_date' AS DATE)
     AND co.condition_start_date <= CAST('@study_end_date'   AS DATE)
+
+    -- Exclusion 1: Obstetric surgical wound infections
+    --   Exclude all descendants of concept 4062133 (Infection of obstetric surgical wound)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM @cdm_database_schema.concept_ancestor excl
+      WHERE excl.descendant_concept_id = co.condition_concept_id
+        AND excl.ancestor_concept_id   = 4062133
+    )
+
+    -- Exclusion 2: Corneal transplant infections (T86.842x)
+    --   These ICD-10-CM codes map directly to the SSI parent concept 4334801
+    --   with no more-specific SNOMED descendant, so we exclude by source concept ID.
+    AND co.condition_source_concept_id NOT IN (725618, 725619, 725620, 725621)
 ) first_ssi
 WHERE first_ssi.rn = 1;

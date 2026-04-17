@@ -26,9 +26,8 @@
 #
 # Side effects:
 #   output_dir/pad-oler-ssi-val_report_<YYYYMMDD>[_N].docx  — Word report
-#   output_dir/pad_oler_ssi_fringe_<YYYYMMDD>.xlsx           — fringe-cases Excel
 #
-# Dependencies: officer, flextable, ggplot2, pROC, writexl (all via renv)
+# Dependencies: officer, flextable, ggplot2, pROC (all via renv)
 # =============================================================================
 
 library(officer)
@@ -295,7 +294,7 @@ source("R/cohort_demographics.R")
   )
   
   p <- ggplot2::ggplot(roc_data, ggplot2::aes(x = fpr, y = tpr)) +
-    ggplot2::geom_path(size = 1) +
+    ggplot2::geom_path(linewidth = 1) +
     ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
       title = "Receiver Operating Characteristic Curve",
@@ -372,56 +371,211 @@ source("R/cohort_demographics.R")
     error = function(e) NA_integer_
   )
 
+  # Build per-patient data frame with year and SSI type
+  # ssi_type is "Superficial", "Deep", or "Organ-space" for SSI cases; NA otherwise
+  has_type <- "ssi_type" %in% names(person_level_df)
   df_yr <- data.frame(
-    year    = year_val,
-    outcome = as.integer(person_level_df$outcome),
+    year     = year_val,
+    outcome  = as.integer(person_level_df$outcome),
+    ssi_type = if (has_type) person_level_df$ssi_type else NA_character_,
     stringsAsFactors = FALSE
   )
   df_yr <- df_yr[!is.na(df_yr$year), ]
 
-  # Aggregate per year
-  yr_tbl <- do.call(rbind, lapply(sort(unique(df_yr$year)), function(y) {
-    sub  <- df_yr[df_yr$year == y, ]
-    n    <- nrow(sub)
-    events <- sum(sub$outcome, na.rm = TRUE)
-    data.frame(year = y, n = n, events = events,
-               ssi_rate = 100 * events / n,
-               stringsAsFactors = FALSE)
+  # ggplot2 position_stack() draws the FIRST factor level on TOP and the LAST
+  # at the BOTTOM, so to get Superficial on top / Organ-space at the bottom
+  # the factor levels must be ordered Superficial → Deep → Organ-space.
+  ssi_levels <- c("Superficial", "Deep", "Organ-space")
+
+  # Aggregate individual SSI rate per year × SSI type.
+  # Denominator = all procedures that year; numerator = events of that sub-type.
+  all_years <- sort(unique(df_yr$year))
+  yr_type_tbl <- do.call(rbind, lapply(all_years, function(y) {
+    sub_yr <- df_yr[df_yr$year == y, ]
+    n_yr   <- nrow(sub_yr)
+    do.call(rbind, lapply(ssi_levels, function(tp) {
+      events <- sum(sub_yr$ssi_type == tp, na.rm = TRUE)
+      data.frame(
+        year     = y,
+        n        = n_yr,
+        ssi_type = tp,
+        events   = events,
+        ssi_rate = 100 * events / n_yr,
+        stringsAsFactors = FALSE
+      )
+    }))
   }))
 
   # Suppress years with < 10 procedures
-  yr_tbl <- yr_tbl[yr_tbl$n >= 10, ]
-  if (nrow(yr_tbl) < 2) {
+  yr_type_tbl <- yr_type_tbl[yr_type_tbl$n >= 10, ]
+  if (length(unique(yr_type_tbl$year)) < 2) {
     message("[report] SSI-by-year plot skipped: fewer than 2 years with >= 10 procedures.")
     return(NULL)
   }
 
-  p <- ggplot2::ggplot(yr_tbl, ggplot2::aes(x = year, y = ssi_rate)) +
-    ggplot2::geom_line(linewidth = 0.9, colour = "#1F3864") +
-    ggplot2::geom_point(size = 2.5,   colour = "#1F3864") +
-    ggplot2::scale_x_continuous(breaks = yr_tbl$year) +
-    ggplot2::scale_y_continuous(limits = c(0, NA),
-                                labels = function(x) paste0(round(x, 1), "%")) +
+  # Enforce stacking order — Superficial bottom, Organ-space top
+  yr_type_tbl$ssi_type <- factor(yr_type_tbl$ssi_type, levels = ssi_levels)
+
+  # Fill colours (bottom to top): teal, navy, red
+  fill_colours <- c(
+    "Superficial" = "#A8D5DC",   # light teal
+    "Deep"        = "#5B8DB8",   # mid blue
+    "Organ-space" = "#C0392B"    # red
+  )
+  line_colours <- c(
+    "Superficial" = "#2196A6",
+    "Deep"        = "#1F3864",
+    "Organ-space" = "#922B21"
+  )
+
+  total_procs <- sum(yr_type_tbl$n[!duplicated(yr_type_tbl[, c("year")])  ])
+  total_years <- length(unique(yr_type_tbl$year))
+
+  p <- ggplot2::ggplot(
+      yr_type_tbl,
+      ggplot2::aes(x = year, y = ssi_rate,
+                   fill = ssi_type, colour = ssi_type, group = ssi_type)
+    ) +
+    # Stacked shaded bands
+    ggplot2::geom_area(position = "stack", alpha = 0.55, linewidth = 0.3) +
+    # Bold boundary lines along the top edge of each band
+    ggplot2::geom_line(
+      ggplot2::aes(y = ssi_rate),
+      position = ggplot2::position_stack(),
+      linewidth = 0.9
+    ) +
+    # Points on each band's top edge
+    ggplot2::geom_point(
+      position = ggplot2::position_stack(),
+      size = 2.5, shape = 21,
+      fill = "white", stroke = 1.2
+    ) +
+    ggplot2::scale_fill_manual(
+      values = fill_colours,
+      breaks = ssi_levels,   # legend: Superficial top, Organ-space bottom
+      name   = "SSI type"
+    ) +
+    ggplot2::scale_colour_manual(
+      values = line_colours,
+      breaks = ssi_levels,
+      name   = "SSI type"
+    ) +
+    ggplot2::scale_x_continuous(breaks = sort(unique(yr_type_tbl$year))) +
+    ggplot2::scale_y_continuous(
+      limits = c(0, NA),
+      labels = function(x) paste0(round(x, 1), "%")
+    ) +
     ggplot2::labs(
-      title   = "SSI Rate by Procedure Year",
+      title   = "90-Day SSI Rate by Type and Procedure Year",
+      subtitle = "Top line = overall SSI rate; bands show contribution of each type",
       x       = "Year of procedure",
-      y       = "30-day SSI rate (%)",
-      caption = paste0("N = ", sum(yr_tbl$n), " procedures; ",
-                       "years with < 10 procedures suppressed.")
+      y       = "90-day SSI rate (%)",
+      caption = paste0("N = ", total_procs, " procedures across ", total_years,
+                       " years; years with < 10 procedures suppressed.")
     ) +
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(
-      axis.text.x     = ggplot2::element_text(angle = 45, hjust = 1),
-      plot.caption    = ggplot2::element_text(size = 8),
-      panel.grid.minor = ggplot2::element_blank()
+      axis.text.x      = ggplot2::element_text(angle = 45, hjust = 1),
+      plot.caption     = ggplot2::element_text(size = 8),
+      panel.grid.minor = ggplot2::element_blank(),
+      legend.position  = "bottom"
     )
 
   out_file <- file.path(output_folder, "ssi_rate_by_year.png")
   tryCatch({
-    ggplot2::ggsave(out_file, p, width = 7, height = 4.5, dpi = 150)
+    ggplot2::ggsave(out_file, p, width = 7, height = 5, dpi = 150)
     out_file
   }, error = function(e) {
     message("[report] Could not save SSI-by-year plot: ", conditionMessage(e))
+    NULL
+  })
+}
+
+# -----------------------------------------------------------------------------
+# .save_ssi_rate_by_month_plot()
+#
+# Builds a bar chart of 90-day SSI rate (%) by calendar month (Jan–Dec),
+# pooled across all years.  Each bar shows the observed SSI rate for procedures
+# indexed in that calendar month, annotated with the total procedure count.
+# Months with < 5 procedures are suppressed to avoid unstable estimates.
+# Returns NULL silently if the date column is absent or no months remain.
+# -----------------------------------------------------------------------------
+.save_ssi_rate_by_month_plot <- function(person_level_df, output_folder) {
+  if (!all(c("index_date", "outcome") %in% names(person_level_df))) {
+    message("[report] SSI-by-month plot skipped: index_date or outcome column missing.")
+    return(NULL)
+  }
+
+  month_val <- tryCatch(
+    as.integer(format(as.Date(person_level_df$index_date), "%m")),
+    error = function(e) NA_integer_
+  )
+
+  df_mo <- data.frame(
+    month   = month_val,
+    outcome = as.integer(person_level_df$outcome),
+    stringsAsFactors = FALSE
+  )
+  df_mo <- df_mo[!is.na(df_mo$month), ]
+
+  # Aggregate across all months 1–12 (keep all so x-axis is always Jan–Dec)
+  mo_tbl <- do.call(rbind, lapply(1:12, function(m) {
+    sub    <- df_mo[df_mo$month == m, ]
+    n      <- nrow(sub)
+    events <- sum(sub$outcome, na.rm = TRUE)
+    data.frame(
+      month    = m,
+      n        = n,
+      events   = events,
+      ssi_rate = if (n >= 5) 100 * events / n else NA_real_,
+      stringsAsFactors = FALSE
+    )
+  }))
+
+  mo_tbl$month_label <- factor(
+    mo_tbl$month,
+    levels = 1:12,
+    labels = c("Jan","Feb","Mar","Apr","May","Jun",
+               "Jul","Aug","Sep","Oct","Nov","Dec")
+  )
+
+  if (all(is.na(mo_tbl$ssi_rate))) {
+    message("[report] SSI-by-month plot skipped: all months suppressed (< 5 procedures each).")
+    return(NULL)
+  }
+
+  p <- ggplot2::ggplot(mo_tbl, ggplot2::aes(x = month_label, y = ssi_rate)) +
+    ggplot2::geom_col(fill = "#1F3864", width = 0.7, na.rm = TRUE) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = ifelse(!is.na(ssi_rate), paste0("n=", n), "")),
+      vjust = -0.4, size = 2.8, colour = "grey30", na.rm = TRUE
+    ) +
+    ggplot2::scale_y_continuous(
+      limits = c(0, NA),
+      expand = ggplot2::expansion(mult = c(0, 0.15)),
+      labels = function(x) paste0(round(x, 1), "%")
+    ) +
+    ggplot2::labs(
+      title   = "90-Day SSI Rate by Month of Procedure",
+      x       = "Month of index procedure",
+      y       = "90-day SSI rate (%)",
+      caption = paste0("Pooled across all study years (", min(df_mo$month, na.rm = TRUE),
+                       "\u2013", max(df_mo$month, na.rm = TRUE), "). ",
+                       "Months with < 5 procedures suppressed.")
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      plot.caption     = ggplot2::element_text(size = 8),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor   = ggplot2::element_blank()
+    )
+
+  out_file <- file.path(output_folder, "ssi_rate_by_month.png")
+  tryCatch({
+    ggplot2::ggsave(out_file, p, width = 7, height = 4.5, dpi = 150)
+    out_file
+  }, error = function(e) {
+    message("[report] Could not save SSI-by-month plot: ", conditionMessage(e))
     NULL
   })
 }
@@ -1296,21 +1450,43 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   predictor_ref <- .component_table_data()[, c("component_id", "variable", "points", "lookback", "derivation")]
   names(predictor_ref) <- c("component_id", "Predictor", "Points", "Lookback", "Definition")
 
+  has_missing_col <- "n_missing" %in% names(component_summary)
+
   if ("component_id" %in% names(component_summary)) {
-    component_act <- component_summary[, c("component_id", "n_positive", "mean_points"), drop = FALSE]
+    keep_cols <- c("component_id", "n_positive", "mean_points",
+                   if (has_missing_col) "n_missing")
+    component_act <- component_summary[, keep_cols, drop = FALSE]
     predictor_tbl <- merge(predictor_ref, component_act, by = "component_id", all.x = TRUE, sort = FALSE)
   } else {
     predictor_ref$key <- normalize_label(predictor_ref$Predictor)
-    component_act <- component_summary[, c("component_name", "n_positive", "mean_points"), drop = FALSE]
+    keep_cols <- c("component_name", "n_positive", "mean_points",
+                   if (has_missing_col) "n_missing")
+    component_act <- component_summary[, keep_cols, drop = FALSE]
     component_act$key <- normalize_label(component_act$component_name)
-    component_act <- component_act[, c("key", "n_positive", "mean_points"), drop = FALSE]
+    drop_cols <- c("key", "n_positive", "mean_points", if (has_missing_col) "n_missing")
+    component_act <- component_act[, c("key", "n_positive", "mean_points",
+                                       if (has_missing_col) "n_missing"), drop = FALSE]
     predictor_tbl <- merge(predictor_ref, component_act, by = "key", all.x = TRUE, sort = FALSE)
   }
 
   predictor_tbl$n_positive[is.na(predictor_tbl$n_positive)] <- 0
   predictor_tbl$mean_points[is.na(predictor_tbl$mean_points)] <- 0
-  predictor_tbl <- predictor_tbl[, c("Predictor", "Points", "Lookback", "Definition", "n_positive", "mean_points")]
-  names(predictor_tbl) <- c("Predictor", "Points", "Lookback", "Definition", "PositiveCount", "MeanPoints")
+  if (has_missing_col) predictor_tbl$n_missing[is.na(predictor_tbl$n_missing)] <- 0
+
+  base_cols <- c("Predictor", "Points", "Lookback", "Definition", "n_positive", "mean_points")
+  if (has_missing_col) base_cols <- c(base_cols, "n_missing")
+  predictor_tbl <- predictor_tbl[, base_cols]
+
+  if (has_missing_col) {
+    names(predictor_tbl) <- c("Predictor", "Points", "Lookback", "Definition",
+                               "PositiveCount", "MeanPoints", "MissingCount")
+    predictor_tbl$MissingCount <- as.integer(predictor_tbl$MissingCount)
+    predictor_tbl$MissingPct   <- paste0(
+      round(100 * predictor_tbl$MissingCount / max(n_target, 1), 1), "%")
+  } else {
+    names(predictor_tbl) <- c("Predictor", "Points", "Lookback", "Definition",
+                               "PositiveCount", "MeanPoints")
+  }
   predictor_tbl$PositiveCount <- as.integer(predictor_tbl$PositiveCount)
   predictor_tbl$MeanPoints <- round(as.numeric(predictor_tbl$MeanPoints), 4)
 
@@ -1568,7 +1744,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
           AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
          INNER JOIN @cdm_schema.concept_ancestor ca
            ON ca.descendant_concept_id = po.procedure_concept_id
-          AND ca.ancestor_concept_id   = 4166196",
+          AND ca.ancestor_concept_id   = 4166196
+         UNION ALL
+         SELECT 'Extra-anatomic bypass',    COUNT(DISTINCT t.subject_id)
+         FROM target t
+         INNER JOIN @cdm_schema.procedure_occurrence po
+           ON po.person_id = t.subject_id
+          AND po.procedure_date BETWEEN t.cohort_start_date AND t.cohort_end_date
+         INNER JOIN @cdm_schema.concept_ancestor ca
+           ON ca.descendant_concept_id = po.procedure_concept_id
+          AND ca.ancestor_concept_id   = 4050281",
         results_schema = results_schema_prefix(config),
         cohort_table   = config$cohort_table,
         cdm_schema     = config$cdm_schema,
@@ -1588,6 +1773,427 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
         ethnicity      = ethnicity_df,
         indication     = indication_df,
         procedure_type = proc_type_df
+      )
+    }, silent = TRUE)
+
+    if (!is.null(conn)) {
+      try(DatabaseConnector::disconnect(conn), silent = TRUE)
+    }
+
+    out
+  }
+
+  # ---------------------------------------------------------------------------
+  # fetch_ssi_outcomes_from_omop()
+  #
+  # Queries post-operative outcome statistics for SSI patients:
+  #   1. Median days (with IQR) from the index procedure to SSI diagnosis
+  #   2. 90-day reoperation count: any procedure_occurrence after SSI date
+  #      and within 90 days of the index date
+  #   3. 90-day readmission count: inpatient visit (concept 9201) starting
+  #      after SSI date and within 90 days of the index date
+  #   4. 90-day mortality count: death record within 90 days of index date
+  #      among SSI patients
+  #
+  # Denominator for rates 2–4 is the number of SSI patients (n_ssi).
+  # ---------------------------------------------------------------------------
+  fetch_ssi_outcomes_from_omop <- function(config, connection_details) {
+    if (is.null(config) || is.null(connection_details)) return(NULL)
+
+    conn <- NULL
+    out  <- NULL
+    try({
+      conn <- DatabaseConnector::connect(connection_details)
+
+      # Shared CTE: SSI patients joined to their index procedure date.
+      # Only patients whose SSI falls within the 90-day prediction window are kept.
+      ssi_cte <- "ssi_w_index AS (
+        SELECT
+          s.subject_id,
+          t.cohort_start_date        AS index_date,
+          s.cohort_start_date        AS ssi_date,
+          DATEDIFF(DAY,
+            t.cohort_start_date,
+            s.cohort_start_date)     AS days_to_ssi
+        FROM @results_schema.@cohort_table s
+        INNER JOIN @results_schema.@cohort_table t
+          ON  t.subject_id           = s.subject_id
+          AND t.cohort_definition_id = @target_id
+        WHERE s.cohort_definition_id = @outcome_id
+          AND DATEDIFF(DAY, t.cohort_start_date, s.cohort_start_date)
+              BETWEEN 0 AND 90
+      )"
+
+      # 1. Days-to-SSI: count, median, IQR
+      # PERCENTILE_CONT in SQL Server is an analytic (window) function and requires
+      # OVER (). We select TOP 1 since the window function returns the same value
+      # for every row; COUNT(*) OVER () gives the total row count.
+      sql_days <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT TOP 1
+             COUNT(*) OVER ()                                                 AS n_ssi,
+             CAST(PERCENTILE_CONT(0.25)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS p25,
+             CAST(PERCENTILE_CONT(0.5)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS median_days,
+             CAST(PERCENTILE_CONT(0.75)
+               WITHIN GROUP (ORDER BY CAST(days_to_ssi AS FLOAT)) OVER ()
+             AS FLOAT)                                                         AS p75
+           FROM ssi_w_index"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      days_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_days, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Days-to-SSI query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 2. 90-day reoperation: any procedure_occurrence after SSI date within window
+      sql_reop <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_reoperation
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.procedure_occurrence po
+             ON  po.person_id = si.subject_id
+             AND CAST(po.procedure_date AS DATE) > si.ssi_date
+             AND CAST(po.procedure_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      reop_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_reop, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Reoperation query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 3. 90-day readmission: inpatient visit (concept 9201) after SSI date within window
+      sql_readm <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_readmission
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.visit_occurrence vo
+             ON  vo.person_id        = si.subject_id
+             AND vo.visit_concept_id = 9201
+             AND CAST(vo.visit_start_date AS DATE) > si.ssi_date
+             AND CAST(vo.visit_start_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      readm_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_readm, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Readmission query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 4. 90-day mortality: death record within 90 days of index date (SSI patients only)
+      sql_death <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_death
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.death d
+             ON  d.person_id = si.subject_id
+             AND CAST(d.death_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      death_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_death, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Death query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 5. SSI type breakdown: superficial / deep / organ-space / unclassified
+      # Ancestor concept IDs (SNOMED-CT, OMOP standard):
+      #   43530818 = Superficial incisional surgical site infection
+      #   4308542  = Postoperative wound infection - deep  (deep incisional proxy)
+      #   43530820 = Organ-space surgical site infection
+      # Counts are distinct patients whose SSI condition_concept_id is a
+      # descendant of the relevant ancestor.  Patients coded only at the parent
+      # level (e.g. 4334801) are captured in n_unclassified.
+      sql_ssi_type <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, ",
+           typed AS (
+             SELECT DISTINCT
+               si.subject_id,
+               MAX(CASE WHEN ca_sup.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_superficial,
+               MAX(CASE WHEN ca_deep.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_deep,
+               MAX(CASE WHEN ca_org.ancestor_concept_id IS NOT NULL THEN 1 ELSE 0 END)
+                 OVER (PARTITION BY si.subject_id) AS is_organ
+             FROM ssi_w_index si
+             INNER JOIN @cdm_schema.condition_occurrence co
+               ON  co.person_id                       = si.subject_id
+               AND CAST(co.condition_start_date AS DATE) = si.ssi_date
+             INNER JOIN @cdm_schema.concept_ancestor ca_ssi
+               ON  ca_ssi.descendant_concept_id = co.condition_concept_id
+               AND ca_ssi.ancestor_concept_id   = 4334801
+             LEFT JOIN @cdm_schema.concept_ancestor ca_sup
+               ON  ca_sup.descendant_concept_id = co.condition_concept_id
+               AND ca_sup.ancestor_concept_id   = 43530818
+             LEFT JOIN @cdm_schema.concept_ancestor ca_deep
+               ON  ca_deep.descendant_concept_id = co.condition_concept_id
+               AND ca_deep.ancestor_concept_id   = 4308542
+             LEFT JOIN @cdm_schema.concept_ancestor ca_org
+               ON  ca_org.descendant_concept_id  = co.condition_concept_id
+               AND ca_org.ancestor_concept_id    = 43530820
+           ),
+           deduped AS (
+             SELECT subject_id,
+                    MAX(is_superficial) AS is_superficial,
+                    MAX(is_deep)        AS is_deep,
+                    MAX(is_organ)       AS is_organ
+             FROM typed
+             GROUP BY subject_id
+           )
+           SELECT
+             SUM(is_superficial)                                       AS n_superficial,
+             SUM(is_deep)                                              AS n_deep,
+             SUM(is_organ)                                             AS n_organ,
+             SUM(CASE WHEN is_superficial = 0
+                       AND is_deep        = 0
+                       AND is_organ       = 0 THEN 1 ELSE 0 END)      AS n_unclassified
+           FROM deduped"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      ssi_type_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_ssi_type, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] SSI type query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 6. Index hospitalisation length of stay (days) — visit_occurrence containing
+      #    the index procedure date, using DATEDIFF on visit end vs. start.
+      sql_los <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT TOP 1
+             COUNT(*) OVER ()                                                         AS n_los,
+             CAST(PERCENTILE_CONT(0.25)
+               WITHIN GROUP (ORDER BY CAST(los_days AS FLOAT)) OVER () AS FLOAT)     AS p25,
+             CAST(PERCENTILE_CONT(0.5)
+               WITHIN GROUP (ORDER BY CAST(los_days AS FLOAT)) OVER () AS FLOAT)     AS median_los,
+             CAST(PERCENTILE_CONT(0.75)
+               WITHIN GROUP (ORDER BY CAST(los_days AS FLOAT)) OVER () AS FLOAT)     AS p75
+           FROM (
+             SELECT si.subject_id,
+                    DATEDIFF(DAY,
+                      vo.visit_start_date,
+                      COALESCE(vo.visit_end_date, vo.visit_start_date)) AS los_days
+             FROM ssi_w_index si
+             INNER JOIN @cdm_schema.visit_occurrence vo
+               ON  vo.person_id        = si.subject_id
+               AND vo.visit_concept_id = 9201
+               AND CAST(vo.visit_start_date AS DATE) <= si.index_date
+               AND CAST(COALESCE(vo.visit_end_date, vo.visit_start_date) AS DATE) >= si.index_date
+           ) los_sub"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      los_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_los, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] LOS query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 7. Time (days) from SSI diagnosis to first post-SSI antibiotic exposure.
+      #    Uses drug_exposure with ATC ancestor 21603553 (Antibacterials).
+      sql_abx <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT TOP 1
+             COUNT(*) OVER ()                                                         AS n_abx,
+             CAST(PERCENTILE_CONT(0.25)
+               WITHIN GROUP (ORDER BY CAST(days_to_abx AS FLOAT)) OVER () AS FLOAT)  AS p25,
+             CAST(PERCENTILE_CONT(0.5)
+               WITHIN GROUP (ORDER BY CAST(days_to_abx AS FLOAT)) OVER () AS FLOAT)  AS median_days_to_abx,
+             CAST(PERCENTILE_CONT(0.75)
+               WITHIN GROUP (ORDER BY CAST(days_to_abx AS FLOAT)) OVER () AS FLOAT)  AS p75
+           FROM (
+             SELECT si.subject_id,
+                    MIN(DATEDIFF(DAY, si.ssi_date,
+                                 CAST(de.drug_exposure_start_date AS DATE))) AS days_to_abx
+             FROM ssi_w_index si
+             INNER JOIN @cdm_schema.drug_exposure de
+               ON  de.person_id = si.subject_id
+               AND CAST(de.drug_exposure_start_date AS DATE) >= si.ssi_date
+               AND CAST(de.drug_exposure_start_date AS DATE) <=
+                   DATEADD(DAY, 90, si.index_date)
+             INNER JOIN @cdm_schema.concept_ancestor ca
+               ON  ca.descendant_concept_id = de.drug_concept_id
+               AND ca.ancestor_concept_id   = 21603553
+             GROUP BY si.subject_id
+           ) abx_sub"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      abx_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_abx, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Time-to-antibiotic query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 8. SSI wound treatment: debridement/surgical wound procedure after SSI date.
+      #    Identified via OMOP concept_ancestor on procedure_occurrence:
+      #    SNOMED 36485005 = Debridement (surgical wound treatment ancestor).
+      sql_debride <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT COUNT(DISTINCT si.subject_id) AS n_debridement
+           FROM ssi_w_index si
+           INNER JOIN @cdm_schema.procedure_occurrence po
+             ON  po.person_id = si.subject_id
+             AND CAST(po.procedure_date AS DATE) >= si.ssi_date
+             AND CAST(po.procedure_date AS DATE) <=
+                 DATEADD(DAY, 90, si.index_date)
+           INNER JOIN @cdm_schema.concept_ancestor ca
+             ON  ca.descendant_concept_id = po.procedure_concept_id
+             AND ca.ancestor_concept_id   = 36485005"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      debride_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_debride, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] Debridement query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      # 9. SSI onset timing bands: proportion diagnosed within 0-30, 31-60, 61-90 days.
+      sql_timing <- SqlRender::render(
+        paste0(
+          "WITH ", ssi_cte, "
+           SELECT
+             SUM(CASE WHEN days_to_ssi <= 30 THEN 1 ELSE 0 END) AS n_0_30,
+             SUM(CASE WHEN days_to_ssi BETWEEN 31 AND 60 THEN 1 ELSE 0 END) AS n_31_60,
+             SUM(CASE WHEN days_to_ssi BETWEEN 61 AND 90 THEN 1 ELSE 0 END) AS n_61_90
+           FROM ssi_w_index"
+        ),
+        results_schema = results_schema_prefix(config),
+        cohort_table   = config$cohort_table,
+        cdm_schema     = config$cdm_schema,
+        target_id      = config$target_cohort_id,
+        outcome_id     = config$outcome_cohort_id
+      )
+      timing_raw <- tryCatch({
+        r <- DatabaseConnector::querySql(
+          conn, SqlRender::translate(sql_timing, targetDialect = "sql server")
+        )
+        names(r) <- tolower(names(r))
+        r
+      }, error = function(e) {
+        message("[report] SSI timing query failed: ", conditionMessage(e))
+        NULL
+      })
+
+      out <- list(
+        n_ssi             = if (!is.null(days_raw))     as.integer(days_raw$n_ssi[1])              else NA_integer_,
+        median_days       = if (!is.null(days_raw))     as.numeric(days_raw$median_days[1])        else NA_real_,
+        p25               = if (!is.null(days_raw))     as.numeric(days_raw$p25[1])                else NA_real_,
+        p75               = if (!is.null(days_raw))     as.numeric(days_raw$p75[1])                else NA_real_,
+        n_reoperation     = if (!is.null(reop_raw))     as.integer(reop_raw$n_reoperation[1])      else NA_integer_,
+        n_readmission     = if (!is.null(readm_raw))    as.integer(readm_raw$n_readmission[1])     else NA_integer_,
+        n_death           = if (!is.null(death_raw))    as.integer(death_raw$n_death[1])           else NA_integer_,
+        n_superficial     = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_superficial[1])  else NA_integer_,
+        n_deep            = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_deep[1])         else NA_integer_,
+        n_organ           = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_organ[1])        else NA_integer_,
+        n_unclassified    = if (!is.null(ssi_type_raw)) as.integer(ssi_type_raw$n_unclassified[1]) else NA_integer_,
+        median_los        = if (!is.null(los_raw))      as.numeric(los_raw$median_los[1])          else NA_real_,
+        los_p25           = if (!is.null(los_raw))      as.numeric(los_raw$p25[1])                 else NA_real_,
+        los_p75           = if (!is.null(los_raw))      as.numeric(los_raw$p75[1])                 else NA_real_,
+        median_days_to_abx = if (!is.null(abx_raw) && !is.na(abx_raw$n_abx[1]) && abx_raw$n_abx[1] > 0)
+                               as.numeric(abx_raw$median_days_to_abx[1]) else NA_real_,
+        abx_p25           = if (!is.null(abx_raw) && !is.na(abx_raw$n_abx[1]) && abx_raw$n_abx[1] > 0)
+                               as.numeric(abx_raw$p25[1]) else NA_real_,
+        abx_p75           = if (!is.null(abx_raw) && !is.na(abx_raw$n_abx[1]) && abx_raw$n_abx[1] > 0)
+                               as.numeric(abx_raw$p75[1]) else NA_real_,
+        n_abx             = if (!is.null(abx_raw))      as.integer(abx_raw$n_abx[1])              else NA_integer_,
+        n_debridement     = if (!is.null(debride_raw))  as.integer(debride_raw$n_debridement[1])   else NA_integer_,
+        n_0_30            = if (!is.null(timing_raw))   as.integer(timing_raw$n_0_30[1])           else NA_integer_,
+        n_31_60           = if (!is.null(timing_raw))   as.integer(timing_raw$n_31_60[1])          else NA_integer_,
+        n_61_90           = if (!is.null(timing_raw))   as.integer(timing_raw$n_61_90[1])          else NA_integer_
       )
     }, silent = TRUE)
 
@@ -1744,7 +2350,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     aortobif_n <- lookup_n(pt_df, "Aortobifemoral bypass")
     endar_n    <- lookup_n(pt_df, "Femoral endarterectomy")
     fempop_n   <- lookup_n(pt_df, "Femoral-popliteal bypass")
-    femtib_n   <- lookup_n(pt_df, "Femorotibial bypass")
+    femtib_n    <- lookup_n(pt_df, "Femorotibial bypass")
+    extraanat_n <- lookup_n(pt_df, "Extra-anatomic bypass")
 
     # ---- Assemble table -------------------------------------------------------
     tbl <- rbind(
@@ -1770,7 +2377,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       sub_row("Aortobifemoral bypass",    aortobif_n, n_target),
       sub_row("Femoral endarterectomy",   endar_n,    n_target),
       sub_row("Femoral-popliteal bypass", fempop_n,   n_target),
-      sub_row("Femorotibial bypass",      femtib_n,   n_target),
+      sub_row("Femorotibial bypass",      femtib_n,    n_target),
+      sub_row("Extra-anatomic bypass",    extraanat_n, n_target),
       # 90-day outcome
       row1("90-day outcome", header = TRUE),
       sub_row("Surgical site infection", n_outcome, n_target),
@@ -1862,6 +2470,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   }
 
   wrapped_predictor_ft <- function(df) {
+    has_missing <- "MissingPct" %in% names(df)
     ft <- flextable(df) |>
       bold(part = "header") |>
       fontsize(size = 9, part = "all") |>
@@ -1871,15 +2480,22 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       padding(padding = 3, part = "all") |>
       align(align = "left", part = "all") |>
       valign(valign = "top", part = "all") |>
-      width(j = "Predictor", width = 1.4) |>
-      width(j = "Points", width = 0.5) |>
-      width(j = "Lookback", width = 0.8) |>
-      width(j = "Definition", width = 3.5) |>
-      width(j = "PositiveCount", width = 0.8) |>
-      width(j = "MeanPoints", width = 0.8) |>
-      set_table_properties(layout = "fixed")
-
-    ft
+      width(j = "Predictor",    width = 1.3) |>
+      width(j = "Points",       width = 0.5) |>
+      width(j = "Lookback",     width = 0.75) |>
+      width(j = "Definition",   width = if (has_missing) 3.0 else 3.5) |>
+      width(j = "PositiveCount", width = 0.75) |>
+      width(j = "MeanPoints",   width = 0.7)
+    if (has_missing) {
+      ft <- ft |>
+        width(j = "MissingCount", width = 0.65) |>
+        width(j = "MissingPct",   width = 0.65) |>
+        set_header_labels(
+          MissingCount = "No CDM\nRecord\nn",
+          MissingPct   = "No CDM\nRecord\n%"
+        )
+    }
+    ft |> set_table_properties(layout = "fixed")
   }
 
   # ---------------------------------------------------------------------------
@@ -1901,9 +2517,17 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     if (is.null(bias_df) || nrow(bias_df) == 0) return(NULL)
 
+    # Impose Table 1 ordering on subgroup facets.
+    var_order <- c("age_group", "sex", "race", "ethnicity",
+                   "indication", "proc_type", "year")
+    present_vars <- var_order[var_order %in% bias_df$subgroup_var]
+    extra_vars   <- setdiff(unique(bias_df$subgroup_var), present_vars)
+    ordered_vars <- c(present_vars, extra_vars)
+    bias_df$subgroup_var <- factor(bias_df$subgroup_var, levels = ordered_vars)
+
     # Build a combined label: "Sex: Female", "Race: Black", etc.
     bias_df$label <- paste0(
-      tools::toTitleCase(gsub("_", " ", bias_df$subgroup_var)),
+      tools::toTitleCase(gsub("_", " ", as.character(bias_df$subgroup_var))),
       ": ",
       bias_df$subgroup_level
     )
@@ -1916,16 +2540,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     # Facet labels: capitalise the subgroup variable name for display.
     facet_labels <- setNames(
-      tools::toTitleCase(gsub("_", " ", unique(bias_df$subgroup_var))),
-      unique(bias_df$subgroup_var)
+      tools::toTitleCase(gsub("_", " ", levels(bias_df$subgroup_var))),
+      levels(bias_df$subgroup_var)
     )
 
     p <- ggplot2::ggplot(bias_df,
            ggplot2::aes(x = ece, y = label)) +
       ggplot2::geom_point(size = 2, colour = "black") +
-      ggplot2::geom_errorbarh(
+      ggplot2::geom_errorbar(
         ggplot2::aes(xmin = ci_lower, xmax = ci_upper),
-        height = 0.25, colour = "grey40"
+        width = 0.25, colour = "grey40", orientation = "y"
       ) +
       ggplot2::geom_vline(
         xintercept = overall_ece,
@@ -1968,6 +2592,133 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     })
   }
 
+  # ---------------------------------------------------------------------------
+  # save_score_distribution_plot()
+  # Overlapping density/histogram of total integer score by outcome (SSI vs not).
+  # ---------------------------------------------------------------------------
+  save_score_distribution_plot <- function(person_level_df, output_folder) {
+    if (!all(c("total_score", "outcome") %in% names(person_level_df))) return(NULL)
+    df <- person_level_df[, c("total_score", "outcome")]
+    df$Outcome <- ifelse(df$outcome == 1, "SSI", "No SSI")
+    df$Outcome <- factor(df$Outcome, levels = c("No SSI", "SSI"))
+
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = total_score, fill = Outcome)) +
+      ggplot2::geom_histogram(
+        ggplot2::aes(y = ggplot2::after_stat(density)),
+        binwidth = 1, position = "identity", alpha = 0.55, colour = "white"
+      ) +
+      ggplot2::scale_fill_manual(values = c("No SSI" = "#4472C4", "SSI" = "#C00000")) +
+      ggplot2::scale_x_continuous(breaks = seq(-2, 14, by = 1)) +
+      ggplot2::labs(
+        title   = "Score Distribution by Outcome",
+        x       = "Integer risk score",
+        y       = "Density",
+        fill    = NULL,
+        caption = paste0(
+          "N = ", nrow(df), " patients. ",
+          "SSI = 90-day surgical site infection."
+        )
+      ) +
+      ggplot2::theme_bw(base_size = 11) +
+      ggplot2::theme(
+        legend.position  = "top",
+        plot.caption     = ggplot2::element_text(size = 8),
+        panel.grid.minor = ggplot2::element_blank()
+      )
+
+    out_path <- file.path(output_folder, "score_distribution.png")
+    tryCatch({
+      ggplot2::ggsave(out_path, p, width = 6, height = 3.8, dpi = 150)
+      out_path
+    }, error = function(e) {
+      message("[report] Could not save score distribution plot: ", conditionMessage(e))
+      NULL
+    })
+  }
+
+  # ---------------------------------------------------------------------------
+  # save_dca_plot()
+  # Decision curve analysis: net benefit vs. threshold probability for the
+  # lookup model, treat-all, and treat-none strategies.
+  # Threshold range restricted to 0–40% (typical SSI clinical decision range).
+  # ---------------------------------------------------------------------------
+  save_dca_plot <- function(y, p, output_folder) {
+    if (length(y) == 0 || length(p) == 0) return(NULL)
+
+    thresholds <- seq(0.01, 0.40, by = 0.005)
+    n <- length(y)
+    prev <- mean(y, na.rm = TRUE)
+
+    nb_model    <- numeric(length(thresholds))
+    nb_treat_all <- numeric(length(thresholds))
+
+    for (i in seq_along(thresholds)) {
+      pt <- thresholds[i]
+      # Treat if predicted >= threshold
+      predicted_pos <- p >= pt
+      tp <- sum(predicted_pos & y == 1, na.rm = TRUE)
+      fp <- sum(predicted_pos & y == 0, na.rm = TRUE)
+      nb_model[i]     <- tp / n - fp / n * (pt / (1 - pt))
+      # Treat all
+      nb_treat_all[i] <- prev - (1 - prev) * (pt / (1 - pt))
+    }
+
+    dca_df <- data.frame(
+      threshold  = rep(thresholds, 3),
+      net_benefit = c(nb_model,
+                      pmax(nb_treat_all, 0),
+                      rep(0, length(thresholds))),
+      Strategy   = rep(c("Lookup model", "Treat all", "Treat none"), each = length(thresholds))
+    )
+    dca_df$Strategy <- factor(dca_df$Strategy,
+                               levels = c("Lookup model", "Treat all", "Treat none"))
+
+    p_dca <- ggplot2::ggplot(dca_df,
+        ggplot2::aes(x = threshold * 100, y = net_benefit,
+                     colour = Strategy, linetype = Strategy)) +
+      ggplot2::geom_line(linewidth = 0.9) +
+      ggplot2::scale_colour_manual(
+        values = c("Lookup model" = "#1F3864",
+                   "Treat all"   = "#C00000",
+                   "Treat none"  = "grey50")
+      ) +
+      ggplot2::scale_linetype_manual(
+        values = c("Lookup model" = "solid",
+                   "Treat all"   = "dashed",
+                   "Treat none"  = "dotted")
+      ) +
+      ggplot2::scale_x_continuous(
+        breaks = seq(0, 40, by = 5),
+        labels = function(x) paste0(x, "%")
+      ) +
+      ggplot2::labs(
+        title   = "Decision Curve Analysis",
+        x       = "Threshold probability (%)",
+        y       = "Net benefit",
+        colour  = NULL, linetype = NULL,
+        caption = paste0(
+          "Net benefit = TP/N \u2212 FP/N \u00d7 (p\u209c / (1\u2212p\u209c)). ",
+          "Treat-all and treat-none are reference strategies. ",
+          "Threshold range 1\u201340%."
+        )
+      ) +
+      ggplot2::theme_bw(base_size = 11) +
+      ggplot2::theme(
+        legend.position  = "top",
+        plot.caption     = ggplot2::element_text(size = 8),
+        panel.grid.minor = ggplot2::element_blank()
+      )
+
+    out_path <- file.path(output_folder, "decision_curve.png")
+    tryCatch({
+      ggplot2::ggsave(out_path, p_dca, width = 6, height = 4, dpi = 150)
+      out_path
+    }, error = function(e) {
+      message("[report] Could not save DCA plot: ", conditionMessage(e))
+      NULL
+    })
+  }
+
   next_report_file <- function(output_dir, base_name) {
     primary <- file.path(output_dir, paste0(base_name, ".docx"))
     if (!file.exists(primary)) {
@@ -2003,7 +2754,21 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   )
 
   # Figure 1 — SSI rate by year (requires index_date in person_level)
-  ssi_year_plot_file <- .save_ssi_rate_by_year_plot(person_level, temp_figure_dir)
+  ssi_year_plot_file  <- .save_ssi_rate_by_year_plot(person_level, temp_figure_dir)
+
+  # Supplemental — SSI rate by month of year
+  ssi_month_plot_file <- .save_ssi_rate_by_month_plot(person_level, temp_figure_dir)
+
+  # Score distribution plot (supplemental S4)
+  score_dist_plot_file <- save_score_distribution_plot(person_level, temp_figure_dir)
+
+  # Decision curve analysis plot (Figure 4)
+  dca_plot_file <- if ("predicted_risk_lookup" %in% names(person_level)) {
+    keep_dca <- !is.na(person_level$predicted_risk_lookup)
+    save_dca_plot(person_level$outcome[keep_dca],
+                  person_level$predicted_risk_lookup[keep_dca],
+                  temp_figure_dir)
+  } else NULL
 
   if (file.exists(lookup_calibration_plot)) {
     file.copy(lookup_calibration_plot, lookup_calibration_plot_temp, overwrite = TRUE)
@@ -2065,21 +2830,101 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
   report_file <- next_report_file(output_dir, report_base_name)
 
+  # Query CDM source metadata early so values are available for the methods text.
+  cdm_version_str        <- ""
+  vocabulary_version_str <- ""
+  if (!is.null(connection_details) && !is.null(config)) {
+    tryCatch({
+      conn_meta <- DatabaseConnector::connect(connection_details)
+      meta_raw  <- DatabaseConnector::querySql(
+        conn_meta,
+        SqlRender::translate(
+          SqlRender::render(
+            "SELECT cdm_version, vocabulary_version FROM @cdm_schema.cdm_source",
+            cdm_schema = config$cdm_schema
+          ),
+          targetDialect = "sql server"
+        )
+      )
+      DatabaseConnector::disconnect(conn_meta)
+      names(meta_raw) <- tolower(names(meta_raw))
+      if (nrow(meta_raw) > 0) {
+        cdm_version_str        <- as.character(meta_raw$cdm_version[1])
+        vocabulary_version_str <- as.character(meta_raw$vocabulary_version[1])
+      }
+    }, error = function(e) NULL)
+  }
+
   doc <- read_docx()
   doc <- body_add_par(doc, "Manuscript Draft: Methods and Results", style = "heading 1")
-  doc <- body_add_par(doc, "PAD Open Lower Extremity Revascularization and 30-Day Surgical Site Infection Risk Score Evaluation", style = "Normal")
+  doc <- body_add_par(doc, "PAD Open Lower Extremity Revascularization and 90-Day Surgical Site Infection Risk Score: External Validation", style = "Normal")
   doc <- body_add_par(doc, paste("Date:", format(Sys.Date(), "%Y-%m-%d")), style = "Normal")
   doc <- body_add_par(doc, "", style = "Normal")
 
   doc <- body_add_par(doc, "Methods", style = "heading 2")
-  doc <- body_add_par(doc, "Data source and ETL", style = "heading 3")
-  doc <- body_add_par(doc, "Patient-level data were loaded into an OMOP CDM v5.4 SQL Server database using a validated CSV-to-OMOP ETL workflow. All concept mappings, cohort definitions, and analytic scripts are version-controlled and compatible with any OMOP CDM v5 data source.", style = "Normal")
+  doc <- body_add_par(doc, "Data source", style = "heading 3")
+  doc <- body_add_par(doc, paste0(
+    "This analysis used patient-level data mapped to the Observational Medical Outcomes Partnership ",
+    "Common Data Model (OMOP CDM",
+    if (nzchar(cdm_version_str))        paste0("; CDM version: ", cdm_version_str)        else "",
+    if (nzchar(vocabulary_version_str)) paste0("; vocabulary release: ", vocabulary_version_str) else "",
+    "). The study window spanned ",
+    if (!is.null(config$study_start_date)) format(as.Date(config$study_start_date), "%B %d, %Y") else "N/A",
+    " to ",
+    if (!is.null(config$study_end_date))   format(as.Date(config$study_end_date),   "%B %d, %Y") else "N/A",
+    ". All cohort definitions, concept mappings, and analytic scripts are compatible with any ",
+    "OMOP CDM v5 data source. Full data source metadata are reported in Supplemental Table S1."
+  ), style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, "The target cohort comprised adults aged 18 years or older who underwent inpatient open lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, including femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. Both concepts are explicitly scoped to arterial procedures of the lower extremity, excluding diagnostic imaging and venous procedures. The index date was the start of the first qualifying inpatient visit per person. Patients with any SSI diagnosis (concept 4334801, SNOMED-CT 433202001) in the 365 days prior to index were excluded.", style = "Normal")
-  doc <- body_add_par(doc, "The outcome cohort identified the first surgical site infection diagnosis (concept 4334801 and descendants, capturing superficial incisional, deep incisional, and organ-space SSI per CDC/NHSN classification) within 90 days of the index date.", style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "The target cohort comprised adults aged 18 years or older who underwent inpatient open ",
+    "lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of ",
+    "lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, ",
+    "including femoral-popliteal bypass, femorotibial bypass, aortobifemoral bypass, femoral ",
+    "endarterectomy, and extra-anatomic bypass (axillofemoral and femorofemoral). Both anchor ",
+    "concepts are explicitly scoped to arterial procedures of the lower extremity, excluding ",
+    "diagnostic imaging and venous procedures. The index date was the start of the first qualifying ",
+    "inpatient visit per person. Patients with any SSI diagnosis in the 365 days prior to index ",
+    "were excluded. Corresponding CPT-4 codes for each procedure subgroup are listed in ",
+    "Supplemental Table S2."
+  ), style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "The outcome cohort identified the first surgical site infection diagnosis (OMOP concept 4334801, ",
+    "SNOMED-CT 433202001, and descendants, capturing superficial incisional, deep incisional, and ",
+    "organ-space SSI per CDC/NHSN classification) within 90 days of the index date. Source ICD ",
+    "codes used to identify SSI prior to standardisation are listed in Supplemental Table S3."
+  ), style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
-  doc <- body_add_par(doc, "A person-level integer risk score was calculated from prespecified score components and concept mappings. Discrimination was summarized using area under the receiver operating characteristic curve and area under the precision-recall curve. For the published lookup model, integer scores were mapped to predicted risks using the supplied score-to-risk lookup table.", style = "Normal")
-  doc <- body_add_par(doc, "Calibration was summarized with the Brier score, estimated calibration error, calibration intercept, and calibration slope. Estimated calibration error was computed as the weighted mean absolute difference between grouped predicted and observed risks across quantile-based bins. Calibration plots were generated by grouping predicted risks into quantile-based bins and comparing mean predicted versus mean observed event rates within bins. Summary metrics in this report are presented for the published lookup mapping only.", style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "A person-level integer risk score was calculated from prespecified score components and concept mappings ",
+    "to predict 90-day surgical site infection following the index procedure. Discrimination was summarized ",
+    "using the area under the receiver operating characteristic curve (AUROC) and the area under the ",
+    "precision-recall curve (AUPRC), each with 95% bootstrap percentile confidence intervals ",
+    "(B\u2009=\u2009500 resamples). For the published lookup model, integer scores were mapped to ",
+    "predicted risks using the supplied score-to-risk lookup table."
+  ), style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "Calibration was assessed for the published lookup model using the Brier score, expected calibration ",
+    "error (ECE), calibration intercept, and calibration slope, each with 95% bootstrap percentile CIs ",
+    "(B\u2009=\u2009500 resamples). ECE was computed as the probability-weighted mean absolute difference ",
+    "between mean predicted and observed 90-day SSI rates across quantile-based bins. Calibration plots ",
+    "compare mean predicted risk versus observed event rate within each bin; the dashed diagonal represents ",
+    "perfect calibration."
+  ), style = "Normal")
+  doc <- body_add_par(doc, "Subgroup analysis and bias assessment", style = "heading 3")
+  doc <- body_add_par(doc, paste0(
+    "Model calibration was assessed across prespecified patient subgroups to identify populations ",
+    "in which the lookup risk score may systematically over- or underestimate observed SSI risk. ",
+    "Subgroups evaluated included biological sex, race, ethnicity, age group (<65, 65\u201374, \u226575 years), ",
+    "operative indication (claudication vs. critical limb ischemia), procedure type (aortobifemoral ",
+    "bypass, femoral-popliteal bypass, femorotibial bypass, femoral endarterectomy, extra-anatomic ",
+    "bypass), and calendar year of the index procedure. Expected calibration error (ECE) was ",
+    "computed within each subgroup as the weighted mean absolute difference between grouped ",
+    "predicted and observed event rates across quantile-based bins. Uncertainty was quantified ",
+    "using 200 bootstrap resamples (percentile 95% CI). Subgroup levels with fewer than 10 ",
+    "observed SSI events were suppressed to avoid unreliable estimates. Results are presented in ",
+    "Supplemental Table S6 and Supplemental Figure S7."
+  ), style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
 
@@ -2087,29 +2932,163 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
   doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 90 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
   doc <- body_add_par(doc, "Table 1. Demographics of the external validation cohort.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196). Procedure sub-rows are not mutually exclusive.", style = "Normal")
+  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196; extra-anatomic bypass: 4050281). Procedure sub-rows are not mutually exclusive.", style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Table 2: Features ---------------------------------------------------
+  # ---- Table 2: SSI Patient Outcomes ----------------------------------------
+  ssi_outcomes <- fetch_ssi_outcomes_from_omop(config, connection_details)
+  if (!is.null(ssi_outcomes) && !is.na(ssi_outcomes$n_ssi) && ssi_outcomes$n_ssi > 0) {
+    n_ssi_denom <- ssi_outcomes$n_ssi
+
+    days_str <- if (!is.na(ssi_outcomes$median_days)) {
+      paste0(
+        as.integer(round(ssi_outcomes$median_days)), " days",
+        " (IQR: ",
+        as.integer(round(ssi_outcomes$p25)),
+        "\u2013",
+        as.integer(round(ssi_outcomes$p75)),
+        ")"
+      )
+    } else "N/A"
+
+    los_str <- if (!is.na(ssi_outcomes$median_los)) {
+      paste0(as.integer(round(ssi_outcomes$median_los)), " days",
+             " (IQR: ", as.integer(round(ssi_outcomes$los_p25)),
+             "\u2013", as.integer(round(ssi_outcomes$los_p75)), ")")
+    } else "N/A"
+
+    abx_str <- if (!is.na(ssi_outcomes$median_days_to_abx)) {
+      paste0(as.integer(round(ssi_outcomes$median_days_to_abx)), " days",
+             " (IQR: ", as.integer(round(ssi_outcomes$abx_p25)),
+             "\u2013", as.integer(round(ssi_outcomes$abx_p75)), ")")
+    } else "N/A"
+
+    ssi_outcome_tbl <- data.frame(
+      Outcome = c(
+        "Index hospitalisation length of stay, median (IQR)",
+        "Days from index operation to SSI diagnosis, median (IQR)",
+        "SSI onset timing",
+        "    Within 30 days, n (%)",
+        "    31\u201360 days, n (%)",
+        "    61\u201390 days, n (%)",
+        "SSI type",
+        "    Superficial incisional, n (%)",
+        "    Deep incisional, n (%)",
+        "    Organ-space, n (%)",
+        "    Other / unclassified, n (%)",
+        "Time from SSI to first post-SSI antibiotic, median (IQR)",
+        "Wound debridement within 90 days of SSI, n (%)",
+        "Reoperation within 90 days of SSI, n (%)",
+        "Readmission within 90 days of SSI, n (%)",
+        "Death within 90 days of index operation, n (%)"
+      ),
+      Value = c(
+        los_str,
+        days_str,
+        "",
+        fmt_n_pct(ssi_outcomes$n_0_30,         n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_31_60,        n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_61_90,        n_ssi_denom),
+        "",
+        fmt_n_pct(ssi_outcomes$n_superficial,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_deep,         n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_organ,        n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_unclassified, n_ssi_denom),
+        abx_str,
+        fmt_n_pct(ssi_outcomes$n_debridement,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_reoperation,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_readmission,  n_ssi_denom),
+        fmt_n_pct(ssi_outcomes$n_death,        n_ssi_denom)
+      ),
+      stringsAsFactors = FALSE
+    )
+
+    # Row indices for formatting
+    ssi_header_rows <- which(ssi_outcome_tbl$Outcome %in% c("SSI onset timing", "SSI type"))
+    ssi_indent_rows <- grep("^    ", ssi_outcome_tbl$Outcome)
+
+    ssi_out_ft <- flextable::flextable(ssi_outcome_tbl) |>
+      flextable::bold(part = "header") |>
+      flextable::fontsize(size = 10, part = "all") |>
+      flextable::font(fontname = "Calibri", part = "all") |>
+      flextable::bg(part = "header", bg = "#1F3864") |>
+      flextable::color(part = "header", color = "white") |>
+      flextable::align(align = "left", part = "all") |>
+      flextable::padding(padding = 4, part = "all") |>
+      flextable::bold(i = ssi_header_rows, part = "body") |>
+      flextable::bg(i = ssi_header_rows, bg = "#F2F2F2", part = "body") |>
+      flextable::padding(i = ssi_indent_rows, j = "Outcome",
+                         padding.left = 18, part = "body") |>
+      flextable::width(j = "Outcome", width = 3.5) |>
+      flextable::width(j = "Value",   width = 1.5) |>
+      flextable::set_table_properties(layout = "fixed")
+
+    doc <- body_add_par(doc, "SSI patient outcomes", style = "heading 3")
+    doc <- body_add_par(doc,
+      paste0(
+        "Among the ", n_ssi_denom, " patients who developed SSI within the 90-day ",
+        "prediction window, Table 2 summarises key post-SSI clinical outcomes."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      "Table 2. SSI patient outcomes within the 90-day post-operative window.",
+      style = "Normal"
+    )
+    doc <- body_add_par(doc,
+      paste0(
+        "Caption: Denominator is all patients with an SSI event attributed to the index ",
+        "procedure (n\u00a0=\u00a0", n_ssi_denom, "). ",
+        "Index hospitalisation LOS: length of the inpatient visit (visit_concept_id 9201) ",
+        "that contained the index procedure date. ",
+        "SSI onset timing: days from index procedure to SSI diagnosis, grouped into 30-day bands. ",
+        "SSI type is classified by concept_ancestor rollup: superficial incisional ",
+        "(OMOP concept 43530818), deep incisional (concept 4308542), organ-space ",
+        "(concept 43530820); 'Other / unclassified' captures patients coded only at the parent ",
+        "concept level (4334801). ",
+        "Time to antibiotic: days from SSI date to first post-SSI drug_exposure with ",
+        "ATC ancestor 21603553 (Antibacterials). ",
+        "Wound debridement: any procedure_occurrence with SNOMED ancestor 36485005 ",
+        "after SSI date and within 90 days of index. ",
+        "Reoperation: any procedure_occurrence after SSI date and within 90 days of index. ",
+        "Readmission: inpatient visit (concept 9201) starting after SSI date and within 90 days of index. ",
+        "90-day mortality: death record within 90 days of the index procedure date."
+      ),
+      style = "Normal"
+    )
+    doc <- body_add_flextable(doc, ssi_out_ft)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Table 2 (SSI outcomes) added.")
+  }
+
+  # ---- Table 3: Features ---------------------------------------------------
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
-  doc <- body_add_par(doc, "Table 2. Features: predictor definitions and activation summary.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, and observed activation in the validation cohort.", style = "Normal")
+  doc <- body_add_par(doc, "Table 3. Features: predictor definitions and activation summary.", style = "Normal")
+  doc <- body_add_par(doc, paste0(
+    "Caption: Each predictor is listed with its points, lookback window, OMOP-based definition, ",
+    "and observed activation in the validation cohort. ",
+    "The 'Missing n (%)' column shows patients with no qualifying CDM record for that component. ",
+    "For measurement-based components (BMI, ABI, operative time) this reflects the absence of any ",
+    "relevant measurement in the lookback window. ",
+    "For binary presence/absence components (sex, prior procedures, drug exposures, frailty, indication) ",
+    "absence is a true negative and missing is reported as 0."
+  ), style = "Normal")
   doc <- body_add_flextable(doc, wrapped_predictor_ft(predictor_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Table 3: Model Performance ------------------------------------------
+  # ---- Table 4: Model Performance ------------------------------------------
   doc <- body_add_par(doc, "Model performance", style = "heading 3")
-  doc <- body_add_par(doc, "Table 3. Model performance: lookup-model discrimination and calibration metrics.", style = "Normal")
+  doc <- body_add_par(doc, "Table 4. Model performance: lookup-model discrimination and calibration metrics.", style = "Normal")
   doc <- body_add_par(doc, "Caption: Metrics are shown for the lookup model. 95% CI = 95% bootstrap percentile confidence interval (B\u2009=\u2009500 resamples). \u2014 indicates CI not available.", style = "Normal")
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
   # ---- Figure 1: SSI rate by year ------------------------------------------
   if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
-    doc <- body_add_par(doc, "Figure 1. Annual SSI rate.", style = "Normal")
+    doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
     doc <- body_add_par(doc,
-      "Caption: 30-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
+      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
       style = "Normal")
     doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
     doc <- body_add_par(doc, "", style = "Normal")
@@ -2118,7 +3097,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   # ---- Figure 2: AUC / ROC curve -------------------------------------------
   if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
     doc <- body_add_par(doc, "Figure 2. Receiver operating characteristic (ROC) curve.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: ROC curve for the lookup model. AUROC value is sourced from metrics.csv (bootstrap 95% CI). Dashed diagonal = no-discrimination reference line.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: ROC curve for the lookup model predicting 90-day surgical site infection. AUROC with 95% bootstrap percentile CI (B\u2009=\u2009500 resamples). Dashed diagonal = no-discrimination reference line.", style = "Normal")
     doc <- body_add_img(doc, src = roc_plot_file, width = 4.5, height = 4.5)
     doc <- body_add_par(doc, "", style = "Normal")
   }
@@ -2126,9 +3105,85 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   # ---- Figure 3: Calibration curve -----------------------------------------
   if (file.exists(lookup_calibration_plot_temp)) {
     doc <- body_add_par(doc, "Figure 3. Calibration plot for the published lookup mapping.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: Mean predicted risk (x-axis, 0\u20131) vs. observed event rate (y-axis, 0\u20131) by quantile bin. Dashed diagonal = perfect calibration. Both axes span the full 0\u20131 range.", style = "Normal")
+    doc <- body_add_par(doc, "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the lookup model. Dashed diagonal = perfect calibration.", style = "Normal")
     doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 4.5, height = 4.5)
     doc <- body_add_par(doc, "", style = "Normal")
+  }
+
+  # ---- Risk tier table (after Figure 3) ------------------------------------
+  if ("predicted_risk_lookup" %in% names(person_level)) {
+    keep_rt <- !is.na(person_level$predicted_risk_lookup)
+    if (sum(keep_rt) > 0) {
+      rt_df <- person_level[keep_rt, ]
+      rt_df$risk_tier <- ifelse(
+        rt_df$predicted_risk_lookup < 0.05,  "Low (<5%)",
+        ifelse(rt_df$predicted_risk_lookup <= 0.20, "Intermediate (5\u201320%)", "High (>20%)")
+      )
+      rt_df$risk_tier <- factor(rt_df$risk_tier,
+                                levels = c("Low (<5%)", "Intermediate (5\u201320%)", "High (>20%)"))
+
+      tier_agg <- do.call(rbind, lapply(levels(rt_df$risk_tier), function(tier) {
+        sub      <- rt_df[rt_df$risk_tier == tier, ]
+        n_tier   <- nrow(sub)
+        n_ev     <- sum(sub$outcome, na.rm = TRUE)
+        obs_rate <- if (n_tier > 0) n_ev / n_tier else NA_real_
+        data.frame(
+          "Risk Tier"       = tier,
+          "N"               = n_tier,
+          "SSI Events"      = n_ev,
+          "Observed SSI Rate (%)" = if (!is.na(obs_rate)) paste0(round(obs_rate * 100, 1), "%") else "N/A",
+          check.names       = FALSE,
+          stringsAsFactors  = FALSE
+        )
+      }))
+
+      tier_ft <- flextable::flextable(tier_agg) |>
+        flextable::bold(part = "header") |>
+        flextable::fontsize(size = 10, part = "all") |>
+        flextable::font(fontname = "Calibri", part = "all") |>
+        flextable::bg(part = "header", bg = "#1F3864") |>
+        flextable::color(part = "header", color = "white") |>
+        flextable::padding(padding = 4, part = "all") |>
+        flextable::align(j = c("N", "SSI Events", "Observed SSI Rate (%)"),
+                         align = "center", part = "all") |>
+        flextable::width(j = "Risk Tier",              width = 2.0) |>
+        flextable::width(j = "N",                      width = 0.7) |>
+        flextable::width(j = "SSI Events",             width = 0.9) |>
+        flextable::width(j = "Observed SSI Rate (%)",  width = 1.6) |>
+        flextable::set_table_properties(layout = "fixed")
+
+      doc <- body_add_par(doc, "Risk tier analysis", style = "heading 3")
+      doc <- body_add_par(doc, paste0(
+        "Table 5. Risk tier classification of the validation cohort. ",
+        "Patients are stratified into three tiers based on the model-predicted 90-day SSI risk: ",
+        "Low (<5%), Intermediate (5\u201320%), and High (>20%). ",
+        "The observed SSI rate within each tier provides a direct assessment of clinical utility."
+      ), style = "Normal")
+      doc <- body_add_par(doc, paste0(
+        "Caption: N = number of patients in each tier. ",
+        "SSI Events = number with 90-day SSI. ",
+        "Observed SSI Rate = SSI Events / N. ",
+        "Predicted risk thresholds: Low <5%, Intermediate 5\u201320%, High >20%."
+      ), style = "Normal")
+      doc <- body_add_flextable(doc, tier_ft)
+      doc <- body_add_par(doc, "", style = "Normal")
+      message("[report] Risk tier table (Table 5) added.")
+    }
+  }
+
+  # ---- Figure 4: Decision curve analysis ------------------------------------
+  if (!is.null(dca_plot_file) && file.exists(dca_plot_file)) {
+    doc <- body_add_par(doc, "Figure 4. Decision curve analysis.", style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: Decision curve analysis for the lookup model predicting 90-day SSI. ",
+      "Net benefit is plotted across threshold probabilities from 1% to 40%. ",
+      "The model curve (blue) is compared with the 'treat-all' (dashed) and ",
+      "'treat-none' (zero reference) strategies. Threshold probabilities correspond ",
+      "to the minimum predicted risk at which a clinician would recommend an intervention."
+    ), style = "Normal")
+    doc <- body_add_img(doc, src = dca_plot_file, width = 5.5, height = 3.8)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Figure 4 (DCA) added.")
   }
 
   # ---- Supplemental section ------------------------------------------------
@@ -2142,9 +3197,282 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     )
   }
 
+  doc <- body_add_par(doc, "Supplemental Material", style = "heading 2")
+
+  # ---- S1–S3: DB-sourced tables (own connection; order: CDM, CPT, ICD) ------
+  if (!is.null(connection_details) && !is.null(config)) {
+    tryCatch({
+      conn_supp <- DatabaseConnector::connect(connection_details)
+      on.exit(try(DatabaseConnector::disconnect(conn_supp), silent = TRUE), add = TRUE)
+
+      # ---- Supplemental Table S1 — CDM Source --------------------------------
+      tryCatch({
+        sql_cdm_src <- SqlRender::render(
+          "SELECT cdm_source_name, cdm_source_abbreviation, cdm_holder,
+                  source_release_date, cdm_release_date, cdm_version,
+                  vocabulary_version
+           FROM @cdm_schema.cdm_source",
+          cdm_schema = config$cdm_schema
+        )
+        cdm_src_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
+        )
+        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
+        if (nrow(cdm_src_raw) > 0) {
+          cdm_src_display <- data.frame(
+            Field = c("CDM Source Name", "Source Abbreviation", "CDM Holder",
+                      "Source Release Date", "CDM Release Date",
+                      "CDM Version", "Vocabulary Version",
+                      "Study Start Date", "Study End Date"),
+            Value = c(as.character(cdm_src_raw$cdm_source_name[1]),
+                      as.character(cdm_src_raw$cdm_source_abbreviation[1]),
+                      as.character(cdm_src_raw$cdm_holder[1]),
+                      as.character(cdm_src_raw$source_release_date[1]),
+                      as.character(cdm_src_raw$cdm_release_date[1]),
+                      as.character(cdm_src_raw$cdm_version[1]),
+                      as.character(cdm_src_raw$vocabulary_version[1]),
+                      if (!is.null(config$study_start_date)) as.character(config$study_start_date) else "N/A",
+                      if (!is.null(config$study_end_date))   as.character(config$study_end_date)   else "N/A"),
+            stringsAsFactors = FALSE
+          )
+          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 10, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 4, part = "all") |>
+            flextable::width(j = "Field", width = 2.0) |>
+            flextable::width(j = "Value", width = 4.0) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "CDM source metadata", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S1. CDM source metadata.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance ",
+                   "used for this analysis. CDM Version and Vocabulary Version confirm ",
+                   "compliance with OMOP CDM v5.4 and the Athena vocabulary release used ",
+                   "during ETL."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, cdm_src_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S1 (CDM source) added.")
+        }
+      }, error = function(e) {
+        message("[report] CDM source table skipped: ", conditionMessage(e))
+      })
+
+      # ---- Supplemental Table S2 — CPT codes by procedure subgroup -----------
+      # Uses concept_relationship ('Mapped from') to find CPT4 source codes
+      # that map to SNOMED standard descendants — CPT4 codes are source codes
+      # (standard_concept IS NULL), not in concept_ancestor as descendants.
+      tryCatch({
+        sql_cpt <- SqlRender::render(
+          "SELECT DISTINCT proc_group, cpt_code, cpt_description
+           FROM (
+             -- Branch 1: CPT4 codes that ARE in concept_ancestor as descendants
+             -- (covers CPT4s with standard_concept = 'S' in this vocabulary)
+             SELECT grp.proc_group,
+                    c.concept_code AS cpt_code,
+                    c.concept_name AS cpt_description
+             FROM (
+               SELECT 'Endarterectomy'           AS proc_group, 4225375 AS ancestor_id
+               UNION ALL SELECT 'Aortobifemoral bypass',        4231680
+               UNION ALL SELECT 'Femoral-popliteal bypass',     4012936
+               UNION ALL SELECT 'Femorotibial bypass',          4166196
+               UNION ALL SELECT 'Extra-anatomic bypass',        4050281
+             ) grp
+             INNER JOIN @vocab_schema.concept_ancestor ca
+               ON ca.ancestor_concept_id = grp.ancestor_id
+             INNER JOIN @vocab_schema.concept c
+               ON c.concept_id    = ca.descendant_concept_id
+              AND c.vocabulary_id IN ('CPT4','HCPCS')
+
+             UNION
+
+             -- Branch 2: CPT4 source codes that map TO standard SNOMED descendants
+             -- via concept_relationship (catches CPT4s not in concept_ancestor)
+             SELECT grp.proc_group,
+                    c.concept_code AS cpt_code,
+                    c.concept_name AS cpt_description
+             FROM (
+               SELECT 'Endarterectomy'           AS proc_group, 4225375 AS ancestor_id
+               UNION ALL SELECT 'Aortobifemoral bypass',        4231680
+               UNION ALL SELECT 'Femoral-popliteal bypass',     4012936
+               UNION ALL SELECT 'Femorotibial bypass',          4166196
+               UNION ALL SELECT 'Extra-anatomic bypass',        4050281
+             ) grp
+             INNER JOIN @vocab_schema.concept_ancestor ca
+               ON ca.ancestor_concept_id = grp.ancestor_id
+             INNER JOIN @vocab_schema.concept_relationship cr
+               ON cr.concept_id_2    = ca.descendant_concept_id
+              AND cr.relationship_id = 'Maps to'
+              AND cr.invalid_reason  IS NULL
+             INNER JOIN @vocab_schema.concept c
+               ON c.concept_id    = cr.concept_id_1
+              AND c.vocabulary_id IN ('CPT4','HCPCS')
+           ) combined
+           ORDER BY proc_group, cpt_code",
+          vocab_schema = config$vocab_schema
+        )
+        cpt_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_cpt, targetDialect = "sql server")
+        )
+        names(cpt_raw) <- tolower(names(cpt_raw))
+        if (nrow(cpt_raw) > 0) {
+          cpt_display <- data.frame(
+            "Procedure Group" = cpt_raw$proc_group,
+            "CPT Code"        = cpt_raw$cpt_code,
+            "Description"     = cpt_raw$cpt_description,
+            check.names = FALSE, stringsAsFactors = FALSE
+          )
+          cpt_ft <- flextable::flextable(cpt_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 9, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 3, part = "all") |>
+            flextable::width(j = "Procedure Group", width = 1.8) |>
+            flextable::width(j = "CPT Code",        width = 0.9) |>
+            flextable::width(j = "Description",     width = 3.8) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "Index procedure CPT codes", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S2. CPT codes for index procedure subgroups.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: CPT-4 codes identified via concept_relationship ('Mapped from') ",
+                   "from SNOMED concept-ancestor descendants of each procedure subgroup anchor ",
+                   "(endarterectomy: 4225375; aortobifemoral: 4231680; femoral-popliteal: 4012936; ",
+                   "femorotibial: 4166196; extra-anatomic bypass: 4050281). ",
+                   "A code may appear in more than one group."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, cpt_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S2 (CPT codes) added.")
+        }
+      }, error = function(e) {
+        message("[report] CPT supplemental table skipped: ", conditionMessage(e))
+      })
+
+      # ---- Supplemental Table S3 — ICD codes for SSI outcome concept ---------
+      tryCatch({
+        sql_icd <- SqlRender::render(
+          "SELECT DISTINCT
+             c.vocabulary_id,
+             c.concept_code  AS icd_code,
+             c.concept_name  AS icd_description
+           FROM @vocab_schema.concept_ancestor ca
+           INNER JOIN @vocab_schema.concept_relationship cr
+             ON cr.concept_id_2    = ca.descendant_concept_id
+            AND cr.relationship_id = 'Maps to'
+            AND cr.invalid_reason  IS NULL
+           INNER JOIN @vocab_schema.concept c
+             ON c.concept_id    = cr.concept_id_1
+            AND c.vocabulary_id IN ('ICD9CM','ICD10CM','ICD10PCS','ICD9Proc')
+           WHERE ca.ancestor_concept_id = 4334801
+             AND c.concept_code NOT LIKE 'O86%'
+             AND c.concept_code NOT LIKE 'T86.84%'
+           ORDER BY c.vocabulary_id, c.concept_code",
+          vocab_schema = config$vocab_schema
+        )
+        icd_raw <- DatabaseConnector::querySql(
+          conn_supp,
+          SqlRender::translate(sql_icd, targetDialect = "sql server")
+        )
+        names(icd_raw) <- tolower(names(icd_raw))
+        if (nrow(icd_raw) > 0) {
+          icd_display <- data.frame(
+            "Vocabulary"  = icd_raw$vocabulary_id,
+            "ICD Code"    = icd_raw$icd_code,
+            "Description" = icd_raw$icd_description,
+            check.names = FALSE, stringsAsFactors = FALSE
+          )
+          icd_ft <- flextable::flextable(icd_display) |>
+            flextable::bold(part = "header") |>
+            flextable::fontsize(size = 9, part = "all") |>
+            flextable::font(fontname = "Calibri", part = "all") |>
+            flextable::bg(part = "header", bg = "#1F3864") |>
+            flextable::color(part = "header", color = "white") |>
+            flextable::padding(padding = 3, part = "all") |>
+            flextable::width(j = "Vocabulary",  width = 1.0) |>
+            flextable::width(j = "ICD Code",    width = 1.2) |>
+            flextable::width(j = "Description", width = 4.3) |>
+            flextable::set_table_properties(layout = "fixed")
+          doc <- body_add_par(doc, "SSI outcome ICD codes", style = "heading 3")
+          doc <- body_add_par(doc,
+            "Supplemental Table S3. ICD codes mapping to the surgical site infection outcome concept.",
+            style = "Normal")
+          doc <- body_add_par(doc,
+            paste0("Caption: Source ICD-9-CM and ICD-10-CM codes that map to OMOP concept 4334801 ",
+                   "(Surgical site infection, SNOMED-CT 433202001) or its descendants via ",
+                   "concept_relationship (relationship: 'Maps to'). These are the codes used to ",
+                   "identify the SSI outcome in source data prior to OMOP ETL standardisation."),
+            style = "Normal")
+          doc <- body_add_flextable(doc, icd_ft)
+          doc <- body_add_par(doc, "", style = "Normal")
+          message("[report] Supplemental Table S3 (SSI ICD codes) added.")
+        }
+      }, error = function(e) {
+        message("[report] SSI ICD supplemental table skipped: ", conditionMessage(e))
+      })
+
+      DatabaseConnector::disconnect(conn_supp)
+    }, error = function(e) {
+      message("[report] Supplemental DB tables skipped: ", conditionMessage(e))
+    })
+  }
+
+  # ---- S4: SSI rate by month of year ----------------------------------------
+  if (!is.null(ssi_month_plot_file) && file.exists(ssi_month_plot_file)) {
+    doc <- body_add_par(doc, "SSI rate by month", style = "heading 3")
+    doc <- body_add_par(doc,
+      "Supplemental Figure S4. 90-day SSI rate by calendar month of procedure.",
+      style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: Observed 90-day surgical site infection rate (%) for each calendar month ",
+      "(January through December), pooled across all study years. Bar height represents the ",
+      "SSI rate; numbers above each bar show the total procedure count for that month. ",
+      "Months with fewer than 5 procedures are suppressed."
+    ), style = "Normal")
+    doc <- body_add_img(doc, src = ssi_month_plot_file, width = 5.5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Supplemental Figure S4 (SSI by month) added.")
+  }
+
+  # ---- S5: Score distribution plot -----------------------------------------
+  if (!is.null(score_dist_plot_file) && file.exists(score_dist_plot_file)) {
+    doc <- body_add_par(doc, "Score distribution", style = "heading 3")
+    doc <- body_add_par(doc,
+      "Supplemental Figure S5. Distribution of predicted risk by outcome group.",
+      style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: Overlapping density histograms of model-predicted 90-day SSI risk (x-axis) ",
+      "for patients who did (red) and did not (blue) experience a surgical site infection ",
+      "within the prediction window. Improved separation between the two distributions ",
+      "indicates better model discrimination."
+    ), style = "Normal")
+    doc <- body_add_img(doc, src = score_dist_plot_file, width = 5.5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+    message("[report] Supplemental Figure S5 (score distribution) added.")
+  }
+
+  # ---- S6: Bias table, S7: Forest plot (from pre-loaded CSV) ----------------
   if (!is.null(subgroup_bias_df) && nrow(subgroup_bias_df) > 0) {
 
-    doc <- body_add_par(doc, "Supplemental Material", style = "heading 2")
+    # Sort rows to match Table 1 order: age_group, sex, race, ethnicity,
+    # indication, proc_type, year — any unlisted vars sort to the end.
+    subgroup_order <- c(age_group = 1, sex = 2, race = 3, ethnicity = 4,
+                        indication = 5, proc_type = 6, year = 7)
+    sort_key <- subgroup_order[match(subgroup_bias_df$subgroup_var,
+                                     names(subgroup_order))]
+    sort_key[is.na(sort_key)] <- 99L
+    subgroup_bias_df <- subgroup_bias_df[order(sort_key,
+                                               subgroup_bias_df$subgroup_level), ]
 
     # Overall ECE for reference line — read from metrics.csv.
     overall_ece_val <- tryCatch(
@@ -2186,12 +3514,12 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
 
     doc <- body_add_par(doc, "Subgroup bias assessment", style = "heading 3")
     doc <- body_add_par(doc,
-      paste0("Table 4. Expected calibration error (ECE) by subgroup."),
+      "Supplemental Table S6. Expected calibration error (ECE) by subgroup.",
       style = "Normal")
     doc <- body_add_par(doc,
       paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
              "Subgroups with fewer than 10 observed SSI events are suppressed. ",
-             "Overall ECE (dashed reference line in Supplemental Figure S1) = ",
+             "Overall ECE (dashed reference line in Supplemental Figure S7) = ",
              round(overall_ece_val, 3), ". ",
              "95% CI = bootstrap percentile interval (B\u2009=\u2009200 resamples)."),
       style = "Normal")
@@ -2206,8 +3534,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     )
     if (!is.null(forest_png) && file.exists(forest_png)) {
       plot_height <- max(4.0, nrow(subgroup_bias_df) * 0.35 + 1.5)
+      doc <- body_add_par(doc, "Subgroup calibration forest plot", style = "heading 3")
       doc <- body_add_par(doc,
-        "Supplemental Figure S1. Subgroup calibration forest plot.",
+        "Supplemental Figure S7. Subgroup calibration forest plot.",
         style = "Normal")
       doc <- body_add_par(doc,
         paste0("Caption: Expected calibration error (ECE) with 95% bootstrap percentile CIs (B\u2009=\u2009200) ",
@@ -2235,16 +3564,30 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       conn_f <- DatabaseConnector::connect(connection_details)
       on.exit(try(DatabaseConnector::disconnect(conn_f), silent = TRUE), add = TRUE)
 
-      # Identify the two fringe groups from person_level_scores
-      fn_mask <- person_level$outcome == 1 & !is.na(person_level$predicted_risk_lookup)
-      fn_ids  <- person_level$subject_id[fn_mask]
-      fn_risk <- person_level$predicted_risk_lookup[fn_mask]
+      # Restrict fringe candidates to index procedures in 2017–2019.
+      fringe_year_min <- 2017L
+      fringe_year_max <- 2019L
+      fringe_year_vec <- suppressWarnings(
+        as.integer(format(as.Date(person_level$index_date), "%Y"))
+      )
+      in_window <- !is.na(fringe_year_vec) &
+                   fringe_year_vec >= fringe_year_min &
+                   fringe_year_vec <= fringe_year_max
+      pl_fringe <- person_level[in_window, ]
+
+      # Identify the two fringe groups from person_level_scores (2017–2019 only)
+      fn_mask <- pl_fringe$outcome == 1 & !is.na(pl_fringe$predicted_risk_lookup)
+      fn_ids  <- pl_fringe$subject_id[fn_mask]
+      fn_risk <- pl_fringe$predicted_risk_lookup[fn_mask]
       fn_top  <- fn_ids[order(fn_risk)][seq_len(min(10L, sum(fn_mask)))]
 
-      fp_mask <- person_level$outcome == 0 & !is.na(person_level$predicted_risk_lookup)
-      fp_ids  <- person_level$subject_id[fp_mask]
-      fp_risk <- person_level$predicted_risk_lookup[fp_mask]
+      fp_mask <- pl_fringe$outcome == 0 & !is.na(pl_fringe$predicted_risk_lookup)
+      fp_ids  <- pl_fringe$subject_id[fp_mask]
+      fp_risk <- pl_fringe$predicted_risk_lookup[fp_mask]
       fp_top  <- fp_ids[order(fp_risk, decreasing = TRUE)][seq_len(min(10L, sum(fp_mask)))]
+
+      message(sprintf("[report] Fringe case filter: %d patients in %d\u2013%d (of %d total).",
+                      sum(in_window), fringe_year_min, fringe_year_max, nrow(person_level)))
 
       all_ids <- unique(c(fn_top, fp_top))
       id_str  <- paste(as.integer(all_ids), collapse = ",")
@@ -2346,84 +3689,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       # Write to dated CSV file alongside the report
       export_date  <- format(Sys.Date(), "%Y%m%d")
       fringe_file  <- file.path(output_dir,
-                                paste0("pad_oler_ssi_fringe_", export_date, ".csv"))
+                                paste0("pad_oler_ssi_fringe_",
+                                       fringe_year_min, "_", fringe_year_max,
+                                       "_", export_date, ".csv"))
       readr::write_csv(fringe_tbl, fringe_file)
       message("[report] Fringe case CSV written to: ",
               normalizePath(fringe_file, winslash = "/", mustWork = FALSE))
 
-      # ---- Supplemental Table: CDM Source ------------------------------------
-      tryCatch({
-        sql_cdm_src <- SqlRender::render(
-          "SELECT
-             cdm_source_name,
-             cdm_source_abbreviation,
-             cdm_holder,
-             source_release_date,
-             cdm_release_date,
-             cdm_version,
-             vocabulary_version
-           FROM @cdm_schema.cdm_source",
-          cdm_schema = config$cdm_schema
-        )
-        cdm_src_raw <- DatabaseConnector::querySql(
-          conn_f,
-          SqlRender::translate(sql_cdm_src, targetDialect = "sql server")
-        )
-        names(cdm_src_raw) <- tolower(names(cdm_src_raw))
-
-        if (nrow(cdm_src_raw) > 0) {
-          cdm_src_display <- data.frame(
-            Field = c(
-              "CDM Source Name",
-              "Source Abbreviation",
-              "CDM Holder",
-              "Source Release Date",
-              "CDM Release Date",
-              "CDM Version",
-              "Vocabulary Version"
-            ),
-            Value = c(
-              as.character(cdm_src_raw$cdm_source_name[1]),
-              as.character(cdm_src_raw$cdm_source_abbreviation[1]),
-              as.character(cdm_src_raw$cdm_holder[1]),
-              as.character(cdm_src_raw$source_release_date[1]),
-              as.character(cdm_src_raw$cdm_release_date[1]),
-              as.character(cdm_src_raw$cdm_version[1]),
-              as.character(cdm_src_raw$vocabulary_version[1])
-            ),
-            stringsAsFactors = FALSE
-          )
-
-          cdm_src_ft <- flextable::flextable(cdm_src_display) |>
-            flextable::bold(part = "header") |>
-            flextable::fontsize(size = 10, part = "all") |>
-            flextable::font(fontname = "Calibri", part = "all") |>
-            flextable::bg(part = "header", bg = "#1F3864") |>
-            flextable::color(part = "header", color = "white") |>
-            flextable::padding(padding = 4, part = "all") |>
-            flextable::width(j = "Field", width = 2.0) |>
-            flextable::width(j = "Value", width = 4.0) |>
-            flextable::set_table_properties(layout = "fixed")
-
-          doc <<- body_add_par(doc, "CDM Source", style = "heading 3")
-          doc <<- body_add_par(doc,
-            "Supplemental Table S2. CDM source metadata.",
-            style = "Normal")
-          doc <<- body_add_par(doc,
-            paste0("Caption: Metadata from the cdm_source table of the OMOP CDM instance used ",
-                   "for this analysis. CDM Version and Vocabulary Version confirm compliance with ",
-                   "OMOP CDM v5.4 and the Athena vocabulary release used during ETL."),
-            style = "Normal")
-          doc <<- body_add_flextable(doc, cdm_src_ft)
-          doc <<- body_add_par(doc, "", style = "Normal")
-          message("[report] CDM source table added to supplemental section.")
-        }
-      }, error = function(e) {
-        message("[report] CDM source table skipped: ", conditionMessage(e))
-      })
-
     }, error = function(e) {
-      message("[report] Fringe case Excel skipped: ", conditionMessage(e))
+      message("[report] Fringe case CSV skipped: ", conditionMessage(e))
     })
   }
 

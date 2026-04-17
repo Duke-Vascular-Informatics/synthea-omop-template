@@ -88,6 +88,17 @@ read_score_specs <- function(config) {
   components$min_count <- as.integer(components$min_count)
   components$points <- as.numeric(components$points)
 
+  # missing_is_negative: optional column added in components.csv.
+  # TRUE  = absence of CDM records for this component is a true negative
+  #         (e.g. sex, indication, prior procedures) — n_missing should be 0.
+  # FALSE = absence may reflect unmeasured data (e.g. BMI, ABI, op time).
+  # Defaults to FALSE when the column is absent (backward-compatible).
+  if (!"missing_is_negative" %in% names(components)) {
+    components$missing_is_negative <- FALSE
+  }
+  components$missing_is_negative <- tolower(trimws(as.character(components$missing_is_negative))) %in%
+    c("true", "1", "t", "yes", "y")
+
   concepts$concept_id <- as.integer(concepts$concept_id)
   concepts$include_descendants <- tolower(trimws(as.character(concepts$include_descendants))) %in% c("true", "1", "t", "yes", "y")
   if (!"concept_role" %in% names(concepts)) {
@@ -212,6 +223,69 @@ get_outcomes <- function(connection, config) {
     prediction_window_days = config$prediction_window_days
   )
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
+}
+
+# -----------------------------------------------------------------------------
+# get_ssi_type()
+#
+# For each patient who developed a 90-day SSI, identifies the CDC/NHSN sub-type
+# by looking for the first condition_occurrence (within the prediction window)
+# whose source or standard concept maps to one of the three specific SSI codes:
+#   Superficial incisional : SNOMED 609339001
+#   Deep incisional        : SNOMED 609340004
+#   Organ-space            : SNOMED 609341000
+#
+# Returns one row per patient with a non-NULL SSI outcome, with a column
+# ssi_type containing "Superficial", "Deep", or "Organ-space".
+# Patients without any of the three typed codes (i.e. only the parent SSI code)
+# are returned with ssi_type = NA and can be treated as unclassified.
+#
+# The result is left-joined onto person_level in calculate_scores() so all
+# patients (SSI and non-SSI) remain in the dataset; non-SSI patients get NA.
+# -----------------------------------------------------------------------------
+get_ssi_type <- function(connection, config) {
+  sql <- SqlRender::render(
+    sql = "SELECT t.subject_id,
+                  co.condition_start_date,
+                  CASE co.condition_source_value
+                    WHEN '609339001' THEN 'Superficial'
+                    WHEN '609340004' THEN 'Deep'
+                    WHEN '609341000' THEN 'Organ-space'
+                    ELSE NULL
+                  END AS ssi_type
+           FROM (
+             SELECT c.subject_id,
+                    CAST(c.cohort_start_date AS DATE) AS index_date
+             FROM @results_schema.@cohort_table c
+             WHERE c.cohort_definition_id = @target_id
+           ) t
+           JOIN @cdm_schema.condition_occurrence co
+             ON  co.person_id = t.subject_id
+             AND co.condition_source_value IN ('609339001','609340004','609341000')
+             AND co.condition_start_date >= t.index_date
+             AND co.condition_start_date <= DATEADD(DAY, @prediction_window_days, t.index_date)
+           WHERE CASE co.condition_source_value
+                   WHEN '609339001' THEN 'Superficial'
+                   WHEN '609340004' THEN 'Deep'
+                   WHEN '609341000' THEN 'Organ-space'
+                   ELSE NULL
+                 END IS NOT NULL",
+    results_schema = results_schema_prefix(config),
+    cohort_table   = config$cohort_table,
+    cdm_schema     = config$cdm_schema,
+    target_id      = config$target_cohort_id,
+    prediction_window_days = config$prediction_window_days
+  )
+  df <- DatabaseConnector::querySql(
+    connection, SqlRender::translate(sql, targetDialect = "sql server")
+  )
+  names(df) <- tolower(names(df))
+  names(df)[names(df) == "subjectid"]             <- "subject_id"
+  names(df)[names(df) == "conditionstartdate"]    <- "condition_start_date"
+  # Keep the latest typed SSI event per patient within the window
+  df <- df[order(df$subject_id, df$condition_start_date, decreasing = c(FALSE, TRUE)), ]
+  df <- df[!duplicated(df$subject_id), c("subject_id", "ssi_type")]
+  df
 }
 
 # -----------------------------------------------------------------------------
@@ -688,21 +762,33 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
 # patient is then scored 0 for this component.
 # -----------------------------------------------------------------------------
 query_operative_time_component_counts <- function(connection, config, component, component_concepts) {
-  # Captures operative time > 240 minutes (4 hours) from either:
-  # 1. procedure_end_datetime (calculated duration from procedure_occurrence)
-  # 2. Measurement/Observation concepts for operative time
-  # Combines both sources to identify patients with prolonged operative time.
-  
+  # Captures operative time >= 4 hours (240 minutes) using two complementary
+  # sources, combined with UNION (de-duplicated):
+  #
+  #   Source 1 — procedure_occurrence datetime columns:
+  #     DATEDIFF(MINUTE, procedure_datetime, procedure_end_datetime) > 240
+  #     for the qualifying index procedure (concept_ancestor descendants of
+  #     the target procedure anchors 4236706 / 4225375) occurring at any
+  #     point during the inpatient admission (cohort_start_date to
+  #     cohort_end_date).  This window is used instead of a single-date match
+  #     because in many OMOP ETLs the index date is the admission start date
+  #     and the surgery occurs on a subsequent day of the same admission.
+  #
+  #   Source 2 — measurement table operative-time concepts:
+  #     Matching measurement_concept_id values (from component_concepts.csv)
+  #     with value_as_number > 240 within the component lookback window.
+
   concept_ids <- unique(component_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
   include_desc <- any(component_concepts$include_descendants)
-  
+
   operative_time_threshold_minutes <- 240  # 4 hours
-  
+
   sql <- SqlRender::render(
     sql = "WITH target_population AS (
              SELECT c.subject_id,
-                    CAST(c.cohort_start_date AS DATE) AS index_date
+                    CAST(c.cohort_start_date AS DATE) AS index_date,
+                    CAST(c.cohort_end_date   AS DATE) AS admission_end_date
              FROM @results_schema.@cohort_table c
              WHERE c.cohort_definition_id = @target_id
            ),
@@ -719,18 +805,28 @@ query_operative_time_component_counts <- function(connection, config, component,
                ON ca.ancestor_concept_id = i.concept_id
              WHERE @include_descendants = 1
            ),
+           -- Source 1: duration computed from procedure_datetime / procedure_end_datetime.
+           -- Searches the full inpatient admission window (index_date to admission_end_date)
+           -- rather than only the exact index date, because surgery typically occurs on
+           -- a day after the admission start date.
+           -- Restricted to the qualifying target procedure concepts so that unrelated
+           -- same-admission procedures do not falsely trigger the component.
            procedure_duration_mins AS (
-             -- Extract operative time from procedure_end_datetime if available
              SELECT DISTINCT t.subject_id
              FROM target_population t
              JOIN @cdm_schema.procedure_occurrence po
                ON po.person_id = t.subject_id
-             WHERE CAST(po.procedure_date AS DATE) = t.index_date
+             JOIN @cdm_schema.concept_ancestor ca_proc
+               ON ca_proc.descendant_concept_id = po.procedure_concept_id
+              AND ca_proc.ancestor_concept_id IN (4236706, 4225375)
+             WHERE CAST(po.procedure_date AS DATE) >= t.index_date
+               AND CAST(po.procedure_date AS DATE) <= DATEADD(DAY, 30, t.index_date)
+               AND po.procedure_datetime     IS NOT NULL
                AND po.procedure_end_datetime IS NOT NULL
                AND DATEDIFF(MINUTE, po.procedure_datetime, po.procedure_end_datetime) > @operative_time_threshold
            ),
+           -- Source 2: measured operative time stored as a measurement value.
            measurement_operative_time AS (
-             -- Extract operative time from measurement table (e.g., LOINC operative time)
              SELECT DISTINCT t.subject_id
              FROM target_population t
              JOIN @cdm_schema.measurement m
@@ -760,7 +856,7 @@ query_operative_time_component_counts <- function(connection, config, component,
     lookback_end = as.integer(component$lookback_end_day),
     operative_time_threshold = operative_time_threshold_minutes
   )
-  
+
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
@@ -1101,6 +1197,7 @@ calculate_scores <- function(connection, config, specs) {
     component_name = character(),
     domain = character(),
     n_positive = integer(),
+    n_missing = integer(),
     mean_points = numeric(),
     stringsAsFactors = FALSE
   )
@@ -1130,6 +1227,15 @@ calculate_scores <- function(connection, config, specs) {
       by = "subject_id",
       all.x = TRUE
     )
+    # Count patients with no CDM records for this component BEFORE 0-imputation.
+    # When missing_is_negative = TRUE the component query only returns positive
+    # cases; all un-returned patients are true negatives, not missing data
+    # (e.g. male patients for the sex component, CLI patients for claudication).
+    # When FALSE, absent records may genuinely reflect unmeasured data
+    # (e.g. no BMI or ABI measurement in the lookback window).
+    missing_is_neg <- isTRUE(comp$missing_is_negative)
+    n_missing_comp <- if (missing_is_neg) 0L else sum(is.na(df$event_count))
+
     df$event_count[is.na(df$event_count)] <- 0L
 
     score_col <- paste0("score_", comp$component_id)
@@ -1148,6 +1254,7 @@ calculate_scores <- function(connection, config, specs) {
         component_name = comp$component_name,
         domain = comp$domain,
         n_positive = sum(is_activated, na.rm = TRUE),
+        n_missing = n_missing_comp,
         mean_points = mean(df[[score_col]], na.rm = TRUE),
         stringsAsFactors = FALSE
       )
@@ -1158,6 +1265,22 @@ calculate_scores <- function(connection, config, specs) {
   component_matrix$total_score <- rowSums(component_matrix[, score_cols, drop = FALSE], na.rm = TRUE)
 
   person_level <- merge(outcomes, component_matrix, by = "subject_id", all.x = TRUE)
+
+  # Join SSI sub-type (Superficial / Deep / Organ-space) — NA for non-SSI patients
+  ssi_types <- tryCatch(
+    get_ssi_type(connection, config),
+    error = function(e) {
+      message("[pipeline] ssi_type lookup failed (non-fatal): ", conditionMessage(e))
+      data.frame(subject_id = integer(0), ssi_type = character(0),
+                 stringsAsFactors = FALSE)
+    }
+  )
+  if (nrow(ssi_types) > 0) {
+    person_level <- merge(person_level, ssi_types, by = "subject_id", all.x = TRUE)
+  } else {
+    person_level$ssi_type <- NA_character_
+  }
+
   list(person_level = person_level, component_summary = component_summary)
 }
 
@@ -1718,9 +1841,23 @@ compute_subgroup_bias <- function(person_level,
   }
 
   # ---------------------------------------------------------------------------
+  # Step 4c — derive procedure type subgroup from OMOP CDM.
+  # ---------------------------------------------------------------------------
+  proc_type_labels <- tryCatch(
+    fetch_proc_type_labels(connection, config),
+    error = function(e) {
+      message("[subgroup_bias] fetch_proc_type_labels failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (!is.null(proc_type_labels)) {
+    df <- merge(df, proc_type_labels, by = "subject_id", all.x = TRUE)
+  }
+
+  # ---------------------------------------------------------------------------
   # Step 5 — bootstrap ECE for each non-empty, qualifying subgroup level.
   # ---------------------------------------------------------------------------
-  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year")
+  subgroup_vars <- c("sex", "race", "ethnicity", "age_group", "indication", "year", "proc_type")
   # Keep only vars that were successfully added to df.
   subgroup_vars <- subgroup_vars[subgroup_vars %in% names(df)]
 

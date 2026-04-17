@@ -406,10 +406,8 @@ source("R/cohort_demographics.R")
     }))
   }))
 
-  # Suppress years with < 10 procedures
-  yr_type_tbl <- yr_type_tbl[yr_type_tbl$n >= 10, ]
   if (length(unique(yr_type_tbl$year)) < 2) {
-    message("[report] SSI-by-year plot skipped: fewer than 2 years with >= 10 procedures.")
+    message("[report] SSI-by-year plot skipped: fewer than 2 years of data.")
     return(NULL)
   }
 
@@ -3088,7 +3086,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
     doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
     doc <- body_add_par(doc,
-      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure. Points show the observed annual event rate; line connects consecutive years. Years with fewer than 10 procedures are suppressed.",
+      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure, stratified by SSI type (Superficial, Deep, Organ-space). Stacked area bands show the cumulative SSI rate; the top edge of each band represents the sum of all SSI types up to and including that layer. Points and lines trace the top edge of each type's band.",
       style = "Normal")
     doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
     doc <- body_add_par(doc, "", style = "Normal")
@@ -3270,11 +3268,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       # (standard_concept IS NULL), not in concept_ancestor as descendants.
       tryCatch({
         sql_cpt <- SqlRender::render(
-          "SELECT DISTINCT proc_group, cpt_code, cpt_description
+          "SELECT combined.proc_group,
+                  combined.cpt_code,
+                  combined.cpt_description,
+                  COUNT(DISTINCT po.person_id) AS case_count
            FROM (
              -- Branch 1: CPT4 codes that ARE in concept_ancestor as descendants
              -- (covers CPT4s with standard_concept = 'S' in this vocabulary)
              SELECT grp.proc_group,
+                    c.concept_id   AS standard_concept_id,
                     c.concept_code AS cpt_code,
                     c.concept_name AS cpt_description
              FROM (
@@ -3295,8 +3297,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
              -- Branch 2: CPT4 source codes that map TO standard SNOMED descendants
              -- via concept_relationship (catches CPT4s not in concept_ancestor)
              SELECT grp.proc_group,
-                    c.concept_code AS cpt_code,
-                    c.concept_name AS cpt_description
+                    cr.concept_id_1 AS standard_concept_id,
+                    c.concept_code  AS cpt_code,
+                    c.concept_name  AS cpt_description
              FROM (
                SELECT 'Endarterectomy'           AS proc_group, 4225375 AS ancestor_id
                UNION ALL SELECT 'Aortobifemoral bypass',        4231680
@@ -3314,8 +3317,12 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
                ON c.concept_id    = cr.concept_id_1
               AND c.vocabulary_id IN ('CPT4','HCPCS')
            ) combined
-           ORDER BY proc_group, cpt_code",
-          vocab_schema = config$vocab_schema
+           LEFT JOIN @cdm_schema.procedure_occurrence po
+             ON po.procedure_source_concept_id = combined.standard_concept_id
+           GROUP BY combined.proc_group, combined.cpt_code, combined.cpt_description
+           ORDER BY combined.proc_group, combined.cpt_code",
+          vocab_schema = config$vocab_schema,
+          cdm_schema   = config$cdm_schema
         )
         cpt_raw <- DatabaseConnector::querySql(
           conn_supp,
@@ -3327,6 +3334,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
             "Procedure Group" = cpt_raw$proc_group,
             "CPT Code"        = cpt_raw$cpt_code,
             "Description"     = cpt_raw$cpt_description,
+            "Cases (n)"       = cpt_raw$case_count,
             check.names = FALSE, stringsAsFactors = FALSE
           )
           cpt_ft <- flextable::flextable(cpt_display) |>
@@ -3336,9 +3344,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
             flextable::bg(part = "header", bg = "#1F3864") |>
             flextable::color(part = "header", color = "white") |>
             flextable::padding(padding = 3, part = "all") |>
-            flextable::width(j = "Procedure Group", width = 1.8) |>
+            flextable::width(j = "Procedure Group", width = 1.7) |>
             flextable::width(j = "CPT Code",        width = 0.9) |>
-            flextable::width(j = "Description",     width = 3.8) |>
+            flextable::width(j = "Description",     width = 3.5) |>
+            flextable::width(j = "Cases (n)",       width = 0.8) |>
+            flextable::align(j = "Cases (n)", align = "right", part = "all") |>
             flextable::set_table_properties(layout = "fixed")
           doc <- body_add_par(doc, "Index procedure CPT codes", style = "heading 3")
           doc <- body_add_par(doc,
@@ -3349,6 +3359,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
                    "from SNOMED concept-ancestor descendants of each procedure subgroup anchor ",
                    "(endarterectomy: 4225375; aortobifemoral: 4231680; femoral-popliteal: 4012936; ",
                    "femorotibial: 4166196; extra-anatomic bypass: 4050281). ",
+                   "Cases (n) = number of distinct patients in procedure_occurrence with that source concept. ",
                    "A code may appear in more than one group."),
             style = "Normal")
           doc <- body_add_flextable(doc, cpt_ft)
@@ -3362,10 +3373,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       # ---- Supplemental Table S3 — ICD codes for SSI outcome concept ---------
       tryCatch({
         sql_icd <- SqlRender::render(
-          "SELECT DISTINCT
+          "SELECT
              c.vocabulary_id,
              c.concept_code  AS icd_code,
-             c.concept_name  AS icd_description
+             c.concept_name  AS icd_description,
+             COUNT(DISTINCT co.person_id) AS case_count
            FROM @vocab_schema.concept_ancestor ca
            INNER JOIN @vocab_schema.concept_relationship cr
              ON cr.concept_id_2    = ca.descendant_concept_id
@@ -3374,11 +3386,15 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
            INNER JOIN @vocab_schema.concept c
              ON c.concept_id    = cr.concept_id_1
             AND c.vocabulary_id IN ('ICD9CM','ICD10CM','ICD10PCS','ICD9Proc')
+           LEFT JOIN @cdm_schema.condition_occurrence co
+             ON co.condition_source_concept_id = cr.concept_id_1
            WHERE ca.ancestor_concept_id = 4334801
              AND c.concept_code NOT LIKE 'O86%'
              AND c.concept_code NOT LIKE 'T86.84%'
+           GROUP BY c.vocabulary_id, c.concept_code, c.concept_name
            ORDER BY c.vocabulary_id, c.concept_code",
-          vocab_schema = config$vocab_schema
+          vocab_schema = config$vocab_schema,
+          cdm_schema   = config$cdm_schema
         )
         icd_raw <- DatabaseConnector::querySql(
           conn_supp,
@@ -3390,6 +3406,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
             "Vocabulary"  = icd_raw$vocabulary_id,
             "ICD Code"    = icd_raw$icd_code,
             "Description" = icd_raw$icd_description,
+            "Cases (n)"   = icd_raw$case_count,
             check.names = FALSE, stringsAsFactors = FALSE
           )
           icd_ft <- flextable::flextable(icd_display) |>
@@ -3399,9 +3416,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
             flextable::bg(part = "header", bg = "#1F3864") |>
             flextable::color(part = "header", color = "white") |>
             flextable::padding(padding = 3, part = "all") |>
-            flextable::width(j = "Vocabulary",  width = 1.0) |>
-            flextable::width(j = "ICD Code",    width = 1.2) |>
-            flextable::width(j = "Description", width = 4.3) |>
+            flextable::width(j = "Vocabulary",  width = 0.9) |>
+            flextable::width(j = "ICD Code",    width = 1.1) |>
+            flextable::width(j = "Description", width = 3.8) |>
+            flextable::width(j = "Cases (n)",   width = 0.7) |>
+            flextable::align(j = "Cases (n)", align = "right", part = "all") |>
             flextable::set_table_properties(layout = "fixed")
           doc <- body_add_par(doc, "SSI outcome ICD codes", style = "heading 3")
           doc <- body_add_par(doc,
@@ -3410,8 +3429,9 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
           doc <- body_add_par(doc,
             paste0("Caption: Source ICD-9-CM and ICD-10-CM codes that map to OMOP concept 4334801 ",
                    "(Surgical site infection, SNOMED-CT 433202001) or its descendants via ",
-                   "concept_relationship (relationship: 'Maps to'). These are the codes used to ",
-                   "identify the SSI outcome in source data prior to OMOP ETL standardisation."),
+                   "concept_relationship (relationship: 'Maps to'). Cases (n) = number of distinct ",
+                   "patients in condition_occurrence with that source concept. ",
+                   "These are the codes used to identify the SSI outcome in source data prior to OMOP ETL standardisation."),
             style = "Normal")
           doc <- body_add_flextable(doc, icd_ft)
           doc <- body_add_par(doc, "", style = "Normal")
