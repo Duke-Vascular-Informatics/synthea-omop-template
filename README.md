@@ -263,7 +263,7 @@ Step 8 must be run in a **fresh R session** (the Java/JDBC guard will stop it ot
   internal_repo/              ← prebuilt OHDSI package binaries
   drivers/                    ← JDBC driver archive
   .devcontainer/              ← Docker R + Java 17 dev environment
-  .github/                    ← Copilot instructions and prompts
+  .github/                    ← Claude Code / AI assistant instructions
   output/                     ← analysis outputs (gitignored)
 ```
 
@@ -291,16 +291,22 @@ source("scripts/bundle/prebuild_github_binaries.R")
 
 ---
 
-## GitHub Copilot / Claude Code Integration
+## Claude Code Integration
 
-This repo ships Copilot instruction files so AI-assisted coding follows project
-conventions automatically.
+This repo ships a `CLAUDE.md` file at the project root that Claude Code reads automatically
+on every session. It encodes three hard rules for AI-assisted coding:
+
+1. **Concept ID transparency** — every concept ID recommendation must be tagged `[vocab query]`
+   (confirmed against the live vocabulary) or `[pretraining]` (unverified, with explicit warning).
+2. **HADES-first package selection** — use OHDSI HADES packages for all OHDSI methodology;
+   fall back to tidyverse; all packages must be on the Duke CRAN mirror.
+3. **Verbose comments** — all code follows OHDSI GitHub repository commenting conventions.
 
 | File | Scope | Purpose |
 |------|-------|---------|
-| `.github/copilot-instructions.md` | Every request | Language (R only), renv workflow, DB config, security rules |
-| `.github/instructions/r-packages.instructions.md` | `*.R` files | CRAN mirror, renv, OHDSI binary installs |
-| `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` | DatabaseConnector/SqlRender patterns, OMOP CDM conventions |
+| `CLAUDE.md` | Every session | Primary Claude Code instructions (three hard rules + project context) |
+| `.github/instructions/r-packages.instructions.md` | `*.R` files | HADES priority, CRAN mirror, renv workflow |
+| `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` | DatabaseConnector/SqlRender patterns, concept ID lookup, OMOP CDM conventions |
 
 **`/concept-lookup` slash command:**
 

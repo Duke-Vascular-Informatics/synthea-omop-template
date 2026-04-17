@@ -10,38 +10,49 @@ applyTo: ["**/*.R", "**/*.sql"]
 Always use `DatabaseConnector` — never raw JDBC, `DBI`, or `odbc` directly:
 
 ```r
-config  <- get_validation_config()
+# Load config first — it holds all connection parameters
+config      <- get_validation_config()
+
+# Create a ConnectionDetails object (no open connection yet)
 connDetails <- DatabaseConnector::createConnectionDetails(
-  dbms     = config$dbms,
-  server   = paste0(config$server, "/", config$database),
-  port     = config$sql_server_port,
+  dbms         = config$dbms,
+  server       = paste0(config$server, "/", config$database),
+  port         = config$sql_server_port,
   pathToDriver = config$path_to_driver
 )
+
+# Open a connection, always with an on.exit guard to prevent leaks
 conn <- DatabaseConnector::connect(connDetails)
 on.exit(DatabaseConnector::disconnect(conn))
 ```
 
 ## SQL Authoring (SqlRender)
 
-All SQL must be written as SqlRender-parameterized templates, then rendered and translated:
+All SQL must be written as SqlRender-parameterized templates, then rendered and translated.
+Never concatenate user-supplied values or config values directly into SQL strings.
 
 ```r
+# Write parameterized SQL using @parameter syntax
 sql <- SqlRender::render(
   "SELECT * FROM @cdm_schema.person WHERE year_of_birth > @min_year",
-  cdm_schema = config$cdm_schema,
+  cdm_schema = config$cdm_schema,   # substituted at render time — no injection risk
   min_year   = 1920L
 )
-sql <- SqlRender::translate(sql, targetDialect = config$dbms)
+
+# Translate to the target dialect AFTER rendering
+sql    <- SqlRender::translate(sql, targetDialect = config$dbms)
 result <- DatabaseConnector::querySql(conn, sql, snakeCaseToCamelCase = TRUE)
 ```
 
-- Never concatenate user-supplied values directly into SQL strings (injection risk).
-- Use `@parameter` syntax for all variable schema/table/value substitutions.
+Rules:
+- Use `@parameter` syntax for all schema, table, and value substitutions.
 - Target dialect is always `"sql server"` for this project.
+- Do not use source-vocabulary concept codes (ICD-10, NDC) in SQL — map to standard OMOP
+  concept IDs first (see Concept ID Lookup section below).
 
-## OMOP CDM Structure (v5)
+## OMOP CDM Structure (v5.4)
 
-Key tables in `cdm_synthea` schema:
+Key tables in `config$cdm_schema`:
 
 | Domain | Table | Key columns |
 |--------|-------|-------------|
@@ -57,118 +68,145 @@ Key tables in `cdm_synthea` schema:
 
 Rules:
 - Always use **standard concept IDs** (`standard_concept = 'S'`), not source codes.
-- Use `concept_relationship` to map source/non-standard concepts (ICD/CPT/LOINC/SNOMED source forms) to standard concepts before analysis.
-- Join via `concept_ancestor` when descendant expansion is needed (e.g., all subtypes of a drug).
-- Filter out invalid records: `condition_status_concept_id != 4230359` (exclude provisional).
+- Use `concept_relationship` to map source/non-standard concepts to standard concepts.
+- Join via `concept_ancestor` when descendant expansion is needed (e.g., all subtypes of a drug class).
+- Confirm `invalid_reason IS NULL` before committing any concept ID.
 
 ## Cohort Table Convention
 
 Cohorts follow the standard OHDSI structure in `config$cohort_table`:
 
 ```sql
-cohort_definition_id  BIGINT  -- 1 = target, 2 = outcome (local); ATLAS IDs when copied
-subject_id            BIGINT  -- maps to person_id
-cohort_start_date     DATE
-cohort_end_date       DATE
+cohort_definition_id  BIGINT  -- matches config$target_cohort_id / outcome_cohort_id etc.
+subject_id            BIGINT  -- maps to person_id in the CDM
+cohort_start_date     DATE    -- index date (first qualifying event)
+cohort_end_date       DATE    -- observation end or censoring date
 ```
 
-- `target_cohort_id = 1L` and `outcome_cohort_id = 2L` as set in `config.R`.
-- When `use_atlas_cohorts = TRUE`, call `copy_atlas_cohort()` from `R/cohorts.R` instead
-  of running SQL from `cohorts/`.
+- IDs are defined in `config.R` — never hardcode `cohort_definition_id = 1` in analysis code.
+- Use `build_cohorts()` from `R/cohorts.R` to populate the cohort table from SQL files.
 
-## PatientLevelPrediction
+## Concept ID Lookup — MANDATORY RULE
 
-```r
-# External validation only — never re-train in this project
-PatientLevelPrediction::validateExternal(
-  validationDatabaseDetails = ...,
-  validationCohortId        = config$target_cohort_id,
-  outcomeId                 = config$outcome_cohort_id,
-  outputFolder              = config$output_folder
-)
+**AI source transparency:** Every OMOP concept ID recommendation must carry one of two tags:
+
+- **[pretraining]** — derived from AI training data only. Treat as a starting hypothesis.
+  Must be accompanied by: *"This ID has not been verified against the live vocabulary.
+  Run a vocabulary query before using it in code or CSV."*
+- **[vocab query]** — confirmed by a live query against `omop_vocab` in this SQL Server
+  instance. Safe to use for this vocabulary version.
+
+**Hard rule:** Never write a concept ID into code, SQL, or a CSV file without first running
+a live vocabulary query and tagging it **[vocab query]**. Pretraining concept IDs are
+vocabulary-version-dependent and have been observed to map to completely wrong concepts
+in this project.
+
+### Vocabulary lookup workflow (three-table check)
+
+```sql
+-- 1. Find candidate standard concepts
+SELECT concept_id, concept_name, domain_id, vocabulary_id, standard_concept, invalid_reason
+FROM omop_vocab.concept
+WHERE concept_name LIKE '%your term%'
+  AND standard_concept = 'S'
+  AND invalid_reason IS NULL
+ORDER BY concept_name;
+
+-- 2. Verify source-to-standard mapping if starting from a source code
+SELECT c.concept_id, c.concept_name, cr.relationship_id
+FROM omop_vocab.concept_relationship cr
+JOIN omop_vocab.concept c ON c.concept_id = cr.concept_id_2
+WHERE cr.concept_id_1 = <source_concept_id>
+  AND cr.relationship_id = 'Maps to'
+  AND c.standard_concept = 'S'
+  AND c.invalid_reason IS NULL;
+
+-- 3. Expand descendants for concept set definition
+SELECT c.concept_id, c.concept_name, c.domain_id
+FROM omop_vocab.concept_ancestor ca
+JOIN omop_vocab.concept c ON c.concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = <your_chosen_ancestor_id>
+  AND c.standard_concept = 'S'
+  AND c.invalid_reason IS NULL;
 ```
 
-- Do not retrain or update model coefficients; this is a validation-only project.
-- Model is loaded from `config$model_path` (a `plpResult` directory).
-
-## FeatureExtraction
-
-- Use `FeatureExtraction::createCovariateSettings()` with explicit covariate lists.
-- Do not use `addDescendantsToExclude` without confirming concept IDs against the CDM.
-
-## CohortGenerator
-
-- Use `CohortGenerator::generateCohortSet()` only when cohorts are defined in `cohorts/` SQL.
-- When ATLAS cohorts are available (`use_atlas_cohorts = TRUE`), skip `CohortGenerator`.
-
-## Integer Risk Score Queries
-
-For the `R/risk_score_pipeline.R` pipeline:
-- One SQL query per domain (condition, drug, procedure, measurement, observation, visit).
-- Use `concept_ancestor` when `include_descendants = TRUE` in `component_concepts.csv`.
-- Exposure windows are relative to `cohort_start_date` and parameterized via
-  `lookback_start_day` / `lookback_end_day` from `risk_score/components.csv`.
-
-## Concept ID Lookup (Live Vocabulary)
-
-**AI source transparency rule:** When suggesting or using any OMOP concept ID,
-always explicitly state whether it comes from:
-- **[pretraining]** — derived from AI training data; treat as a starting hypothesis
-  only, must be verified before use in any code or CSV file.
-- **[vocab query]** — confirmed by a live query against `omop_vocab` or `cdm_synthea`
-  in this SQL Server instance; trustworthy for this vocabulary version.
-
-Never write a concept ID into code, SQL, or CSV without first running a live
-vocabulary query and labelling it **[vocab query]**. Pretraining concept IDs are
-vocabulary-version-dependent and have been observed to map to completely wrong
-concepts in this project (e.g., ancestor IDs 4201004 and 4318887, cited in OHDSI
-documentation, mapped to a urological procedure and a pathology observation
-respectively in this vocabulary version).
-
-Always verify against the actual vocabulary loaded in `omop_vocab` by running the
-`/concept-lookup` prompt or an explicit `sqlcmd` query before writing concept IDs
-into code or CSV files.
-
-When building clinical concept sets, validate with all three vocabulary tables:
-- `omop_vocab.concept` for candidate and standard concept status.
-- `omop_vocab.concept_relationship` for source-to-standard mapping semantics.
-- `omop_vocab.concept_ancestor` for descendant/ancestor expansion.
-
-Invoke it in chat before writing any concept ID into code or CSV files:
+Use the `/concept-lookup` slash command to run this interactively:
 
 ```
 /concept-lookup <clinical term> [domain]
 ```
-
-## Methodology Reference
-
-When implementing new OHDSI methodology (cohort design, characterization, prediction,
-estimation, data quality), consult the Book of OHDSI first:
-
-  https://ohdsi.github.io/TheBookOfOhdsi/
-
-Key chapters by task:
-- Cohort definition → Chapter 11 (Cohorts)
-- Feature extraction / characterization → Chapter 12 (Characterization)
-- Patient-level prediction → Chapter 13 (Patient-Level Prediction)
-- Population-level estimation → Chapter 14 (Population-Level Estimation)
-- Data quality → Chapter 15 (Data Quality)
 
 Examples:
 ```
 /concept-lookup peripheral arterial disease condition
 /concept-lookup cefazolin drug
 /concept-lookup ankle brachial index measurement
-/concept-lookup femoral popliteal bypass procedure
 ```
 
-The prompt connects to `omop_synth` via the MSSQL MCP tooling and queries
-`cdm_synthea.concept` directly — returning only standard concepts (`standard_concept = 'S'`)
-that are confirmed to exist in this database instance.
+### Inline comment convention for concept IDs
+
+Every concept ID that appears in code, SQL, or CSV must have a trailing comment:
+
+```r
+procedure_concept_id = 4301351  # [vocab query] SNOMED: Coronary artery bypass graft
+ancestor_concept_id  = 0        # [REPLACE] TODO [CONFIG]: insert verified ancestor ID
+```
+
+```sql
+WHERE ca.ancestor_concept_id = 4058703  -- [vocab query] SNOMED: Surgical site infection
+  AND co.condition_concept_id != 0      -- [REPLACE] TODO: verify exclusion concept ID
+```
+
+## Methodology Reference
+
+When implementing OHDSI methodology, consult the **Book of OHDSI** first:
+
+  https://ohdsi.github.io/TheBookOfOhdsi/
+
+Key chapters by task:
+
+| Task | Chapter |
+|------|---------|
+| Cohort definition | Chapter 11 — Cohorts |
+| Feature extraction / characterization | Chapter 12 — Characterization |
+| Patient-level prediction | Chapter 13 — Patient-Level Prediction |
+| Population-level estimation | Chapter 14 — Population-Level Estimation |
+| Data quality | Chapter 15 — Data Quality |
+
+Use **HADES packages** as the canonical implementation for each study design:
+
+| Study design | Primary HADES packages |
+|---|---|
+| Cohort characterization | `FeatureExtraction`, `CohortDiagnostics` |
+| Prognostic modelling | `PatientLevelPrediction`, `FeatureExtraction` |
+| Causal inference | `CohortMethod`, `FeatureExtraction`, `EvidenceSynthesis` |
+| SCCS | `SelfControlledCaseSeries`, `EmpiricalCalibration` |
+| Data quality | `DataQualityDashboard` |
+
+Only reach for non-HADES packages (e.g., `pROC`, `ggplot2`) for tasks not covered by
+HADES (model diagnostics, visualization). All non-HADES packages must be available on
+the Duke CRAN mirror: `https://archive.linux.duke.edu/cran/`.
+
+## Verbose Comment Requirements (OHDSI GitHub Style)
+
+All R and SQL code must include verbose inline comments following OHDSI repository conventions:
+
+- **File headers**: identify purpose, inputs, outputs, prerequisites.
+- **Section banners**: `# ============` separators for major logical blocks.
+- **Function documentation**: describe parameters, return value, and side effects above each function.
+- **Non-obvious logic**: explain the *why* behind SQL joins, window functions, and HADES
+  configuration choices — not just what the code does.
+- **Concept IDs**: always comment with concept name and `[vocab query]` / `[pretraining]` tag.
+- **TODO blocks**: use `# TODO [LABEL]:` format for findability.
+
+Do not write code with unexplained concept IDs, unexplained numeric thresholds, or unexplained
+HADES argument values. A reader unfamiliar with OHDSI should be able to understand what each
+block does from the comments alone.
 
 ## Anti-patterns
 
 - Do not hardcode schema or table names — always use `@cdm_schema`, `@results_schema`, etc.
-- Do not use `dbplyr` or `dplyr` remote tables for this project; use explicit SQL.
-- Do not use source-vocabulary concept codes (ICD-10, NDC) — map to standard OMOP concept IDs first.
-- Do not hard-code concept IDs without first running `/concept-lookup` to confirm they exist in `cdm_synthea`.
+- Do not use `dbplyr` or remote `dplyr` tables — use explicit SqlRender SQL.
+- Do not use source-vocabulary concept codes (ICD-10, NDC) — map to standard OMOP concept IDs.
+- Do not write a concept ID without a `[vocab query]` tag and an inline name comment.
+- Do not suggest packages outside the Duke CRAN mirror or OHDSI `internal_repo/bin/`.

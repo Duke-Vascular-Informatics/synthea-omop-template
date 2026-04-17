@@ -1,9 +1,74 @@
 ---
-description: "Use when installing, loading, or suggesting R packages. Enforces CRAN mirror, renv workflow, and CRAN-first with GitHub fallback for non-CRAN OHDSI packages."
+description: "Use when installing, loading, or suggesting R packages. Enforces HADES-first priority, tidyverse fallback, Duke CRAN mirror, and renv workflow."
 applyTo: "**/*.R"
 ---
 
 # R Package Management Rules
+
+## Package Selection Priority (MANDATORY)
+
+When recommending or selecting packages for any analysis task, apply this strict priority order:
+
+### 1. HADES packages (always first)
+
+Use the OHDSI Health Analytics Data-to-Evidence Suite (HADES) whenever the method is covered.
+Consult the **Book of OHDSI** (https://ohdsi.github.io/TheBookOfOhdsi/) for the canonical
+workflow before reaching for any other package.
+
+| HADES Package | Primary Use | CRAN? |
+|---|---|---|
+| `DatabaseConnector` | DB connection (SQL Server, PostgreSQL, Redshift) | Yes |
+| `SqlRender` | Parameterized SQL authoring and dialect translation | Yes |
+| `FeatureExtraction` | Covariate extraction for PLP and CohortMethod | Prebuilt binary |
+| `PatientLevelPrediction` | Prognostic modelling | Prebuilt binary |
+| `CohortMethod` | Active comparator new-user causal inference | Prebuilt binary |
+| `CohortGenerator` | Cohort instantiation from ATLAS JSON | Prebuilt binary |
+| `CohortDiagnostics` | Cohort phenotype QC and diagnostics | Prebuilt binary |
+| `EvidenceSynthesis` | Meta-analysis across sites | Prebuilt binary |
+| `SelfControlledCaseSeries` | SCCS causal inference | Prebuilt binary |
+| `EmpiricalCalibration` | P-value / CI calibration using negative controls | Yes |
+| `DataQualityDashboard` | OMOP CDM data quality checks | Prebuilt binary |
+
+HADES packages not on CRAN ship as prebuilt binaries in `internal_repo/bin/` for offline
+installation. Do not suggest installing these from GitHub in analysis code.
+
+### 2. tidyverse packages (second)
+
+When the task is outside HADES scope (data wrangling, visualization, string manipulation,
+file I/O), use tidyverse packages:
+
+```
+dplyr, tidyr, ggplot2, readr, purrr, stringr, lubridate, forcats, tibble
+```
+
+All tidyverse packages are available on the Duke CRAN mirror.
+
+### 3. Other Duke CRAN mirror packages (third)
+
+Any package not covered by HADES or tidyverse must be available on the project-approved
+CRAN mirror: `https://archive.linux.duke.edu/cran/`
+
+Common approved additions for OMOP studies:
+
+```
+officer      # Word report generation
+flextable    # Formatted tables in Word/HTML
+openxlsx     # Excel output
+pROC         # ROC curves and AUC
+PRROC        # Precision-recall curves
+knitr        # Report rendering
+rmarkdown    # R Markdown documents
+```
+
+### Never suggest
+
+- Packages available only on GitHub (unless they are OHDSI HADES packages in `internal_repo/bin/`)
+- Packages available only on Bioconductor
+- Python or Julia packages or interop layers (`reticulate`, `rJulia`)
+- `dbplyr`, `odbc`, or `DBI` directly (use `DatabaseConnector` instead)
+- Any package that requires a non-Duke CRAN mirror to install
+
+---
 
 ## CRAN Mirror
 
@@ -13,6 +78,8 @@ Always use the project-approved CRAN mirror — never suggest the default or any
 options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
 ```
 
+---
+
 ## renv
 
 This project uses `renv` for reproducible package management:
@@ -20,27 +87,35 @@ This project uses `renv` for reproducible package management:
 - **Install packages**: `renv::install("package")` — never bare `install.packages()`
 - **After adding packages**: run `renv::snapshot()` to update `renv.lock`
 - **Restore environment**: `renv::restore()` on a fresh clone
-- Never edit `renv.lock` manually
+- Never edit `renv.lock` manually; always use `renv::snapshot()` after changes
 
-## OHDSI Packages Not On CRAN
+---
 
-Use CRAN first. When a required package is not available on CRAN, use GitHub fallback via
-`remotes::install_github()` with the pinned refs in `setup/install_packages.R`.
+## Loading Packages in Scripts
 
-Current GitHub fallback set:
+Follow the OHDSI convention: load all packages at the top of the script, after `renv`
+activation and config loading, with a comment explaining why each package is needed:
 
-| Package | Repo | Ref |
-|---------|------|-----|
-| `FeatureExtraction` | `OHDSI/FeatureExtraction` | `v3.6.0` |
-| `CohortGenerator` | `OHDSI/CohortGenerator` | `v0.9.0` |
-| `PatientLevelPrediction` | `OHDSI/PatientLevelPrediction` | `v6.4.0` |
-| `ETLSyntheaBuilder` | `OHDSI/ETL-Synthea` | `v2.1.0` |
+```r
+# Core HADES infrastructure — always required
+library(DatabaseConnector)   # OMOP CDM database connection
+library(SqlRender)            # SQL parameterization and dialect translation
 
-## Other OHDSI Packages
+# Analysis-specific HADES packages
+library(FeatureExtraction)    # covariate extraction for PLP model
+library(PatientLevelPrediction)  # prognostic model development and validation
 
-`DatabaseConnector` and `SqlRender` are on CRAN and may be installed normally via `renv::install()`.
+# Output packages (tidyverse / Duke CRAN)
+library(dplyr)      # data frame manipulation
+library(ggplot2)    # result visualization
+library(officer)    # Word report generation
+library(flextable)  # formatted tables in Word output
+```
+
+---
 
 ## Version Alignment
 
-Do not suggest upgrading pinned GitHub package refs without validating compatibility first.
-Keep R version compatibility in mind (currently R 4.5) and python version 3.9.25 for OHDSI package build scripts.
+- Do not suggest upgrading pinned package refs without validating compatibility first.
+- R version: **4.5.x** — avoid packages that require R >= 4.6.
+- Check `renv.lock` for the current pinned versions before suggesting an install.
