@@ -28,10 +28,24 @@
 --        Ancestor ID : Is there a single ancestor concept that captures all
 --                      relevant sub-types via concept_ancestor rollup?
 --
---   2. INCIDENT vs. PREVALENT cases
---        First occurrence only (keep rn = 1)?
---        Any occurrence within the prediction window?
---        Must be NEW (not present before index date)?
+--   2. INCIDENT vs. PREVALENT cases — does the outcome have to be NEW?
+--
+--        Most prediction models and causal studies want INCIDENT outcomes —
+--        cases where the outcome did NOT exist before the patient's index date.
+--        This SQL captures all outcome events in the study period. The
+--        determination of whether an outcome is truly NEW (post-index) is
+--        applied in Step 8 by PatientLevelPrediction or CohortMethod, which
+--        join this table to the target cohort and filter to events that occur
+--        AFTER cohort_start_date.
+--
+--        Options:
+--          First occurrence only (keep rn = 1)  → Use this for most designs.
+--            Avoids counting the same patient twice if the condition recurs.
+--          Any occurrence (remove ROW_NUMBER)   → Use if recurrent events matter
+--            (e.g. readmissions, repeated infections).
+--          Must be NEW (not before index date)  → This filter is applied by
+--            the analysis package in Step 8, not here — see prediction_window_days
+--            in config.R and riskWindowStart in the Step 8 starter patterns.
 --
 --   3. EXCLUSIONS — which outcome records should be excluded?
 --        Example: obstetric complications that share a parent concept
@@ -40,11 +54,18 @@
 --        Exclude using NOT EXISTS / concept_ancestor sub-queries or
 --        condition_source_concept_id NOT IN (...) for code-level exclusions.
 --
---   4. STUDY WINDOW
---        Outcome must occur between @study_start_date and @study_end_date.
---        (The prediction window — e.g. 90 days after index — is applied
---        in R/risk_score_pipeline.R using prediction_window_days from config.R,
---        not here. This SQL captures all outcome events in the study period.)
+--   4. STUDY WINDOW vs. PREDICTION WINDOW — two different concepts
+--
+--        Study window (@study_start_date to @study_end_date, set in config.R):
+--          The calendar date range during which outcome events are eligible.
+--          This SQL filters outcome events to this window.
+--
+--        Prediction window (prediction_window_days in config.R, e.g. 90 days):
+--          How many days AFTER a patient's index date the outcome is counted.
+--          This is NOT applied here — it is applied in Step 8 by the analysis
+--          package (e.g. PatientLevelPrediction riskWindowEnd, or CohortMethod
+--          riskWindowEnd). This SQL intentionally captures all events in the
+--          study period so that Step 8 can apply any window length.
 --
 -- CONCEPT LOOKUP
 -- ──────────────

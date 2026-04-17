@@ -39,14 +39,36 @@
 --        Prior outcome within ___ days before index?
 --        Other disqualifying conditions or procedures?
 --
---   5. ONE ENTRY PER PERSON?
---        First event only (ORDER BY date ASC, rn = 1)
---        Most recent event   (ORDER BY date DESC, rn = 1)
---        All qualifying events (remove ROW_NUMBER filter)
+--   5. ONE ENTRY PER PERSON? (incident vs. prevalent case definition)
+--        This matters because most observational study methods assume one
+--        entry per person (the "new user" or "incident" design).
 --
---   6. COHORT END DATE
---        Visit end date, death date, DATEADD(DAY, N, cohort_start_date),
---        or end of observation period from observation_period table?
+--        First event only (ORDER BY date ASC, rn = 1)
+--          → "Incident" / "new user" design. The patient enters the cohort
+--            at their FIRST qualifying event. This is the standard approach
+--            for new-user comparative studies and most prognostic models
+--            because it avoids immortal time bias and prevalent user bias.
+--
+--        Most recent event (ORDER BY date DESC, rn = 1)
+--          → Use when the study question focuses on the most recent exposure
+--            (e.g. "last surgery before a complication").
+--
+--        All qualifying events (remove ROW_NUMBER filter)
+--          → Use carefully — a patient can contribute multiple index dates.
+--            This can inflate apparent sample size and introduces within-person
+--            correlation that requires adjustment in the analysis.
+--
+--   6. COHORT END DATE — when does follow-up stop?
+--        The cohort_end_date defines when a patient "exits" the study. Choose
+--        based on what follow-up time is clinically meaningful:
+--
+--        Visit end date   → use for in-hospital complications (outcome must
+--                            occur during the admission that triggered index).
+--        DATEADD(DAY, N)  → use for fixed follow-up windows (e.g. 90-day risk).
+--                            N must match prediction_window_days in config.R.
+--        Death date       → use when death is an informative competing event.
+--        Observation end  → use for long-term follow-up; ties exit to data
+--                            availability (recommended for PLP models).
 --
 -- CONCEPT LOOKUP
 -- ──────────────
@@ -99,26 +121,31 @@ FROM (
   SELECT
     vo.person_id,
 
-    -- TODO [TARGET COHORT]: Set index date.
+    -- TODO [TARGET COHORT]: Set index date — the moment the patient "enters" the study.
+    -- This date anchors all downstream analysis: covariates are measured BEFORE it,
+    -- outcomes are measured AFTER it.
     -- Common choices: vo.visit_start_date, po.procedure_date,
     -- de.drug_exposure_start_date, co.condition_start_date.
     CAST(vo.visit_start_date AS DATE) AS index_date,
 
-    -- TODO [TARGET COHORT]: Set cohort end date.
+    -- TODO [TARGET COHORT]: Set cohort end date — when follow-up stops for this patient.
+    -- This determines how long the patient is "at risk" for the outcome.
+    -- See the COHORT END DATE section in the header above for guidance.
     -- Common choices:
-    --   • Visit end date (as below) — for procedure-based cohorts
-    --   • DATEADD(DAY, N, vo.visit_start_date) — fixed follow-up window
-    --   • Death date from person table
-    --   • End of observation period from observation_period table
+    --   • Visit end date (as below) — for in-hospital outcomes during the index admission
+    --   • DATEADD(DAY, N, vo.visit_start_date) — fixed follow-up (N = prediction_window_days)
+    --   • Death date from person table — when death is a competing event
+    --   • End of observation period — for long-term follow-up to data availability
     CAST(
       ISNULL(vo.visit_end_date, DATEADD(DAY, 1, vo.visit_start_date))
       AS DATE
     ) AS cohort_end_date,
 
     -- TODO [TARGET COHORT]: Choose event ordering for one-event-per-person logic.
-    -- ASC  = keep the FIRST (earliest) qualifying event per person.
-    -- DESC = keep the MOST RECENT qualifying event per person.
-    -- Remove the ROW_NUMBER filter entirely to allow multiple entries per person.
+    -- Most study designs require exactly one entry per person (the "new user" design).
+    -- ASC  = keep the FIRST (earliest) qualifying event — standard for new-user designs.
+    -- DESC = keep the MOST RECENT qualifying event.
+    -- Remove the ROW_NUMBER filter at the bottom to allow multiple entries per person.
     ROW_NUMBER() OVER (
       PARTITION BY vo.person_id
       ORDER BY vo.visit_start_date ASC
@@ -173,10 +200,27 @@ FROM (
     )
 
     -- TODO [TARGET COHORT]: Define washout / exclusion criteria (optional).
-    -- This block excludes patients who had the outcome (or another disqualifying
-    -- event) in the N days before the index date.
+    --
+    -- A washout period excludes patients who already had the outcome (or the exposure)
+    -- before the index date. This is important for two reasons:
+    --
+    --   1. INCIDENT case design — for prognostic models and new-user designs you want
+    --      patients who are truly NEW to the exposure or outcome. Patients who already
+    --      had the outcome before entry are "prevalent" cases and would bias the model.
+    --
+    --   2. Immortal time / selection bias — patients who enter despite having the outcome
+    --      already create a situation where the model appears to predict something that
+    --      was already determined before the index date.
+    --
+    -- How long should the washout window be?
+    --   • 365 days is a common default (one full year of prior history).
+    --   • Use longer windows (e.g. all prior history) for rare outcomes that are unlikely
+    --     to recur if they happened years ago.
+    --   • Match the washout window to the minimum prior observation requirement in
+    --     workflow/02 Section C (min_prior_observation_days).
+    --
     -- Replace concept_id = 0 with your washout condition ancestor concept ID.
-    -- Remove this entire block if no washout is needed.
+    -- Remove this entire block if no washout is needed for your design.
     AND NOT EXISTS (
       SELECT 1
       FROM @cdm_database_schema.condition_occurrence  prior_event
@@ -186,7 +230,7 @@ FROM (
         ca.ancestor_concept_id = 0    -- TODO [TARGET COHORT]: Replace 0 with washout concept ID
         AND prior_event.person_id = vo.person_id
         AND prior_event.condition_start_date
-              BETWEEN DATEADD(DAY, -365, vo.visit_start_date)  -- TODO: adjust washout window (days)
+              BETWEEN DATEADD(DAY, -365, vo.visit_start_date)  -- TODO: adjust to match min_prior_observation_days
                   AND DATEADD(DAY,   -1, vo.visit_start_date)
     )
 

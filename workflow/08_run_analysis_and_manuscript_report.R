@@ -98,18 +98,41 @@ source("R/cohorts.R")    # ensure_results_schema(), build_cohorts()
 config <- get_validation_config()
 configure_java(config)
 
-library(DatabaseConnector)
+library(DatabaseConnector)   # JDBC connectivity to SQL Server OMOP CDM
 
 # TODO [PACKAGES]: Load your analysis-specific packages here.
-# Load them after configure_java() so the JVM is already initialised.
-# Examples:
-#   library(SqlRender)
-#   library(PatientLevelPrediction)
-#   library(FeatureExtraction)
-#   library(CohortMethod)
-#   library(CohortDiagnostics)
-#   library(dplyr)
-#   library(ggplot2)
+# Load them AFTER configure_java() — the JVM must be running before any HADES
+# package that uses rJava (PatientLevelPrediction, CohortMethod, FeatureExtraction).
+#
+# Uncomment the lines for your study design. See workflow/07 for the full
+# reference list with one-sentence descriptions of each package's role.
+#
+# --- Core SQL utilities (uncomment if needed in Section 7) ---
+# library(SqlRender)           # SQL parameterization and SQL Server dialect translation
+#
+# --- Cohort characterization ---
+# library(FeatureExtraction)   # extracts patient features (demographics, Dx, Rx, Px)
+#                              # from the OMOP CDM into an analysis-ready matrix
+# library(CohortDiagnostics)   # validates cohort phenotypes before running analysis
+#
+# --- Prognostic modelling (note: FeatureExtraction is REQUIRED by PLP) ---
+# library(FeatureExtraction)         # covariate extraction — must load before PLP
+# library(PatientLevelPrediction)    # model training, evaluation, and validation
+# library(pROC)                      # AUROC with CIs for model discrimination
+# library(PRROC)                     # precision-recall AUC (better metric when outcome is rare)
+#
+# --- Causal inference (note: FeatureExtraction is REQUIRED by CohortMethod) ---
+# library(FeatureExtraction)         # propensity score covariate extraction
+# library(CohortMethod)              # new-user comparative cohort design (HR/RR/OR)
+# library(EmpiricalCalibration)      # corrects for residual confounding via negative controls
+# library(EvidenceSynthesis)         # meta-analysis when running across multiple sites
+#
+# --- Output and reporting ---
+# library(dplyr)       # data manipulation (filter, join, summarise)
+# library(ggplot2)     # plots (calibration curves, ROC, KM)
+# library(officer)     # generate Word (.docx) reports programmatically
+# library(flextable)   # formatted tables inside Word / HTML reports
+# library(openxlsx)    # Excel (.xlsx) output
 
 
 # =============================================================================

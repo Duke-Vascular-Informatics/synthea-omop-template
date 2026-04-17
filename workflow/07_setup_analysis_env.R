@@ -58,39 +58,73 @@ if (file.exists("renv/activate.R")) source("renv/activate.R")
 # DatabaseConnector and SqlRender are almost always required for OMOP studies
 # and are included by default. Add your analysis-specific packages below.
 #
+# DEPENDENCY CHAIN — why certain packages must be listed together:
+#
+#   PatientLevelPrediction REQUIRES FeatureExtraction.
+#     PLP does not extract covariates itself — it delegates to FeatureExtraction
+#     to build the feature matrix from the OMOP CDM. Both must be installed and
+#     listed here even if you never call FeatureExtraction functions directly.
+#
+#   CohortMethod REQUIRES FeatureExtraction.
+#     CohortMethod uses FeatureExtraction internally to build the covariate
+#     table for propensity score estimation. Same rule applies.
+#
+#   DatabaseConnector loads before PatientLevelPrediction / CohortMethod.
+#     These HADES packages open their own database connections internally using
+#     DatabaseConnector — they do not accept raw SQL Server connections. Always
+#     load DatabaseConnector first and ensure JAVA_HOME is set before any call
+#     to these packages (see the Java guard in Section 2 of Step 8).
+#
 # Reference lists by study design:
 #
 #   Cohort characterization
 #   ────────────────────────
-#   "FeatureExtraction"   — standardised covariate extraction from OMOP CDM
-#   "CohortDiagnostics"   — cohort characterization and diagnostics
-#   "Eunomia"             — synthetic OMOP CDM for testing (optional)
+#   "FeatureExtraction"   — extracts standardised patient features (demographics,
+#                           conditions, drugs, procedures) from the OMOP CDM;
+#                           used to describe the target cohort
+#   "CohortDiagnostics"   — validates cohort phenotypes: incidence, attrition,
+#                           time distributions, concept prevalence
+#   "Eunomia"             — lightweight synthetic OMOP CDM for local testing
+#                           (optional; remove before running against real data)
 #
 #   Prognostic modelling
 #   ────────────────────
-#   "PatientLevelPrediction"  — full supervised learning pipeline for OMOP
-#   "FeatureExtraction"       — covariate extraction (dependency of PLP)
-#   "pROC"                    — AUROC computation
-#   "PRROC"                   — AUPRC computation
-#   "ggplot2"                 — calibration and ROC plots
-#   "officer" / "flextable"   — Word report generation
+#   "PatientLevelPrediction"  — end-to-end supervised learning pipeline for OMOP:
+#                               data extraction, model training, evaluation, and
+#                               output (AUROC, calibration, feature importance)
+#   "FeatureExtraction"       — REQUIRED by PatientLevelPrediction; builds the
+#                               patient-feature matrix from the CDM
+#   "pROC"                    — computes AUROC and confidence intervals for model
+#                               discrimination (used in external validation)
+#   "PRROC"                   — computes area under precision-recall curve (AUPRC);
+#                               more informative than AUROC when outcome is rare
+#   "ggplot2"                 — calibration plots, ROC curves, feature importance
+#   "officer"                 — creates Word (.docx) reports programmatically
+#   "flextable"               — formats tables for Word / HTML output
 #
 #   Causal inference
 #   ────────────────
-#   "CohortMethod"            — comparative cohort (new-user) design
-#   "SelfControlledCaseSeries" — SCCS design
-#   "EvidenceSynthesis"       — meta-analysis across databases
-#   "FeatureExtraction"       — propensity score covariate extraction
+#   "CohortMethod"             — active comparator new-user cohort design;
+#                                propensity score estimation, matching/weighting,
+#                                and outcome modelling (HR, RR, OR)
+#   "SelfControlledCaseSeries" — SCCS design; each patient is their own control;
+#                                useful when confounding by indication is high
+#   "EvidenceSynthesis"        — meta-analysis across multiple databases or sites
+#   "FeatureExtraction"        — REQUIRED by CohortMethod; builds covariates for
+#                                propensity score model
+#   "EmpiricalCalibration"     — calibrates p-values and CIs using negative
+#                                controls to correct for residual confounding
 #
 #   General utilities (add as needed)
 #   ──────────────────────────────────
-#   "dplyr"    — data manipulation
-#   "readr"    — CSV I/O
-#   "tidyr"    — data reshaping
-#   "ggplot2"  — plotting
-#   "officer"  — Word documents
+#   "dplyr"     — data frame manipulation (filter, mutate, join, summarise)
+#   "readr"     — fast CSV reading / writing
+#   "tidyr"     — data reshaping (pivot_longer, pivot_wider, unnest)
+#   "ggplot2"   — grammar-of-graphics plotting
+#   "officer"   — Word document generation
 #   "flextable" — formatted tables in Word / HTML
-#   "openxlsx" / "writexl" — Excel output
+#   "openxlsx"  — Excel (.xlsx) output with formatting
+#   "knitr"     — R Markdown report rendering
 
 required <- c(
   # --- Always required for OMOP database access ---

@@ -31,6 +31,54 @@
 # =============================================================================
 # TODO [STUDY DESIGN]: Set study_design to match your analysis.
 #
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO CHOOSE YOUR STUDY DESIGN
+# ─────────────────────────────────────────────────────────────────────────────
+# Not sure which design fits your research question? Work through these prompts:
+#
+#   Step 1 — What is the core question?
+#
+#     "Who ARE these patients and what do they look like?"
+#       → "cohort_characterization"
+#          Describe demographics, comorbidities, medications, and healthcare
+#          utilisation in a single cohort. No comparison or outcome required.
+#          Example: "Describe patients undergoing hip replacement surgery."
+#
+#     "Who will DEVELOP a complication or event in the future?"
+#       → "prognostic_model"
+#          Build a prediction model: use patient characteristics at baseline
+#          (covariates) to predict whether an outcome occurs within a follow-up
+#          window. You still need ONE cohort and ONE outcome.
+#          Example: "Predict 90-day VTE risk after total knee replacement."
+#          Key question: "Who is at risk?"
+#
+#     "Did the TREATMENT cause a better (or worse) outcome?"
+#       → "causal_inference"
+#          Compare outcomes between a treated group (target) and a control
+#          group (comparator). Requires matching or propensity score adjustment
+#          to handle confounding.
+#          Example: "Does prophylactic antibiotics reduce 30-day SSI rate
+#                    vs. no prophylaxis?"
+#          Key question: "Did the treatment help?"
+#
+#     "How do two groups DIFFER in their baseline characteristics?"
+#       → "descriptive"
+#          Compare demographics and comorbidities between two cohorts without
+#          estimating a causal effect or predicting an outcome.
+#          Example: "Compare laparoscopic vs. open colectomy patients."
+#
+#     None of the above fits → "custom" (minimal validation).
+#
+#   Step 2 — What do I need?
+#
+#     Design                  | Target | Comparator | Outcome | Covariates
+#     ─────────────────────────────────────────────────────────────────────
+#     cohort_characterization |  Yes   |     No     |   No    | Optional
+#     prognostic_model        |  Yes   |     No     |   Yes   | Required
+#     causal_inference        |  Yes   |    Yes     |   Yes   | Required
+#     descriptive             |  Yes   |    Yes     |   No    | Optional
+#
+# ─────────────────────────────────────────────────────────────────────────────
 # Options:
 #   "cohort_characterization" — Describe a single cohort. No outcome or
 #                               comparator required. Step 8 will typically
