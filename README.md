@@ -180,6 +180,7 @@ mkdir OMOP_Dev && cd OMOP_Dev
 git clone https://github.com/<your-org>/<your-study>.git
 
 # Create the .env file with your SQL Server SA password
+# If you have not created a SQL Server password before, you can create one now. Avoid using an exclamation mark in the password
 echo "MSSQL_SA_PASSWORD=YourStrong@Passw0rd" > .env
 
 # Copy docker-compose.yml from the repo to OMOP_Dev/ and start the container
@@ -198,7 +199,7 @@ docker exec mssql_dev bash -c \
 4. Rebuild CPT-4 codes (requires a free [UMLS API key](https://uts.nlm.nih.gov)):
    ```bash
    bash omop_vocab/cpt.sh   # macOS/Linux
-   # omop_vocab\cpt.bat     # Windows
+   # omop_vocab\cpt.bat <UMLS API Key> 4   # Windows
    ```
 
 ### Step 3 — Install VS Code and open the dev container
