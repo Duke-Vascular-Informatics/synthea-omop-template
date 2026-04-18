@@ -1,13 +1,13 @@
 # OMOP Study Template
 
-A reusable starter kit for observational studies on an OMOP CDM v5.4 SQL Server database.
-Supports **cohort characterization**, **prognostic modelling**, and **causal inference**
-using the OHDSI toolstack (DatabaseConnector, SqlRender, FeatureExtraction,
+This GitHub repo is a reusable starter kit for electronic health care record based observational studies, utilizing an OMOP CDM v5.4 SQL Server database.
+The type of analyses supported include **cohort characterization**, **prognostic modelling**, and **causal inference**
+using Synthea-generated synthetic patient data and the OHDSI toolstack (DatabaseConnector, SqlRender, FeatureExtraction,
 PatientLevelPrediction, CohortMethod).
 
-The template is self-contained and offline-capable: all R packages are pinned in
+The template is self-contained and optimized to develop analytic code utilizing claude code.  The purpose of this development workflow is to create tranportable offline-capable code: all R packages are pinned in
 `renv.lock`, the JDBC driver is bundled, and OHDSI packages ship as prebuilt binaries
-so the full workflow runs in air-gapped or restricted-network environments.
+so the resulting analytic code runs in air-gapped or restricted-network environments.
 
 ---
 
@@ -34,7 +34,7 @@ Work through the files below **in order**. Each one feeds the next.
 Run this command first to see every placeholder that needs your input:
 
 ```bash
-grep -rn "TODO \[" config.R cohorts/ risk_score/ workflow/02* workflow/07* workflow/08*
+grep -rn "TODO \[" config.R cohorts/ covariates/ workflow/02* workflow/07* workflow/08*
 ```
 
 #### `config.R` — study identity and infrastructure
@@ -75,7 +75,7 @@ Rename (e.g. `cohorts/vte_outcome.sql`) and update `config$outcome_cohort_sql`. 
 Create this file (copy and adapt `target_surgery.sql`) and set `config$comparator_cohort_sql`
 and `config$comparator_cohort_id`. Leave `comparator_cohort_sql = NULL` for other designs.
 
-#### `risk_score/components.csv` — covariate definitions
+#### `covariates/components.csv` — covariate definitions
 
 Replace the placeholder rows (`covariate_1`, `covariate_2`, …) with your study covariates.
 Each row defines one scored predictor: domain, lookback window (days), and point value.
@@ -84,13 +84,13 @@ See the inline column documentation in the file for full details.
 Set both covariate paths to `NULL` in config if you will define covariates using a
 `FeatureExtraction::createCovariateSettings()` object in Step 8 instead.
 
-#### `risk_score/component_concepts.csv` — OMOP concept mappings
+#### `covariates/component_concepts.csv` — OMOP concept mappings
 
 Map each `component_id` from `components.csv` to one or more verified standard OMOP
 concept IDs. Use the concept lookup query in the file header to find the right IDs.
 Replace all `concept_id = 0` placeholders before running Step 8.
 
-#### `risk_score/risk_lookup.csv` — score-to-probability table *(optional)*
+#### `covariates/risk_lookup.csv` — score-to-probability table *(optional)*
 
 Populate from your model's published lookup table, or leave empty to use
 recalibrated logistic regression only.
@@ -136,7 +136,7 @@ Rscript workflow/08_run_analysis_and_manuscript_report.R
 ### 5 — Commit your study definition
 
 ```bash
-git add config.R cohorts/ risk_score/ workflow/07* workflow/08*
+git add config.R cohorts/ covariates/ workflow/07* workflow/08*
 git commit -m "Define <study name> cohort, covariates, and analysis"
 git push
 ```
@@ -149,7 +149,7 @@ git push
 |------------------------|-------------|
 | `config.R` (all TODO items) | `R/drivers.R`, `R/connection.R` |
 | `cohorts/*.sql` | `setup/`, `.devcontainer/` |
-| `risk_score/*.csv` | `renv.lock` (update only if you need a different package version) |
+| `covariates/*.csv` | `renv.lock` (update only if you need a different package version) |
 | `workflow/07` package list | `workflow/01`, `03–06` |
 | `workflow/08` sections 7–9 | `R/cohorts.R` |
 
@@ -258,7 +258,7 @@ Step 8 must be run in a **fresh R session** (the Java/JDBC guard will stop it ot
   setup/                      ← renv + package install helpers
   scripts/                    ← ETL, Synthea runner, QC utilities
   cohorts/                    ← SQL cohort definitions (edit these)
-  risk_score/                 ← covariate CSV spec files (edit these)
+  covariates/                 ← covariate CSV spec files (edit these)
   synthea/modules/            ← Synthea disease module + diagram
   portable/                   ← self-contained bundle for external sites
   internal_repo/              ← prebuilt OHDSI package binaries

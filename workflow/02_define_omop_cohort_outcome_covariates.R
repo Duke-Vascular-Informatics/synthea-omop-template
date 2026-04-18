@@ -160,7 +160,7 @@ outcome_cohort_sql_path <- "cohorts/outcome_ssi.sql"     # <-- RENAME / REPLACE 
 #     Set both covariate_* paths to NULL here.
 #
 #   Option 2 — Custom CSV specification (as used by this template's pipeline):
-#     Populate risk_score/components.csv and risk_score/component_concepts.csv.
+#     Populate covariates/components.csv and covariates/component_concepts.csv.
 #     Set paths below.
 #
 #   Option 3 — ATLAS concept sets or cohort features (JSON files):
@@ -169,8 +169,8 @@ outcome_cohort_sql_path <- "cohorts/outcome_ssi.sql"     # <-- RENAME / REPLACE 
 #   Option 4 — No pre-specified covariates (e.g. cohort characterization only):
 #     Set both to NULL.
 #
-covariate_components_path <- "risk_score/components.csv"          # <-- SET path, or NULL
-covariate_concepts_path   <- "risk_score/component_concepts.csv"  # <-- SET path, or NULL
+covariate_components_path <- "covariates/components.csv"          # <-- SET path, or NULL
+covariate_concepts_path   <- "covariates/component_concepts.csv"  # <-- SET path, or NULL
 
 
 # =============================================================================

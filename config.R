@@ -125,12 +125,12 @@ get_validation_config <- function() {
 
     # -------------------------------------------------------------------------
     # Covariate / feature definition files.
-    # Used by R/risk_score_pipeline.R or custom covariate extraction code.
+    # Used by R/covariates_pipeline.R or custom covariate extraction code.
     # Set to NULL if using FeatureExtraction settings objects instead of CSVs.
     # -------------------------------------------------------------------------
-    covariate_components_file = file.path("risk_score", "components.csv"),
-    covariate_concepts_file   = file.path("risk_score", "component_concepts.csv"),
-    covariate_lookup_file     = file.path("risk_score", "risk_lookup.csv"),
+    covariate_components_file = file.path("covariates", "components.csv"),
+    covariate_concepts_file   = file.path("covariates", "component_concepts.csv"),
+    covariate_lookup_file     = file.path("covariates", "risk_lookup.csv"),
 
     # -------------------------------------------------------------------------
     # TODO [CONFIG]: Prediction / follow-up window (days).

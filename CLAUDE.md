@@ -12,7 +12,7 @@ and offline-capable.
 Study-specific content lives in:
 - `config.R` — all settings (schemas, cohort IDs, SQL paths, study dates, output folder)
 - `cohorts/` — SQL cohort definitions (target, comparator, outcome)
-- `risk_score/` — covariate definition CSVs and score lookup table
+- `covariates/` — covariate definition CSVs and score lookup table
 - `workflow/02` — study design declaration and artifact validation
 - `workflow/07` — analysis package list
 - `workflow/08` — analysis code (Sections 7–9)
@@ -180,9 +180,9 @@ When a user is setting up a new study from this template:
    (still contain placeholder values like `"my_study"`, `"cdm_my_study"`, `0` concept IDs).
 2. Read the cohort SQL files referenced in `config$target_cohort_sql` and
    `config$outcome_cohort_sql` and flag any remaining `concept_id = 0` placeholders.
-3. Check `risk_score/components.csv` for placeholder rows (`component_id` matching
+3. Check `covariates/components.csv` for placeholder rows (`component_id` matching
    `covariate_1`, `covariate_2`, etc.).
-4. Check `risk_score/component_concepts.csv` for `concept_id = 0` rows.
+4. Check `covariates/component_concepts.csv` for `concept_id = 0` rows.
 5. Summarize what is complete and what still needs filling in before running Step 8.
 
 ---

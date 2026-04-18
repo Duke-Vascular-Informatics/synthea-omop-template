@@ -2,7 +2,7 @@
 
 Work through this list top-to-bottom before running Step 8.
 Each item maps to a `TODO [CONFIG]` or `TODO [*]` placeholder in the codebase.
-Run `grep -rn "TODO \[" config.R cohorts/ risk_score/ workflow/02* workflow/07* workflow/08*`
+Run `grep -rn "TODO \[" config.R cohorts/ covariates/ workflow/02* workflow/07* workflow/08*`
 at any time to see all remaining placeholders.
 
 ---
@@ -87,7 +87,7 @@ at any time to see all remaining placeholders.
 
 ---
 
-## risk_score/components.csv
+## covariates/components.csv
 
 > Only needed if using the custom CSV-based covariate pipeline.
 > Set `covariate_components_path = NULL` in `workflow/02` if using
@@ -103,9 +103,9 @@ at any time to see all remaining placeholders.
 
 ---
 
-## risk_score/component_concepts.csv
+## covariates/component_concepts.csv
 
-> Only needed if `risk_score/components.csv` is populated.
+> Only needed if `covariates/components.csv` is populated.
 
 - [ ] Replace all `concept_id = 0` rows with verified standard OMOP concept IDs
 - [ ] Run `/concept-lookup` for each covariate before writing any concept ID
@@ -151,6 +151,6 @@ at any time to see all remaining placeholders.
 - [ ] `Rscript workflow/07_setup_analysis_env.R` — all packages verified
 - [ ] `Rscript workflow/08_run_analysis_and_manuscript_report.R` — runs to completion
 - [ ] Output files written to `config$output_folder` — review for correctness
-- [ ] Commit: `git add config.R cohorts/ risk_score/ workflow/07* workflow/08*`
+- [ ] Commit: `git add config.R cohorts/ covariates/ workflow/07* workflow/08*`
       `git commit -m "Define <study name> cohort, covariates, and analysis"`
       `git push`
