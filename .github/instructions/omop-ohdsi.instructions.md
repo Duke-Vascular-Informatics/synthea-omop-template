@@ -185,7 +185,7 @@ Use **HADES packages** as the canonical implementation for each study design:
 
 Only reach for non-HADES packages (e.g., `pROC`, `ggplot2`) for tasks not covered by
 HADES (model diagnostics, visualization). All non-HADES packages must be available on
-the Duke CRAN mirror: `https://archive.linux.duke.edu/cran/`.
+the project-configured CRAN mirror (see `CRAN_MIRROR` in `.env`).
 
 ## Verbose Comment Requirements (OHDSI GitHub Style)
 

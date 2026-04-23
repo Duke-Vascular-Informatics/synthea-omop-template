@@ -177,8 +177,8 @@ if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home
 required_pkgs <- c("DatabaseConnector", "SqlRender", "data.table")
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs) > 0) {
-  # Enforce repository-standard CRAN mirror for reproducibility.
-  options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+  # Use CRAN_MIRROR env var (set in .env) or fall back to cloud.r-project.org.
+  options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
   message("Installing missing Step 5 packages via renv: ", paste(missing_pkgs, collapse = ", "))
   for (pkg in missing_pkgs) {
     renv::install(pkg)

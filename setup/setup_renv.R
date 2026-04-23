@@ -6,7 +6,7 @@
 # Usage: source("setup/setup_renv.R")
 # =============================================================================
 
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 
 # Install renv if not present
 if (!requireNamespace("renv", quietly = TRUE)) {

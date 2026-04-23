@@ -106,7 +106,7 @@ if (!requireNamespace("DatabaseConnector", quietly = TRUE)) {
   if (!requireNamespace("renv", quietly = TRUE)) {
     stop("DatabaseConnector is missing and renv is unavailable to install it.")
   }
-  options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+  options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
   message("DatabaseConnector not found after setup; installing via renv::install('DatabaseConnector') ...")
   renv::install("DatabaseConnector")
 }

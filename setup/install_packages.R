@@ -49,7 +49,7 @@ options(java.parameters = java_params)
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 # --- CRAN mirror --------------------------------------------------------------
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 
 # --- Ensure remotes / rJava are available for GitHub installs ----------------
 if (!requireNamespace("remotes", quietly = TRUE)) renv::install("remotes")

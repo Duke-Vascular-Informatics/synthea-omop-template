@@ -40,11 +40,12 @@
 #     dependencies = c("Depends", "Imports", "LinkingTo")
 #   instead of dependencies = TRUE (which installs Suggests as well).
 #
-# Uses the Duke CRAN mirror (archive.linux.duke.edu/cran) which is accessible
-# from PRCC nodes without an external internet connection.
+# CRAN mirror is read from the CRAN_MIRROR environment variable (set in .env
+# or exported in your shell).  Falls back to cloud.r-project.org if unset.
+# Use your institution's local mirror if nodes lack external internet access.
 # =============================================================================
 
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 
 message("Installing R packages for PAD/OLER SSI validation bundle ...")
 message("CRAN mirror: ", getOption("repos")["CRAN"])

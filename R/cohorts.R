@@ -12,14 +12,14 @@
 # user has SELECT/INSERT/CREATE TABLE permission in results_database.
 #
 # SCHEMA NAMES WITH SPECIAL CHARACTERS:
-# Schema names containing backslashes (e.g. "dhe\apj20") must be
-# bracket-quoted in SQL Server: [dhe\apj20].  bracket_quote() handles this
+# Schema names containing backslashes (e.g. "domain\username") must be
+# bracket-quoted in SQL Server: [domain\username].  bracket_quote() handles this
 # automatically so config$results_schema can be stored without brackets.
 # =============================================================================
 
 # Helper: bracket-quotes a SQL Server identifier when it contains characters
 # that require quoting (backslash, space, hyphen, dot, etc.).
-# e.g. "dhe\\apj20" -> "[dhe\\apj20]",  "dbo" -> "dbo"
+# e.g. "domain\\username" -> "[domain\\username]",  "dbo" -> "dbo"
 bracket_quote <- function(name) {
   needs_quoting <- grepl("[\\\\\\s\\-\\.]", name, perl = TRUE)
   already_quoted <- grepl("^\\[", name)

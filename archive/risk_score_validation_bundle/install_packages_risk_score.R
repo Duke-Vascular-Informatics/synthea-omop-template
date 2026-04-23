@@ -1,7 +1,7 @@
 # Install only packages required for the portable OMOP risk score bundle.
 # Use in a fresh R session.
 
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 
 required_packages <- c(
   "DatabaseConnector",

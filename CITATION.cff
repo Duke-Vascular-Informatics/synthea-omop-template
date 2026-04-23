@@ -1,53 +1,46 @@
 cff-version: 1.2.0
 message: >
   If you use this software in your research, please cite it using the
-  metadata below.
+  metadata below. Update this file with your study-specific details before
+  publishing.
 
 title: >
-  PAD/OLER SSI Validation: External Validation of a Surgical Site Infection
-  Risk Score in Peripheral Arterial Disease Using OMOP CDM
+  OMOP Study Template: An End-to-End Observational Study Pipeline for OMOP CDM
+  using OHDSI HADES and Synthea Synthetic Data
 
 authors:
-  - given-names: Adam P.
-    family-names: Johnson
-    name-suffix: MD MPH
-    email: apj20@uke.edu
-    affiliation: >-
-      Duke University School of Medicine, Department of Surgery,
-      Division of Vascular and Endovascular Surgery and
-      Department of Population Health Sciences
-    orcid: "https://orcid.org/0000-0002-3014-6372"
+  - given-names: "[TODO]"
+    family-names: "[TODO]"
+    email: "[TODO]"
+    affiliation: "[TODO]"
 
 version: "1.0.0"
 date-released: "2026-04-05"
 
-repository-code: "https://github.com/adam-mdmph/pad-oler-ssi-val"
-url: "https://github.com/adam-mdmph/pad-oler-ssi-val"
+repository-code: "https://github.com/[TODO]/[TODO]"
+url: "https://github.com/[TODO]/[TODO]"
 
 license: GPL-3.0
 
 abstract: >
-  An end-to-end external validation pipeline for an integer risk score predicting
-  surgical site infection (SSI) following open revascularization for peripheral
-  arterial disease (PAD). The pipeline runs on OMOP CDM v5.4 data (SQL Server),
-  uses OHDSI PatientLevelPrediction for cohort generation and model evaluation,
-  and includes synthetic data generation via a custom Synthea module to support
-  reproducible development and testing. Workflow steps cover environment setup,
-  cohort definition, Synthea-based synthetic data generation, ETL to OMOP,
-  data quality assessment (ACHILLES, OHDSI Data Quality Dashboard), risk score
-  evaluation, and manuscript-format report generation.
+  A GitHub Template Repository providing an end-to-end pipeline for observational
+  studies on an OMOP CDM v5.4 SQL Server database. Supports cohort characterization,
+  prognostic modelling, and causal inference using the OHDSI HADES R toolstack.
+  Includes synthetic data generation via Synthea for reproducible development and
+  testing. Workflow steps cover environment setup, cohort definition, ETL to OMOP,
+  data quality assessment (ACHILLES, Data Quality Dashboard), analysis, and
+  manuscript-format report generation.
 
 keywords:
-  - peripheral arterial disease
-  - surgical site infection
-  - external validation
-  - prediction model
   - OMOP CDM
   - OHDSI
-  - PatientLevelPrediction
-  - Synthea
+  - observational study
   - real-world data
   - clinical informatics
+  - PatientLevelPrediction
+  - CohortMethod
+  - FeatureExtraction
+  - Synthea
   - R
 
 references:

@@ -1,5 +1,5 @@
 ---
-description: "Use when installing, loading, or suggesting R packages. Enforces HADES-first priority, tidyverse fallback, Duke CRAN mirror, and renv workflow."
+description: "Use when installing, loading, or suggesting R packages. Enforces HADES-first priority, tidyverse fallback, project CRAN mirror, and renv workflow."
 applyTo: "**/*.R"
 ---
 
@@ -41,12 +41,12 @@ file I/O), use tidyverse packages:
 dplyr, tidyr, ggplot2, readr, purrr, stringr, lubridate, forcats, tibble
 ```
 
-All tidyverse packages are available on the Duke CRAN mirror.
+All tidyverse packages are available on the project CRAN mirror.
 
-### 3. Other Duke CRAN mirror packages (third)
+### 3. Other CRAN packages (third)
 
-Any package not covered by HADES or tidyverse must be available on the project-approved
-CRAN mirror: `https://archive.linux.duke.edu/cran/`
+Any package not covered by HADES or tidyverse must be available on the project-configured
+CRAN mirror (set via `CRAN_MIRROR` in `.env`; defaults to `https://cloud.r-project.org`).
 
 Common approved additions for OMOP studies:
 
@@ -66,16 +66,16 @@ rmarkdown    # R Markdown documents
 - Packages available only on Bioconductor
 - Python or Julia packages or interop layers (`reticulate`, `rJulia`)
 - `dbplyr`, `odbc`, or `DBI` directly (use `DatabaseConnector` instead)
-- Any package that requires a non-Duke CRAN mirror to install
 
 ---
 
 ## CRAN Mirror
 
-Always use the project-approved CRAN mirror — never suggest the default or any other mirror:
+Always use the project-configured CRAN mirror — read from the `CRAN_MIRROR` environment
+variable (set in `.env`).  Never hardcode a mirror URL:
 
 ```r
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 ```
 
 ---

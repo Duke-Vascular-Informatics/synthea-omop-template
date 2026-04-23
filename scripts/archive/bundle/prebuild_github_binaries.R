@@ -12,7 +12,7 @@
 # =============================================================================
 
 if (file.exists("renv/activate.R")) source("renv/activate.R")
-options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))
+options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))
 
 # Keep Java configured for subprocesses (R CMD build / INSTALL) because
 # FeatureExtraction and PatientLevelPrediction load DatabaseConnector/rJava.

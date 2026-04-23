@@ -1,9 +1,9 @@
 # =============================================================================
-# config.R — PAD/OLER SSI Validation Bundle — Duke PRCC Configuration
+# config.R — Portable Bundle Configuration
 #
-# Fill in the CHANGE_ME values for your PRCC environment before running.
-# All other settings (risk score files, output folder, prediction window)
-# can be left at their defaults.
+# Institution-specific connection values are read from environment variables.
+# Set them in a .env file at the bundle root or export them in your shell
+# before launching R.  See .env.example for the full list.
 #
 # Authentication: Kerberos (NetID). Run setup_prcc_env.sh first to obtain
 # a Kerberos ticket. Java is provided by the conda openjdk environment; this
@@ -60,40 +60,36 @@ get_validation_config <- function() {
     jdbc_runtime_dir = jdbc_runtime_dir,
     prcc_jar         = prcc_jar,
 
-    # ---- UPDATE THESE -------------------------------------------------------
+    # ---- CONNECTION (read from environment variables — set in .env) ---------
     # SQL Server hostname. Omit the port when using the default (1433).
     # Only include ":port" if the instance uses a non-standard port.
-    server           = "caboodleprod.dhe.duke.edu",
+    server           = Sys.getenv("OMOP_SERVER",   unset = "YOUR_SERVER.example.com"),
 
     # Database containing the OMOP CDM (read-only access is sufficient).
-    database         = "ACE_DATA",
+    database         = Sys.getenv("OMOP_DATABASE", unset = "YOUR_DATABASE"),
 
     # Kerberos SPN host — the hostname portion only (no port, no MSSQLSvc/ prefix).
     # When a non-default port is used the SPN format is MSSQLSvc/<host>:<port>
     # — connection.R appends the port automatically from config$server.
-    # Contact DHTS if unsure of the correct hostname.
-    spn_host         = "pwp-cabdb01.dhe.duke.edu",
+    # Contact your HPC support team if unsure of the correct SPN hostname.
+    spn_host         = Sys.getenv("OMOP_SPN_HOST", unset = "YOUR_SPN_HOST"),
 
     # Schema holding shared OMOP vocabulary tables
     # (concept, concept_ancestor, concept_relationship, etc.)
-    vocab_schema     = "CDRN_OMOP",
+    vocab_schema     = Sys.getenv("OMOP_VOCAB_SCHEMA", unset = "omop_vocab"),
 
     # CDM schema (person, visit_occurrence, condition_occurrence, etc.)
-    cdm_schema       = "CDRN_OMOP",
+    cdm_schema       = Sys.getenv("OMOP_CDM_SCHEMA",   unset = "omop_cdm"),
 
     # Results database — the database where cohort tables will be written.
     # This may differ from the CDM database if you only have read access to
-    # the CDM (e.g. ACE_DATA) but write access to a separate scratch/results
-    # database.  Leave as NA to use the same database as the CDM.
-    # Example: "dhe_results"
-    # Results database — set to NA if writing to the same database as the CDM.
-    # Only change this if your write access is in a completely separate database.
+    # the CDM but write access to a separate scratch/results database.
+    # Leave as NA to use the same database as the CDM.
     results_database = NA,
 
-    # Results schema within the results database.
-    # This is your personal write schema — [dhe\apj20] within ACE_DATA.
-    results_schema   = "dhe\\apj20",
-    # ---- END UPDATE ---------------------------------------------------------
+    # Results schema within the results database (your personal write schema).
+    results_schema   = Sys.getenv("OMOP_RESULTS_SCHEMA", unset = "your_results_schema"),
+    # ---- END CONNECTION -----------------------------------------------------
 
     dbms             = "sql server",
     cohort_table     = "pad_ssi_val_cohort",
@@ -132,8 +128,8 @@ get_validation_config <- function() {
     study_end_date   = "2023-12-31",
 
     # Database identifier metadata (written into output files)
-    cdm_database_id          = "duke_ace_data_omop",
-    cdm_database_name        = "Duke University Health System OMOP CDM (ACE_DATA)",
-    cdm_database_description = "Duke University Health System OMOP CDM, ACE_DATA database, CDRN_OMOP schema, accessed via PRCC Kerberos authentication on caboodleprod.dhe.duke.edu"
+    cdm_database_id          = Sys.getenv("OMOP_CDM_DATABASE_ID",          unset = "your_cdm_v5.4"),
+    cdm_database_name        = Sys.getenv("OMOP_CDM_DATABASE_NAME",        unset = "Your Institution OMOP CDM"),
+    cdm_database_description = Sys.getenv("OMOP_CDM_DATABASE_DESCRIPTION", unset = "Brief description of the patient population and database.")
   )
 }

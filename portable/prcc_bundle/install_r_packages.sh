@@ -19,7 +19,8 @@
 #   2. Runs `Rscript install_packages.R`, which:
 #        a. Runs R CMD javareconf so R picks up the conda JDK headers
 #           (required for rJava compilation).
-#        b. Installs all required R packages from the Duke CRAN mirror,
+#        b. Installs all required R packages from the configured CRAN mirror
+#           (CRAN_MIRROR env var; defaults to cloud.r-project.org),
 #           skipping any that are already installed.
 #        c. Verifies all packages load successfully and prints a summary.
 #

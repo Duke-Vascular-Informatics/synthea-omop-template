@@ -57,6 +57,9 @@ external/
 # Generated portable bundle archives
 dist/*.zip
 
+# Institution-specific environment variables — never commit
+.env
+
 # Claude Code session files
 .claude/
 

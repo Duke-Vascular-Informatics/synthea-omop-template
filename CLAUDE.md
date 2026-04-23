@@ -95,10 +95,10 @@ When selecting packages for any analysis task, apply this strict priority order:
    wrangling, visualization, string manipulation, I/O), prefer tidyverse packages: `dplyr`,
    `tidyr`, `ggplot2`, `readr`, `purrr`, `stringr`, `lubridate`, `forcats`.
 
-3. **Duke CRAN mirror only** — any package must be available on the project CRAN mirror:
-   `https://archive.linux.duke.edu/cran/`. Do not suggest packages that are only on
-   GitHub, Bioconductor, or any other source unless they are OHDSI HADES packages
-   pre-built in `internal_repo/bin/`.
+3. **Project CRAN mirror only** — any package must be available on the project CRAN mirror
+   (configured via `CRAN_MIRROR` in `.env`; defaults to `https://cloud.r-project.org`).
+   Do not suggest packages that are only on GitHub, Bioconductor, or any other source
+   unless they are OHDSI HADES packages pre-built in `internal_repo/bin/`.
 
 4. **Never suggest** `dbplyr`, `odbc`, `DBI` directly, or any Python/Julia dependency.
 
@@ -116,7 +116,7 @@ When selecting packages for any analysis task, apply this strict priority order:
 
 - Install via `renv::install()` — never bare `install.packages()`
 - After adding a package: `renv::snapshot()`
-- CRAN mirror: `options(repos = c(CRAN = "https://archive.linux.duke.edu/cran/"))`
+- CRAN mirror: `options(repos = c(CRAN = Sys.getenv("CRAN_MIRROR", unset = "https://cloud.r-project.org")))`
 
 ---
 

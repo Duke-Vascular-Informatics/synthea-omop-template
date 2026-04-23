@@ -4,7 +4,7 @@
     "Repositories": [
       {
         "Name": "CRAN",
-        "URL": "https://archive.linux.duke.edu/cran"
+        "URL": "https://cloud.r-project.org"
       }
     ]
   },
