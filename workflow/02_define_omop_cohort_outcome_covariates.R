@@ -132,25 +132,16 @@ study_design <- "prognostic_model"   # <-- REPLACE with your study design
 #   cohorts/outcome_ssi.sql     — outcome cohort template
 # Rename or copy them as needed for your study.
 
-# --- Required for all designs ---
-# NOTE: this path must also match config$target_cohort_sql in config.R so that
-# build_cohorts() in Step 8 reads the same file you validated here.
-target_cohort_sql_path <- "cohorts/target_surgery.sql"   # <-- RENAME / REPLACE path
-
-# --- Required for: causal_inference | descriptive ---
-# Set to NULL if study_design is "cohort_characterization" or "prognostic_model".
+# --- Cohort SQL paths are read from config.R (single source of truth) ---
+# Set target_cohort_sql, comparator_cohort_sql, and outcome_cohort_sql in
+# config.R. This step reads those values automatically — no duplication needed.
 #
-# IMPORTANT: when you set a comparator SQL path here, also set
-#   comparator_cohort_id = <integer>L   in config.R
-# so that build_cohorts() (R/cohorts.R) knows which cohort_definition_id to
-# assign and Step 8 analysis code can reference config$comparator_cohort_id.
-comparator_cohort_sql_path <- NULL    # <-- SET path (e.g. "cohorts/comparator_cohort.sql"),
-                                      #     or leave NULL if not applicable
-
-# --- Required for: prognostic_model | causal_inference ---
-# Set to NULL if study_design is "cohort_characterization" or "descriptive".
-# NOTE: must also match config$outcome_cohort_sql in config.R.
-outcome_cohort_sql_path <- "cohorts/outcome_ssi.sql"     # <-- RENAME / REPLACE path
+# Names your files to reflect the study concept, not the template default, and
+# update config$target_cohort_sql / config$outcome_cohort_sql to match.
+#
+# config.R is sourced in Chunk 1 below; the three path variables are set there
+# from config$target_cohort_sql, config$comparator_cohort_sql, and
+# config$outcome_cohort_sql.  Do not set them here.
 
 # --- Covariate / feature definitions ---
 # How you define covariates depends on your analysis approach:
@@ -229,6 +220,14 @@ bootstrap_path <- local({
 })
 source(bootstrap_path)
 set_workflow_root()
+
+# Read cohort SQL paths from config.R — single source of truth.
+# Step 8 (build_cohorts) reads the same config, so the paths never diverge.
+source("config.R")
+config <- get_validation_config()
+target_cohort_sql_path     <- config$target_cohort_sql
+comparator_cohort_sql_path <- config$comparator_cohort_sql
+outcome_cohort_sql_path    <- config$outcome_cohort_sql
 
 
 # -----------------------------------------------------------------------------
