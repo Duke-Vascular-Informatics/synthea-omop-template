@@ -33,8 +33,8 @@ cd <your-study>
 Work through the files below **in order**. Each one feeds the next.
 Run this command first to see every placeholder that needs your input:
 
-```bash
-grep -rn "TODO \[" config.R cohorts/ covariates/ workflow/02* workflow/07* workflow/08*
+```r
+Rscript scripts/find_todos.R
 ```
 
 #### `config.R` — study identity and infrastructure

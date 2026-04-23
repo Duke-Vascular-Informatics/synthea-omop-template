@@ -142,7 +142,7 @@ GitHub repositories (e.g., HADES package source code, Book of OHDSI example scri
   ancestor_concept_id  = 0        # [REPLACE] TODO: insert verified ancestor concept ID
   ```
 - **TODO blocks**: use `# TODO [LABEL]:` tags (matching the project convention) so they
-  are findable by `grep -rn "TODO \["`.
+  are findable by `Rscript scripts/find_todos.R` (cross-platform).
 
 **Do not**:
 - Leave concept IDs with no comment explaining what they represent.

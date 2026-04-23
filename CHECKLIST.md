@@ -2,8 +2,7 @@
 
 Work through this list top-to-bottom before running Step 8.
 Each item maps to a `TODO [CONFIG]` or `TODO [*]` placeholder in the codebase.
-Run `grep -rn "TODO \[" config.R cohorts/ covariates/ workflow/02* workflow/07* workflow/08*`
-at any time to see all remaining placeholders.
+Run `Rscript scripts/find_todos.R` at any time to see all remaining placeholders.
 
 ---
 
