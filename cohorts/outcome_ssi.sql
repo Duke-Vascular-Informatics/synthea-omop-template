@@ -99,6 +99,24 @@
 -- verified standard OMOP ancestor concept ID for the outcome of interest.
 -- Add NOT EXISTS exclusion blocks for any outcome sub-types to exclude.
 
+-- =============================================================================
+-- PLACEHOLDER GUARD
+-- Fires if the outcome ancestor concept ID has not been replaced.
+-- Replace the 0 here AND on the matching WHERE line below (search "= 0").
+-- Once replaced, IF 0 IN (your_id) evaluates to false and this block is skipped.
+-- =============================================================================
+IF 0 IN (0 /* TODO: outcome ancestor concept ID -- also replace ~line 157 below */)
+BEGIN
+  RAISERROR(
+    'SETUP REQUIRED - outcome_ssi.sql: ancestor_concept_id = 0 placeholder '
+    'has not been replaced. Edit this file: replace the 0 value in BOTH the '
+    'guard block at the top AND the matching WHERE clause in the query body. '
+    'Run Rscript scripts/find_todos.R to list all remaining TODO items.',
+    16, 1
+  );
+  RETURN;
+END;
+
 DELETE FROM @target_database_schema.@target_cohort_table
 WHERE cohort_definition_id = @outcome_cohort_id;
 

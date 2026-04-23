@@ -103,6 +103,25 @@
 -- values (concept_id = 0, visit_concept_id = 9201, age >= 18, etc.) with your
 -- study-specific values. Remove any blocks that do not apply to your design.
 
+-- =============================================================================
+-- PLACEHOLDER GUARD
+-- Fires if concept_id = 0 placeholders have not been replaced.
+-- Replace the 0s here AND in the matching WHERE clauses below (search "= 0").
+-- Once replaced, IF 0 IN (your_id) evaluates to false and this block is skipped.
+-- =============================================================================
+IF   0 IN (0 /* TODO: index event ancestor concept ID  -- also replace ~line 194 below */)
+  OR 0 IN (0 /* TODO: washout ancestor concept ID      -- also replace ~line 230 below */)
+BEGIN
+  RAISERROR(
+    'SETUP REQUIRED - target_surgery.sql: ancestor_concept_id = 0 placeholders '
+    'have not been replaced. Edit this file: replace the 0 values in BOTH the '
+    'guard block at the top AND the matching WHERE clauses in the query body. '
+    'Run Rscript scripts/find_todos.R to list all remaining TODO items.',
+    16, 1
+  );
+  RETURN;
+END;
+
 DELETE FROM @target_database_schema.@target_cohort_table
 WHERE cohort_definition_id = @target_cohort_id;
 

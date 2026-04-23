@@ -133,6 +133,21 @@ instantiate_cohort <- function(connection, sql_file, render_params, label) {
   raw_sql <- readLines(sql_file, warn = FALSE)
   raw_sql <- paste(raw_sql, collapse = "\n")
 
+  # Guard: refuse to execute if ancestor_concept_id = 0 placeholders remain.
+  # Running with 0 silently produces empty cohorts — concept_id 0 ("No matching
+  # concept") has no real clinical descendants in concept_ancestor.
+  if (grepl("ancestor_concept_id\\s*(=|IN\\s*\\()\\s*0\\b", raw_sql, perl = TRUE)) {
+    stop(
+      "SETUP REQUIRED - ", basename(sql_file), ":\n",
+      "  ancestor_concept_id = 0 placeholder(s) have not been replaced.\n",
+      "  Running with concept_id 0 produces an empty cohort with no error.\n\n",
+      "  Fix: edit '", sql_file, "'\n",
+      "  Replace every 'ancestor_concept_id = 0' and 'IN (0' with a\n",
+      "  verified OMOP standard concept ID (use /concept-lookup to find one).\n\n",
+      "  Run Rscript scripts/find_todos.R to list all remaining placeholders."
+    )
+  }
+
   rendered  <- do.call(SqlRender::render,  c(list(sql = raw_sql), render_params))
   translated <- SqlRender::translate(rendered, targetDialect = "sql server")
 
