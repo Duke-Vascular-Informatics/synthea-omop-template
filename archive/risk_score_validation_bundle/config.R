@@ -4,7 +4,7 @@
 # =============================================================================
 
 get_validation_config <- function() {
-  java_home <- "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot" #### UPDATE IN PRCC
+  java_home <- "C:/Program Files/Eclipse Adoptium/jdk-17.0.18.8-hotspot" #### UPDATE FOR YOUR ENVIRONMENT
   sql_server_jdbc_version <- "13.2.1"
   path_to_driver <- file.path(getwd(), "drivers")
   jdbc_home <- file.path(path_to_driver, "sqljdbc_13.2", "enu")
@@ -15,7 +15,7 @@ get_validation_config <- function() {
     java_bin = file.path(java_home, "bin"),
     sql_server_jdbc_version = sql_server_jdbc_version,
     jdbc_zip_url = "https://go.microsoft.com/fwlink/?linkid=2338346&clcid=0x409",
-    path_to_driver = path_to_driver, #### UPDATE IN PRCC
+    path_to_driver = path_to_driver, #### UPDATE FOR YOUR ENVIRONMENT
     jdbc_home = jdbc_home,
     jdbc_jar_folder = file.path(jdbc_home, "jars"),
     jdbc_runtime_dir = jdbc_runtime_dir,
@@ -23,12 +23,12 @@ get_validation_config <- function() {
 
     # Update these for your environment
     dbms = "sql server",
-    server = "localhost", #### UPDATE IN PRCC
-    database = "omop_synth", #### UPDATE IN PRCC
-    sql_server_port = 1434L, # UPDATE IN PRCC
+    server = "localhost", #### UPDATE FOR YOUR ENVIRONMENT
+    database = "omop_synth", #### UPDATE FOR YOUR ENVIRONMENT
+    sql_server_port = 1434L, # UPDATE FOR YOUR ENVIRONMENT
 
-    cdm_schema = "cdm_synthea", #### UPDATE IN PRCC
-    results_schema = "plp_results", #### UPDATE IN PRCC
+    cdm_schema = "cdm_synthea", #### UPDATE FOR YOUR ENVIRONMENT
+    results_schema = "plp_results", #### UPDATE FOR YOUR ENVIRONMENT
     cohort_table = "ssi_val_cohort",
 
     target_cohort_id = 1L,

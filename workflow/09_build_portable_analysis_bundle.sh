@@ -2,60 +2,60 @@
 # =============================================================================
 # workflow/09_build_portable_analysis_bundle.sh
 #
-# Step 9 — Build and publish the Duke PRCC portable analysis bundle.
+# Step 9 — Build and publish the protected analytic space portable analysis bundle.
 #
 # PURPOSE
 # -------
 # Packages the PAD/OLER SSI integer risk score external validation analysis
-# into a self-contained bundle for execution on the Duke PRCC (Phoenix
-# Research Computing Cluster), then pushes it to a GitLab remote so PRCC
+# into a self-contained bundle for execution on the protected analytic space (Phoenix
+# protected analytic space, then pushes it to a Git remote so the
 # can clone or pull it directly.
 #
 # A dated zip is also written to dist/ as a local fallback (useful if GitLab
-# is unreachable from PRCC or for offline transfers via scp).
+# is unreachable from HPC cluster or for offline transfers via scp).
 #
 # PREREQUISITES
 # -------------
 # Set the following variables in OMOP_Dev/.env (one level above this repo):
 #
-#   PRCC_GITLAB_REMOTE   Full SSH URL of the target GitLab repo.
-#                        e.g. git@gitlab.dhe.duke.edu:netid/pad-oler-ssi-prcc.git
-#   PRCC_GIT_USER_NAME   Your name for git commits inside the bundle repo.
-#   PRCC_GIT_USER_EMAIL  Your Duke email for git commits.
+#   BUNDLE_GITLAB_REMOTE   Full SSH URL of the target GitLab repo.
+#                        e.g. git@your.gitlab.instance:netid/transportable-bundle.git
+#   BUNDLE_GIT_USER_NAME   Your name for git commits inside the bundle repo.
+#   BUNDLE_GIT_USER_EMAIL  Your institutional email for git commits.
 #
 # SSH authentication: the dev container must have access to an SSH agent with
-# your Duke GitLab key loaded.  Docker Desktop on macOS forwards the host
+# your Git remote SSH key loaded.  Docker Desktop on macOS forwards the host
 # agent automatically when SSH_AUTH_SOCK is set in devcontainer.json.
-# Verify with: ssh -T git@gitlab.dhe.duke.edu
+# Verify with: ssh -T git@your.gitlab.instance
 #
 # WHAT THIS SCRIPT DOES
 # ---------------------
-#   1. Syncs shared R source files from the main project into portable/prcc_bundle/
+#   1. Syncs shared R source files from the main project into portable/transportable_bundle/
 #      so the bundle always reflects the current analysis code.
 #   2. Copies the MSSQL JDBC JAR from drivers/jdbc-runtime/ into the bundle.
-#   3. Commits the updated bundle to the portable/prcc_bundle/.git repo and
-#      pushes to the 'prcc-bundle' branch on gitlab.dhe.duke.edu.
+#   3. Commits the updated bundle to the portable/transportable_bundle/.git repo and
+#      pushes to the 'transportable-bundle' branch on your.gitlab.instance.
 #   4. Builds a dated zip fallback in dist/ for offline transfers.
 #
-# FILES NOT OVERWRITTEN (PRCC-specific, checked into portable/prcc_bundle/)
+# FILES NOT OVERWRITTEN (bundle-specific, checked into portable/transportable_bundle/)
 # -------------------------------------------------------------------------
-#   portable/prcc_bundle/R/connection.R      Kerberos / JVM setup for PRCC
-#   portable/prcc_bundle/config.R            PRCC SQL Server + conda paths
-#   portable/prcc_bundle/run_analysis.R      PRCC entry-point script
-#   portable/prcc_bundle/install_packages.R  PRCC conda R package installer
-#   portable/prcc_bundle/setup_prcc_env.sh   Conda env + kinit helper
+#   portable/transportable_bundle/R/connection.R      Kerberos / JVM setup for the protected analytic space
+#   portable/transportable_bundle/config.R            HPC cluster SQL Server + conda paths
+#   portable/transportable_bundle/run_analysis.R      HPC cluster entry-point script
+#   portable/transportable_bundle/install_packages.R  HPC cluster conda R package installer
+#   portable/transportable_bundle/setup_env.sh   Conda env + kinit helper
 #
-# DEPLOYMENT ON PRCC (after this script runs)
+# DEPLOYMENT ON HPC cluster (after this script runs)
 # -------------------------------------------
-#   ssh <netid>@login.rc.duke.edu
-#   cd /data/pro00119168/
-#   git clone --branch prcc-bundle git@gitlab.dhe.duke.edu:<remote> pad-oler-ssi-prcc
+#   ssh <netid>@your.hpc.cluster.hostname
+#   cd /path/to/your/workspace/
+#   git clone --branch transportable-bundle git@your.gitlab.instance:<remote> transportable-bundle
 #   # — or to pull updates into an existing clone: —
-#   cd pad-oler-ssi-prcc && git pull origin prcc-bundle
+#   cd transportable-bundle && git pull origin transportable-bundle
 #
-#   # Place the Duke SOM-HPC custom JDBC wrapper one level above the bundle:
-#   #   /data/pro00119168/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
-#   bash setup_prcc_env.sh
+#   # Place the your HPC support team custom JDBC wrapper one level above the bundle:
+#   #   /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
+#   bash setup_env.sh
 #   conda activate openjdk
 #   export KRB5CCNAME=FILE:~/krb5cc_java && kinit
 #   Rscript run_analysis.R
@@ -67,38 +67,38 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ---------------------------------------------------------------------------
-# Load PRCC config from .env
+# Load HPC cluster config from .env
 # When run on the host Mac: .env is one level up (OMOP_Dev/.env)
 # When run inside dev container: vars are already injected by docker-compose
 # ---------------------------------------------------------------------------
 ENV_FILE="$REPO_ROOT/../.env"
 if [[ -f "$ENV_FILE" ]]; then
-  # Export only the PRCC_ variables; eval handles quoted values with spaces
+  # Export only the BUNDLE_ variables; eval handles quoted values with spaces
   while IFS= read -r line; do
-    [[ "$line" =~ ^PRCC_ ]] && export "${line?}"
+    [[ "$line" =~ ^BUNDLE_ ]] && export "${line?}"
   done < "$ENV_FILE"
 fi
 
-PRCC_GITLAB_REMOTE="${PRCC_GITLAB_REMOTE:-}"
-PRCC_GIT_USER_NAME="${PRCC_GIT_USER_NAME:-}"
-PRCC_GIT_USER_EMAIL="${PRCC_GIT_USER_EMAIL:-}"
-PRCC_BRANCH="prcc-bundle"
+BUNDLE_GITLAB_REMOTE="${BUNDLE_GITLAB_REMOTE:-}"
+BUNDLE_GIT_USER_NAME="${BUNDLE_GIT_USER_NAME:-}"
+BUNDLE_GIT_USER_EMAIL="${BUNDLE_GIT_USER_EMAIL:-}"
+BUNDLE_BRANCH="transportable-bundle"
 
 # ---------------------------------------------------------------------------
 # Validate config
 # ---------------------------------------------------------------------------
-if [[ -z "$PRCC_GITLAB_REMOTE" || "$PRCC_GITLAB_REMOTE" == *"CHANGE_ME"* ]]; then
-  echo "[Step 9] ERROR: PRCC_GITLAB_REMOTE is not set or still contains CHANGE_ME."
-  echo "         Edit OMOP_Dev/.env and set PRCC_GITLAB_REMOTE to the full SSH URL."
-  echo "         Example: git@gitlab.dhe.duke.edu:netid/pad-oler-ssi-prcc.git"
+if [[ -z "$BUNDLE_GITLAB_REMOTE" || "$BUNDLE_GITLAB_REMOTE" == *"CHANGE_ME"* ]]; then
+  echo "[Step 9] ERROR: BUNDLE_GITLAB_REMOTE is not set or still contains CHANGE_ME."
+  echo "         Edit OMOP_Dev/.env and set BUNDLE_GITLAB_REMOTE to the full SSH URL."
+  echo "         Example: git@your.gitlab.instance:netid/transportable-bundle.git"
   exit 1
 fi
 
-BUNDLE="$REPO_ROOT/portable/prcc_bundle"
+BUNDLE="$REPO_ROOT/portable/transportable_bundle"
 DIST="$REPO_ROOT/dist"
 
 if [[ ! -d "$BUNDLE" ]]; then
-  echo "[Step 9] ERROR: PRCC bundle directory not found: $BUNDLE"
+  echo "[Step 9] ERROR: transportable bundle directory not found: $BUNDLE"
   exit 1
 fi
 
@@ -122,20 +122,20 @@ copy_bundle_file() {
 }
 
 # Shared R analysis modules
-copy_bundle_file "R/risk_score_pipeline.R"   "portable/prcc_bundle/R/risk_score_pipeline.R"
-copy_bundle_file "R/cohorts.R"               "portable/prcc_bundle/R/cohorts.R"
-copy_bundle_file "R/cohort_demographics.R"   "portable/prcc_bundle/R/cohort_demographics.R"
-# report_extended.R is loaded as report.R on PRCC (see run_analysis.R)
-copy_bundle_file "R/report_extended.R"       "portable/prcc_bundle/R/report.R"
+copy_bundle_file "R/risk_score_pipeline.R"   "portable/transportable_bundle/R/risk_score_pipeline.R"
+copy_bundle_file "R/cohorts.R"               "portable/transportable_bundle/R/cohorts.R"
+copy_bundle_file "R/cohort_demographics.R"   "portable/transportable_bundle/R/cohort_demographics.R"
+# report_extended.R is loaded as report.R on the protected analytic space (see run_analysis.R)
+copy_bundle_file "R/report_extended.R"       "portable/transportable_bundle/R/report.R"
 
 # Integer risk score reference data
-copy_bundle_file "risk_score/components.csv"         "portable/prcc_bundle/risk_score/components.csv"
-copy_bundle_file "risk_score/component_concepts.csv" "portable/prcc_bundle/risk_score/component_concepts.csv"
-copy_bundle_file "risk_score/risk_lookup.csv"        "portable/prcc_bundle/risk_score/risk_lookup.csv"
+copy_bundle_file "risk_score/components.csv"         "portable/transportable_bundle/risk_score/components.csv"
+copy_bundle_file "risk_score/component_concepts.csv" "portable/transportable_bundle/risk_score/component_concepts.csv"
+copy_bundle_file "risk_score/risk_lookup.csv"        "portable/transportable_bundle/risk_score/risk_lookup.csv"
 
 # OMOP cohort SQL templates
-copy_bundle_file "cohorts/target_surgery.sql"  "portable/prcc_bundle/cohorts/target_surgery.sql"
-copy_bundle_file "cohorts/outcome_ssi.sql"     "portable/prcc_bundle/cohorts/outcome_ssi.sql"
+copy_bundle_file "cohorts/target_surgery.sql"  "portable/transportable_bundle/cohorts/target_surgery.sql"
+copy_bundle_file "cohorts/outcome_ssi.sql"     "portable/transportable_bundle/cohorts/outcome_ssi.sql"
 
 # ---------------------------------------------------------------------------
 # Step 2 — Sync MSSQL JDBC JAR into bundle/drivers/
@@ -148,53 +148,53 @@ if [[ -z "$JDBC_JAR" ]]; then
 else
   mkdir -p "$BUNDLE/drivers"
   cp -f "$JDBC_JAR" "$BUNDLE/drivers/"
-  echo "  $(basename "$JDBC_JAR") -> portable/prcc_bundle/drivers/"
+  echo "  $(basename "$JDBC_JAR") -> portable/transportable_bundle/drivers/"
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3 — Commit and push to GitLab (prcc-bundle branch)
+# Step 3 — Commit and push to GitLab (transportable-bundle branch)
 # ---------------------------------------------------------------------------
-echo "[Step 9] Pushing bundle to GitLab ($PRCC_GITLAB_REMOTE, branch: $PRCC_BRANCH) ..."
+echo "[Step 9] Pushing bundle to GitLab ($BUNDLE_GITLAB_REMOTE, branch: $BUNDLE_BRANCH) ..."
 
 # Verify SSH access before attempting push
 echo "  Checking SSH connectivity to GitLab ..."
 if ! ssh -o BatchMode=yes -o ConnectTimeout=10 \
         -o StrictHostKeyChecking=accept-new \
-        "$(echo "$PRCC_GITLAB_REMOTE" | sed 's|git@\([^:]*\):.*|\1|')" \
+        "$(echo "$BUNDLE_GITLAB_REMOTE" | sed 's|git@\([^:]*\):.*|\1|')" \
         2>&1 | grep -qiE 'welcome|authenticated|gitlab'; then
   echo "  [WARN] SSH connectivity check was inconclusive — proceeding anyway."
-  echo "         If the push fails, run: ssh -T git@gitlab.dhe.duke.edu"
+  echo "         If the push fails, run: ssh -T git@your.gitlab.instance"
 fi
 
 cd "$BUNDLE"
 
 # Initialise git repo inside the bundle on first run
 if [[ ! -d ".git" ]]; then
-  echo "  Initialising git repo in portable/prcc_bundle/ ..."
-  git init -b "$PRCC_BRANCH"
-  git remote add origin "$PRCC_GITLAB_REMOTE"
+  echo "  Initialising git repo in portable/transportable_bundle/ ..."
+  git init -b "$BUNDLE_BRANCH"
+  git remote add origin "$BUNDLE_GITLAB_REMOTE"
 else
   # Ensure remote is set to the configured URL (update if it changed)
   if git remote get-url origin &>/dev/null; then
-    git remote set-url origin "$PRCC_GITLAB_REMOTE"
+    git remote set-url origin "$BUNDLE_GITLAB_REMOTE"
   else
-    git remote add origin "$PRCC_GITLAB_REMOTE"
+    git remote add origin "$BUNDLE_GITLAB_REMOTE"
   fi
-  # Switch to / create the prcc-bundle branch if not already on it
-  if ! git rev-parse --verify "$PRCC_BRANCH" &>/dev/null; then
-    git checkout -b "$PRCC_BRANCH"
+  # Switch to / create the transportable-bundle branch if not already on it
+  if ! git rev-parse --verify "$BUNDLE_BRANCH" &>/dev/null; then
+    git checkout -b "$BUNDLE_BRANCH"
   else
-    git checkout "$PRCC_BRANCH"
+    git checkout "$BUNDLE_BRANCH"
   fi
 fi
 
 # Set git identity for bundle commits (uses .env values or falls back to global)
-if [[ -n "$PRCC_GIT_USER_NAME" && "$PRCC_GIT_USER_NAME" != "CHANGE_ME" ]]; then
-  git config user.name  "$PRCC_GIT_USER_NAME"
-  git config user.email "$PRCC_GIT_USER_EMAIL"
+if [[ -n "$BUNDLE_GIT_USER_NAME" && "$BUNDLE_GIT_USER_NAME" != "CHANGE_ME" ]]; then
+  git config user.name  "$BUNDLE_GIT_USER_NAME"
+  git config user.email "$BUNDLE_GIT_USER_EMAIL"
 fi
 
-# Ensure output/ is gitignored inside the bundle (PRCC writes results there at runtime)
+# Ensure output/ is gitignored inside the bundle (the bundle writes results there at runtime)
 if ! grep -qx "output/" .gitignore 2>/dev/null; then
   echo "output/" >> .gitignore
 fi
@@ -213,13 +213,13 @@ fi
 
 # Push to remote (--force-with-lease is safer than --force: rejects if remote
 # has commits we haven't seen, preventing accidental overwrites)
-if git push --force-with-lease origin "$PRCC_BRANCH" 2>&1; then
-  echo "  [OK] Pushed to $PRCC_GITLAB_REMOTE ($PRCC_BRANCH)"
+if git push --force-with-lease origin "$BUNDLE_BRANCH" 2>&1; then
+  echo "  [OK] Pushed to $BUNDLE_GITLAB_REMOTE ($BUNDLE_BRANCH)"
 else
   # First push to a new remote requires --set-upstream; retry with it
   echo "  Retrying with --set-upstream (first push to new remote) ..."
-  git push --set-upstream origin "$PRCC_BRANCH"
-  echo "  [OK] Pushed (with --set-upstream) to $PRCC_GITLAB_REMOTE ($PRCC_BRANCH)"
+  git push --set-upstream origin "$BUNDLE_BRANCH"
+  echo "  [OK] Pushed (with --set-upstream) to $BUNDLE_GITLAB_REMOTE ($BUNDLE_BRANCH)"
 fi
 
 cd "$REPO_ROOT"
@@ -230,9 +230,9 @@ cd "$REPO_ROOT"
 echo "[Step 9] Building zip fallback ..."
 
 STAMP=$(date +"%Y%m%d")
-BASE="pad_oler_ssi_val_prcc_${STAMP}"
+BASE="transportable_bundle_${STAMP}"
 
-# Find the next available filename for today (pad_oler_ssi_val_prcc_YYYYMMDD.zip,
+# Find the next available filename for today (transportable_bundle_YYYYMMDD.zip,
 # then _1.zip, _2.zip, ... if multiple builds are made on the same day)
 EXISTING_COUNT=$(find "$DIST" -name "${BASE}*.zip" 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$EXISTING_COUNT" -eq 0 ]]; then
@@ -242,7 +242,7 @@ else
 fi
 ZIP_PATH="$DIST/$ZIP_NAME"
 
-# Zip everything under portable/prcc_bundle/ except output/ (created at runtime)
+# Zip everything under portable/transportable_bundle/ except output/ (created at runtime)
 (
   cd "$BUNDLE"
   find . -mindepth 1 \
@@ -254,12 +254,12 @@ ZIP_PATH="$DIST/$ZIP_NAME"
 
 SIZE_MB=$(du -sm "$ZIP_PATH" | cut -f1)
 echo ""
-echo "[Step 9] GitLab push : $PRCC_GITLAB_REMOTE (branch: $PRCC_BRANCH)"
+echo "[Step 9] GitLab push : $BUNDLE_GITLAB_REMOTE (branch: $BUNDLE_BRANCH)"
 echo "[Step 9] Zip fallback: $ZIP_PATH (${SIZE_MB} MB)"
 echo ""
 echo "Step 9 complete."
 echo ""
-echo "To deploy on PRCC:"
-echo "  git clone --branch $PRCC_BRANCH $PRCC_GITLAB_REMOTE pad-oler-ssi-prcc"
+echo "To deploy on the protected analytic space:"
+echo "  git clone --branch $BUNDLE_BRANCH $BUNDLE_GITLAB_REMOTE transportable-bundle"
 echo "  # or to update an existing clone:"
-echo "  cd pad-oler-ssi-prcc && git pull origin $PRCC_BRANCH"
+echo "  cd transportable-bundle && git pull origin $BUNDLE_BRANCH"

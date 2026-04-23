@@ -49,7 +49,7 @@ errorReportR.txt
 
 # JAAS config — generated at runtime by R/connection.R; contains local paths
 jaas.conf
-portable/prcc_bundle/drivers/jaas.conf
+portable/transportable_bundle/drivers/jaas.conf
 
 # External repos auto-cloned by Step 1 (synthea-pad) — not ours to commit
 external/

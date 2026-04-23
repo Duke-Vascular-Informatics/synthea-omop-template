@@ -209,4 +209,4 @@ block does from the comments alone.
 - Do not use `dbplyr` or remote `dplyr` tables — use explicit SqlRender SQL.
 - Do not use source-vocabulary concept codes (ICD-10, NDC) — map to standard OMOP concept IDs.
 - Do not write a concept ID without a `[vocab query]` tag and an inline name comment.
-- Do not suggest packages outside the Duke CRAN mirror or OHDSI `internal_repo/bin/`.
+- Do not suggest packages outside the project CRAN mirror or OHDSI `internal_repo/bin/`.

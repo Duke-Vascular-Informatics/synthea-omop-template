@@ -1,9 +1,9 @@
-# PAD/OLER SSI Validation — Duke PRCC Bundle
+# PAD/OLER SSI Validation — protected analytic space Bundle
 
 External validation of the PAD SSI integer risk score against an institutional
-OMOP CDM v5.4 SQL Server database on Duke PRCC (Research Computing Cluster).
+OMOP CDM v5.4 SQL Server database on protected analytic space (Research Computing Cluster).
 
-**Authentication:** Kerberos (Duke NetID) — no passwords stored in any file.
+**Authentication:** Kerberos (your institutional username) — no passwords stored in any file.
 **Java:** conda openjdk from miniforge — no system Java installation needed.
 **JDBC driver:** pre-bundled in `drivers/` — no internet download needed.
 
@@ -15,15 +15,15 @@ For experienced users, the full workflow in one place:
 
 ```bash
 # ── One-time setup (first use only) ──────────────────────────────────────────
-cd ~/prcc_bundle
-bash setup_prcc_env.sh          # creates conda env, runs kinit, installs R pkgs
+cd ~/transportable_bundle
+bash setup_env.sh          # creates conda env, runs kinit, installs R pkgs
 # Edit config.R — fill in server, database, spn_host, vocab_schema,
 #                 cdm_schema, results_schema
 
 # ── Every session ─────────────────────────────────────────────────────────────
-cd ~/prcc_bundle
+cd ~/transportable_bundle
 export KRB5CCNAME=FILE:~/krb5cc_java
-kinit                           # enter Duke NetID password when prompted
+kinit                           # enter your institutional credentials when prompted
 conda activate openjdk
 bash run_analysis.sh
 ```
@@ -34,17 +34,17 @@ Results are written to `output/risk_score_eval/`.
 
 ## Detailed Step-by-Step Instructions
 
-### Step 1 — Transfer the bundle to PRCC
+### Step 1 — Transfer the bundle to your protected analytic space
 
-From your **local machine**, copy the bundle folder to your PRCC home directory:
+From your **local machine**, copy the bundle folder to your HPC cluster home directory:
 
 ```bash
-scp -r prcc_bundle/ <your_netid>@prcc.dhe.duke.edu:~/
+scp -r transportable_bundle/ <your_netid>@your.hpc.cluster.hostname:~/
 ```
 
-Replace `<your_netid>` with your Duke NetID (e.g. `abc123`).
+Replace `<your_netid>` with your your institutional username (e.g. `abc123`).
 
-Alternatively, use the PRCC file browser (OnDemand → Files → Home Directory)
+Alternatively, use the cluster file browser (OnDemand → Files → Home Directory)
 to upload the folder.
 
 > **Note:** The bundle is approximately 1.5 MB (the JDBC JAR is included).
@@ -52,16 +52,16 @@ to upload the folder.
 
 ---
 
-### Step 2 — Open a PRCC shell session
+### Step 2 — Open a HPC cluster shell session
 
-1. Go to **https://prcc.oit.duke.edu** and log in with your Duke NetID.
+1. Go to **https://your.hpc.cluster.hostname** and log in with your your institutional username.
 2. Click **"RE Cluster Shell Access"** (or **Interactive Apps → Shell Access**).
 3. A terminal window will open in your browser.
 
 Change to the bundle directory:
 
 ```bash
-cd ~/prcc_bundle
+cd ~/transportable_bundle
 ```
 
 Verify the files are present:
@@ -75,18 +75,18 @@ Expected output:
 R/                   cohorts/             drivers/
 README.md            config.R             install_packages.R
 output/              risk_score/          run_analysis.R
-setup_prcc_env.sh
+setup_env.sh
 ```
 
 ---
 
 ### Step 3 — Run environment setup
 
-> **When to run:** On first use, and at the start of every new PRCC session
+> **When to run:** On first use, and at the start of every new cluster session
 > (Kerberos tickets expire after ~10 hours).
 
 ```bash
-bash setup_prcc_env.sh
+bash setup_env.sh
 ```
 
 The script runs three sub-steps automatically:
@@ -106,12 +106,12 @@ On subsequent runs, this prints `conda env 'openjdk' already exists — skipping
 **3b. Kerberos ticket — you will be prompted for your password**
 
 ```
-[2/3] Obtaining Kerberos ticket (enter your Duke NetID password) ...
-Password for abc123@DHTS.DUKE.EDU:
+[2/3] Obtaining Kerberos ticket (enter your your institutional credentials) ...
+Password for abc123@your HPC support team.DUKE.EDU:
       Ticket valid. Expires: Apr 07 2026 02:15 AM
 ```
 
-> **Important:** This is your Duke NetID password. It is passed directly to
+> **Important:** This is your your institutional credentials. It is passed directly to
 > Kerberos and is never stored anywhere. The ticket file is written to
 > `~/krb5cc_java` and is valid for approximately 10 hours.
 
@@ -146,14 +146,14 @@ Open `config.R` in any text editor (e.g. `nano config.R`) and replace every
 
 | Field | What to enter | Example |
 |---|---|---|
-| `server` | SQL Server hostname | `"dbserver01.dhe.duke.edu"` |
+| `server` | SQL Server hostname | `"your.sql.server.hostname"` |
 | `database` | Database containing the OMOP CDM | `"omop_prod"` |
-| `spn_host` | Kerberos SPN hostname (usually same as `server`; contact DHTS if unsure) | `"dbserver01.dhe.duke.edu"` |
+| `spn_host` | Kerberos SPN hostname (usually same as `server`; contact your HPC support team if unsure) | `"your.sql.server.hostname"` |
 | `vocab_schema` | Schema holding vocabulary tables (`concept`, `concept_ancestor`, etc.) | `"omop_vocab"` |
 | `cdm_schema` | Schema holding CDM clinical tables (`person`, `visit_occurrence`, etc.) | `"cdm_omop_v54"` |
 | `results_schema` | Schema where the cohort table will be written (your NetID needs `CREATE TABLE` here) | `"scratch_abc123"` |
-| `cdm_database_id` | Short identifier for output file metadata | `"duke_omop_v5.4"` |
-| `cdm_database_name` | Display name for output metadata | `"Duke SOM OMOP CDM"` |
+| `cdm_database_id` | Short identifier for output file metadata | `"your_institution_omop_v5.4"` |
+| `cdm_database_name` | Display name for output metadata | `"Your Institution OMOP CDM"` |
 
 **Example edit with nano:**
 
@@ -164,9 +164,9 @@ nano config.R
 Find the lines that read `"CHANGE_ME"` and replace them:
 
 ```r
-server        = "dbserver01.dhe.duke.edu",
+server        = "your.sql.server.hostname",
 database      = "omop_prod",
-spn_host      = "dbserver01.dhe.duke.edu",
+spn_host      = "your.sql.server.hostname",
 vocab_schema  = "omop_vocab",
 cdm_schema    = "cdm_omop_v54",
 results_schema = "scratch_abc123",
@@ -204,7 +204,7 @@ conda activate openjdk
 Your prompt will change to show `(openjdk)`:
 
 ```
-(openjdk) [abc123@login01 prcc_bundle]$
+(openjdk) [abc123@login01 transportable_bundle]$
 ```
 
 > **Important:** R must be started from a shell where the openjdk conda env is
@@ -223,7 +223,7 @@ The script will print progress messages as it runs:
 
 ```
 [run_analysis] Loading config ...
-[run_analysis] Server  : dbserver01.dhe.duke.edu
+[run_analysis] Server  : your.sql.server.hostname
 [run_analysis] Database: omop_prod
 [run_analysis] CDM     : cdm_omop_v54
 [run_analysis] Results : scratch_abc123
@@ -232,7 +232,7 @@ The script will print progress messages as it runs:
 [run_analysis] Building connection details (Kerberos) ...
 Java configured: /hpc/group/.../envs/openjdk
 JDBC driver verified: drivers/mssql-jdbc-13.2.1.jre11.jar
-Building connection: dbserver01.dhe.duke.edu / omop_prod (Kerberos SPN: MSSQLSvc/dbserver01.dhe.duke.edu)
+Building connection: your.sql.server.hostname / omop_prod (Kerberos SPN: MSSQLSvc/your.sql.server.hostname)
 [run_analysis] Testing database connection ...
 [run_analysis] Connection OK.
 
@@ -263,12 +263,12 @@ Total runtime is typically **3–8 minutes** depending on CDM size.
 ### Step 7 — Retrieve output files
 
 Output files are written to `output/risk_score_eval/`. Download them via the
-PRCC file browser (OnDemand → Files → Home Directory → prcc_bundle →
+cluster file browser (OnDemand → Files → Home Directory → transportable_bundle →
 output/risk_score_eval/) or use `scp`:
 
 ```bash
 # From your local machine:
-scp -r <your_netid>@prcc.dhe.duke.edu:~/prcc_bundle/output/risk_score_eval/ ./
+scp -r <your_netid>@your.hpc.cluster.hostname:~/transportable_bundle/output/risk_score_eval/ ./
 ```
 
 **Files produced:**
@@ -298,7 +298,7 @@ export KRB5CCNAME=FILE:~/krb5cc_java
 kinit
 ```
 
-Enter your Duke NetID password when prompted, then re-run `bash run_analysis.sh`.
+Enter your your institutional credentials when prompted, then re-run `bash run_analysis.sh`.
 
 To check whether your current ticket is still valid:
 
@@ -313,13 +313,13 @@ klist
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `GSS initiate failed` / `Kerberos` error | Ticket expired or JAAS config missing | `export KRB5CCNAME=FILE:~/krb5cc_java && kinit`; confirm `jaas.conf` was written (appears in bundle dir after first run) |
-| `KDC not found` | Not on PRCC login node | Launch **RE Cluster Shell Access** from the PRCC dashboard |
-| `Login failed for user` | Wrong `spn_host` | Check `spn_host` in config.R; open a DHTS ticket to confirm the correct SPN |
+| `KDC not found` | Not on HPC login node | Launch **RE Cluster Shell Access** from the cluster portal |
+| `Login failed for user` | Wrong `spn_host` | Check `spn_host` in config.R; contact your HPC support team to confirm the correct SPN |
 | `JAVA_HOME is not set` | conda env not active | `conda activate openjdk` then re-run |
 | `No mssql-jdbc*.jar found` | drivers/ missing JAR | Re-transfer the bundle; confirm `drivers/mssql-jdbc-13.2.1.jre11.jar` exists |
 | `fill in the following fields in config.R` | CHANGE_ME not replaced | Edit config.R and fill in all required values (Step 4) |
 | `Run this script in a FRESH R session` | R session already had Java loaded | Open a new terminal, re-activate conda, re-run |
-| `CREATE TABLE permission denied` | Insufficient DB permissions | Contact DHTS to request CREATE TABLE on `results_schema` |
+| `CREATE TABLE permission denied` | Insufficient DB permissions | Contact your HPC support team to request CREATE TABLE on `results_schema` |
 
 ---
 
@@ -361,10 +361,10 @@ descendants) within 90 days of the index date.
 
 ## Java / Conda Technical Notes
 
-- Java is provided by `conda-forge::openjdk` installed via the PRCC miniforge
+- Java is provided by `conda-forge::openjdk` installed via the cluster miniforge
   module — no system-level Java installation is required.
 - The conda environment is named `openjdk` and is created once by
-  `setup_prcc_env.sh`.
+  `setup_env.sh`.
 - JAVA_HOME is set automatically when you run `conda activate openjdk`; the
   `config.R` and `R/connection.R` files read this environment variable at
   runtime.
@@ -372,7 +372,7 @@ descendants) within 90 days of the index date.
   in the bundle — no internet access is required after initial R package
   installation.
 - The JDBC connection uses `authenticationScheme=JavaKerberos` with
-  `serverSpn=MSSQLSvc/<spn_host>` as described in the Duke PRCC SQL Server
+  `serverSpn=MSSQLSvc/<spn_host>` as described in the protected analytic space SQL Server
   documentation.
 
 ---
@@ -394,6 +394,6 @@ than true clinical absence).
 | Issue type | Contact |
 |---|---|
 | Risk score methodology, concept mappings, study design | Study coordinator |
-| PRCC access, shell environment, file transfers | PRCC support portal |
-| SQL Server access, Kerberos SPN, database permissions | DHTS Service Portal |
-| R package installation failures | Check Duke CRAN mirror access; open a PRCC ticket |
+| cluster access, shell environment, file transfers | HPC support portal |
+| SQL Server access, Kerberos SPN, database permissions | HPC support portal |
+| R package installation failures | Check CRAN mirror access (see CRAN_MIRROR in .env); open a HPC support ticket |

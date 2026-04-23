@@ -3,9 +3,9 @@
 # run_analysis.R
 #
 # Entry point for the PAD/OLER SSI integer risk score external validation on
-# Duke PRCC against institutional OMOP CDM data.
+# protected analytic space against institutional OMOP CDM data.
 #
-# PREREQUISITES (run setup_prcc_env.sh first):
+# PREREQUISITES (run setup_env.sh first):
 #   1. conda activate openjdk                          — Java from conda-forge on PATH
 #   2. export KRB5CCNAME=FILE:~/krb5cc_java && kinit   — Kerberos ticket (after activate)
 #   3. Edit config.R                                   — fill in server, database, schemas
@@ -82,7 +82,7 @@ if (has_officer) {
 # -----------------------------------------------------------------------------
 # Configure Java and initialise JVM BEFORE loading DatabaseConnector.
 #
-# configure_java_prcc() must run first because it:
+# configure_java_hpc() must run first because it:
 #   1. Sets options(java.parameters) — only effective before the JVM starts.
 #   2. Writes drivers/jaas.conf for Kerberos login module.
 #   3. Calls rJava::.jinit() to start the JVM explicitly.
@@ -95,7 +95,7 @@ message("\n[run_analysis] Loading config ...")
 config <- get_validation_config()
 
 message("[run_analysis] Configuring Java and initialising JVM ...")
-configure_java_prcc(config)
+configure_java_hpc(config)
 
 # -----------------------------------------------------------------------------
 # Load heavy packages (JVM already running — classpath already set)
@@ -144,7 +144,7 @@ test_conn <- tryCatch(
       "Checklist:\n",
       "  1. Kerberos ticket valid?  Run: klist\n",
       "     If expired: export KRB5CCNAME=FILE:~/krb5cc_java && kinit\n",
-      "  2. spn_host correct in config.R? (contact DHTS if unsure)\n",
+      "  2. spn_host correct in config.R? (contact your HPC support team if unsure)\n",
       "  3. Server name correct? server = '", config$server, "'\n",
       "  4. Database name correct? database = '", config$database, "'"
     )

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_analysis.sh — PAD/OLER SSI Validation Bundle — PRCC launcher
+# run_analysis.sh — PAD/OLER SSI Validation Bundle — HPC cluster launcher
 #
-# Use this script to launch the analysis on PRCC instead of calling
+# Use this script to launch the analysis on the protected analytic space instead of calling
 # Rscript directly.  It sets the required environment variables in the
 # shell BEFORE R starts, which is necessary for libjvm.so to be found.
 #
@@ -10,7 +10,7 @@
 #   bash run_analysis.sh
 #
 # PREREQUISITES (run once per session before this script):
-#   bash setup_prcc_env.sh     # creates conda env + obtains Kerberos ticket
+#   bash setup_env.sh     # creates conda env + obtains Kerberos ticket
 #
 # WHY A WRAPPER SCRIPT:
 #   rJava loads libjvm.so (the JVM shared library) via dyn.load() when
@@ -47,7 +47,7 @@ conda activate openjdk
 
 if [[ -z "${JAVA_HOME:-}" ]]; then
   echo "ERROR: JAVA_HOME is not set after conda activate openjdk."
-  echo "       Try running: bash setup_prcc_env.sh"
+  echo "       Try running: bash setup_env.sh"
   exit 1
 fi
 
@@ -60,7 +60,7 @@ echo "      JAVA_HOME: $JAVA_HOME"
 # cache file obtained by `kinit`.  It must be set in the shell environment
 # before R starts — the JDBC driver reads it at connection time.
 #
-# Even if setup_prcc_env.sh was run earlier, KRB5CCNAME is only exported
+# Even if setup_env.sh was run earlier, KRB5CCNAME is only exported
 # for that shell session.  A new terminal window will not have it.  We
 # set it here unconditionally so run_analysis.sh is self-contained.
 # -----------------------------------------------------------------------------

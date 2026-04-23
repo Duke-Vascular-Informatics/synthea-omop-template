@@ -3,38 +3,38 @@ param()
 # =============================================================================
 # workflow/09_build_portable_analysis_bundle.ps1
 #
-# Step 9 - Build the Duke PRCC portable analysis bundle.
+# Step 9 - Build the protected analytic space portable analysis bundle.
 #
 # PURPOSE
 # -------
 # This script packages the PAD/OLER SSI integer risk score external validation
 # analysis into a self-contained zip file that can be transferred to and run on
-# the Duke PRCC (Phoenix Research Computing Cluster).
+# the protected analytic space.
 #
-# The bundle lives in portable/prcc_bundle/ in this repository.  Step 9 keeps
+# The bundle lives in portable/transportable_bundle/ in this repository.  Step 9 keeps
 # that bundle up-to-date by pulling in the latest shared R source files and
 # JDBC driver JAR from the main project before zipping everything up.
 #
 # DEPLOYMENT WORKFLOW
 # -------------------
 # 1. Run this script on the developer workstation to produce a dated zip in
-#    dist/ (e.g. dist/pad_oler_ssi_val_prcc_20260410.zip).
-# 2. Transfer the zip to PRCC:
-#      scp dist/pad_oler_ssi_val_prcc_<date>.zip <netid>@login.rc.duke.edu:/data/pro00119168/
-# 3. On PRCC, unzip keeping the dated zip folder name (do NOT rename it):
-#      cd /data/pro00119168
-#      unzip pad_oler_ssi_val_prcc_<date>.zip -d pad_oler_ssi_val_prcc_<date>
-#    This produces: /data/pro00119168/pad_oler_ssi_val_prcc_<date>/
-# 4. Also place the Duke SOM-HPC custom JDBC wrapper JAR one level above the
+#    dist/ (e.g. dist/transportable_bundle_20260410.zip).
+# 2. Transfer the zip to the protected analytic space:
+#      scp dist/transportable_bundle_<date>.zip <netid>@your.hpc.cluster.hostname:/path/to/your/workspace/
+# 3. On the protected analytic space, unzip keeping the dated zip folder name (do NOT rename it):
+#      cd /path/to/your/workspace
+#      unzip transportable_bundle_<date>.zip -d transportable_bundle_<date>
+#    This produces: /path/to/your/workspace/transportable_bundle_<date>/
+# 4. Also place the your HPC support team custom JDBC wrapper JAR one level above the
 #    bundle, in a drivers/ sibling folder:
-#      /data/pro00119168/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+#      /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
 #    config.R resolves this path automatically as dirname(bundle)/drivers/.
-#    (This JAR is provided by Duke DHTS/SOM-HPC and is NOT included in the
+#    (This JAR is provided by your HPC support team and is NOT included in the
 #    bundle because it is a site-specific file we do not redistribute.)
-# 5. Follow setup_prcc_env.sh and config.R instructions to fill in credentials
+# 5. Follow setup_env.sh and config.R instructions to fill in credentials
 #    and database connection details, then run:
-#      cd /data/pro00119168/pad_oler_ssi_val_prcc_<date>
-#      bash setup_prcc_env.sh
+#      cd /path/to/your/workspace/transportable_bundle_<date>
+#      bash setup_env.sh
 #      conda activate openjdk
 #      export KRB5CCNAME=FILE:~/krb5cc_java && kinit
 #      Rscript run_analysis.R
@@ -42,43 +42,43 @@ param()
 # WHAT THIS SCRIPT DOES
 # ---------------------
 #   1. Syncs shared R source files from the main project (R/, risk_score/,
-#      cohorts/) into portable/prcc_bundle/ so the bundle always reflects the
+#      cohorts/) into portable/transportable_bundle/ so the bundle always reflects the
 #      current analysis code.
 #   2. Copies the standard MSSQL JDBC JAR from drivers/jdbc-runtime/ into
-#      portable/prcc_bundle/drivers/ so PRCC has the driver it needs.
-#   3. Builds a dated zip: dist/pad_oler_ssi_val_prcc_<YYYYMMDD>.zip.
+#      portable/transportable_bundle/drivers/ so HPC cluster has the driver it needs.
+#   3. Builds a dated zip: dist/transportable_bundle_<YYYYMMDD>.zip.
 #      Previous zips in dist/ are retained so that any version already
-#      transferred to PRCC can still be reproduced or compared.
+#      transferred to HPC cluster can still be reproduced or compared.
 #
 # FILES THAT ARE *NOT* OVERWRITTEN BY THIS SCRIPT
 # ------------------------------------------------
-# The following files inside portable/prcc_bundle/ are PRCC-specific.  They
+# The following files inside portable/transportable_bundle/ are bundle-specific.  They
 # contain site-specific configuration, Kerberos authentication logic, and
-# install steps that differ between the developer workstation and PRCC.
-# Overwriting them with the main-project versions would break PRCC execution:
+# install steps that differ between the developer workstation and the protected analytic space.
+# Overwriting them with the main-project versions would break HPC cluster execution:
 #
-#   portable/prcc_bundle/R/connection.R
+#   portable/transportable_bundle/R/connection.R
 #       Configures the JVM (JAVA_HOME, heap, JAAS config), adds both JDBC JARs
 #       to the classpath via rJava::.jaddClassPath(), and builds the full JDBC
 #       URL with authenticationScheme=JavaKerberos.  Completely different from
 #       the standard Windows ODBC connection used on the developer workstation.
 #
-#   portable/prcc_bundle/config.R
+#   portable/transportable_bundle/config.R
 #       Resolves JAVA_HOME from the active conda environment, sets the path to
-#       the Duke SOM-HPC custom JAR (~/drivers/), and contains CHANGE_ME
-#       placeholders for the PRCC-specific SQL Server host, database, and
+#       the your HPC support team custom JAR (~/drivers/), and contains CHANGE_ME
+#       placeholders for the SQL Server host, database, and
 #       schema names.
 #
-#   portable/prcc_bundle/run_analysis.R
-#       Entry-point script for PRCC execution.  Calls configure_java_prcc()
+#   portable/transportable_bundle/run_analysis.R
+#       Entry-point script for HPC cluster execution.  Calls configure_java_hpc()
 #       BEFORE library(DatabaseConnector) — this ordering is required so that
 #       java.parameters and the classpath are set before the JVM starts.
 #
-#   portable/prcc_bundle/install_packages.R
+#   portable/transportable_bundle/install_packages.R
 #       Installs R packages from CRAN/Bioconductor using the miniforge/conda R
-#       environment available on PRCC; includes packages not needed on Windows.
+#       environment available on the protected analytic space; includes packages not needed on Windows.
 #
-#   portable/prcc_bundle/setup_prcc_env.sh
+#   portable/transportable_bundle/setup_env.sh
 #       Shell script that activates the conda openjdk environment, obtains a
 #       Kerberos ticket (kinit), and sets KRB5CCNAME so the JAAS config can
 #       find the ticket cache file.
@@ -92,13 +92,13 @@ Push-Location $repoRoot
 
 try {
 
-    $bundle = Join-Path $repoRoot "portable\prcc_bundle"
+    $bundle = Join-Path $repoRoot "portable\transportable_bundle"
     $dist   = Join-Path $repoRoot "dist"
 
     # Verify the bundle skeleton exists.  It is checked into version control and
     # must be present before this script runs.  The dist/ output directory is
     # created on first use if it does not yet exist.
-    if (!(Test-Path $bundle)) { throw "PRCC bundle directory not found: $bundle" }
+    if (!(Test-Path $bundle)) { throw "transportable bundle directory not found: $bundle" }
     if (!(Test-Path $dist))   { New-Item -ItemType Directory -Path $dist | Out-Null }
 
     # -------------------------------------------------------------------------
@@ -106,7 +106,7 @@ try {
     #
     # WHY: The analysis R source files (risk score pipeline, cohort definitions,
     # demographics, report generation) are developed and tested on the developer
-    # workstation under R/ and related directories.  The PRCC bundle must always
+    # workstation under R/ and related directories.  The transportable bundle must always
     # run the same version of these shared files.  Rather than maintaining two
     # separate copies manually, this script copies the canonical versions into
     # the bundle at build time.
@@ -135,7 +135,7 @@ try {
     #       age at index for each patient.  Used by the subgroup bias assessment
     #       section of the pipeline (compute_subgroup_bias).
     #
-    #   R/report_extended.R  →  portable/prcc_bundle/R/report.R
+    #   R/report_extended.R  →  portable/transportable_bundle/R/report.R
     #       Generates the manuscript-ready Word document (officer/flextable),
     #       including the discrimination/calibration table, calibration plots,
     #       and the subgroup ECE forest plot.  Note the filename translation:
@@ -182,41 +182,41 @@ try {
     }
 
     # --- Shared R analysis modules ---
-    Copy-BundleFile "R\risk_score_pipeline.R"        "portable\prcc_bundle\R\risk_score_pipeline.R"
-    Copy-BundleFile "R\cohorts.R"                    "portable\prcc_bundle\R\cohorts.R"
-    Copy-BundleFile "R\cohort_demographics.R"        "portable\prcc_bundle\R\cohort_demographics.R"
+    Copy-BundleFile "R\risk_score_pipeline.R"        "portable\transportable_bundle\R\risk_score_pipeline.R"
+    Copy-BundleFile "R\cohorts.R"                    "portable\transportable_bundle\R\cohorts.R"
+    Copy-BundleFile "R\cohort_demographics.R"        "portable\transportable_bundle\R\cohort_demographics.R"
     # report_extended.R is the developer-workstation filename; the bundle
     # always loads it as report.R (see run_analysis.R: source("R/report.R")).
-    Copy-BundleFile "R\report_extended.R"            "portable\prcc_bundle\R\report.R"
+    Copy-BundleFile "R\report_extended.R"            "portable\transportable_bundle\R\report.R"
 
     # --- Integer risk score reference data ---
-    Copy-BundleFile "risk_score\components.csv"          "portable\prcc_bundle\risk_score\components.csv"
-    Copy-BundleFile "risk_score\component_concepts.csv"  "portable\prcc_bundle\risk_score\component_concepts.csv"
-    Copy-BundleFile "risk_score\risk_lookup.csv"         "portable\prcc_bundle\risk_score\risk_lookup.csv"
+    Copy-BundleFile "risk_score\components.csv"          "portable\transportable_bundle\risk_score\components.csv"
+    Copy-BundleFile "risk_score\component_concepts.csv"  "portable\transportable_bundle\risk_score\component_concepts.csv"
+    Copy-BundleFile "risk_score\risk_lookup.csv"         "portable\transportable_bundle\risk_score\risk_lookup.csv"
 
     # --- OMOP cohort SQL templates ---
-    Copy-BundleFile "cohorts\target_surgery.sql"     "portable\prcc_bundle\cohorts\target_surgery.sql"
-    Copy-BundleFile "cohorts\outcome_ssi.sql"        "portable\prcc_bundle\cohorts\outcome_ssi.sql"
+    Copy-BundleFile "cohorts\target_surgery.sql"     "portable\transportable_bundle\cohorts\target_surgery.sql"
+    Copy-BundleFile "cohorts\outcome_ssi.sql"        "portable\transportable_bundle\cohorts\outcome_ssi.sql"
 
     # -------------------------------------------------------------------------
     # Step 2 - Sync MSSQL JDBC JAR into bundle/drivers/
     #
-    # WHY: Connecting to the Duke SQL Server from a Linux/PRCC R session requires
+    # WHY: Connecting to the institutional SQL Server from a Linux/HPC R session requires
     # the Microsoft MSSQL JDBC driver.  This is the *standard* JDBC JAR from
-    # Microsoft (mssql-jdbc-*.jre11.jar).  It is separate from the Duke SOM-HPC
-    # custom wrapper JAR (prcc-jdbc-mssql-1.0-SNAPSHOT.jar), which is NOT
+    # Microsoft (mssql-jdbc-*.jre11.jar).  It is separate from the your HPC support team
+    # custom wrapper JAR (hpc-jdbc-wrapper.jar), which is NOT
     # included in this bundle for the following reasons:
     #
-    #   1. It is provided directly by Duke DHTS/SOM-HPC and is not ours to
+    #   1. It is provided directly by your HPC support team and is not ours to
     #      redistribute in a shared zip.
-    #   2. Its location on each user's PRCC home directory may vary; config.R
+    #   2. Its location on each user's HPC cluster home directory may vary; config.R
     #      resolves it dynamically from ~/drivers/ at runtime.
     #
     # The standard MSSQL JDBC JAR is committed into drivers/jdbc-runtime/ in
     # this repository and IS included in the bundle because:
     #   - It is publicly available from Microsoft under the MIT licence.
     #   - Including it means the bundle is self-contained for the standard
-    #     driver — users only need to obtain the Duke-specific wrapper separately.
+    #     driver — users only need to obtain the institution-provided wrapper separately.
     #
     # The JAR is found by glob (mssql-jdbc-*.jre11.jar) so that a version bump
     # in the filename does not require editing this script.  Only the first
@@ -225,7 +225,7 @@ try {
     # IMPORTANT: drivers/jaas.conf is NOT copied here.  That file is generated
     # at runtime by connection.R (write_jaas_conf()) because its content depends
     # on the user's live Kerberos ticket cache path (KRB5CCNAME), which is only
-    # known on PRCC at the moment R is launched.
+    # known on the protected analytic space at the moment R is launched.
     # -------------------------------------------------------------------------
     Write-Host "[Step 9] Syncing JDBC JAR ..." -ForegroundColor Cyan
 
@@ -240,21 +240,21 @@ try {
     } else {
         $jdbcDst = Join-Path $bundle "drivers\$($jdbcSrc.Name)"
         Copy-Item -Path $jdbcSrc.FullName -Destination $jdbcDst -Force
-        Write-Host "  $($jdbcSrc.Name) -> portable\prcc_bundle\drivers\"
+        Write-Host "  $($jdbcSrc.Name) -> portable\transportable_bundle\drivers\"
     }
 
     # -------------------------------------------------------------------------
     # Step 3 - Build dated zip (previous zips are kept)
     #
     # WHY A DATED FILENAME:
-    #   Each build receives a date-stamped name (pad_oler_ssi_val_prcc_YYYYMMDD.zip)
+    #   Each build receives a date-stamped name (transportable_bundle_YYYYMMDD.zip)
     #   so that multiple versions can coexist in dist/.  This matters because:
-    #     - A zip may already be in transit to or deployed on PRCC when a new
+    #     - A zip may already be in transit to or deployed on the protected analytic space when a new
     #       build is made.  The dated name lets us identify which version is
-    #       running on PRCC at any given time.
-    #     - If a regression is introduced and PRCC results change unexpectedly,
+    #       running on the protected analytic space at any given time.
+    #     - If a regression is introduced and HPC cluster results change unexpectedly,
     #       an earlier zip can be retrieved and re-deployed without a git checkout.
-    #     - The date provides an audit trail linking PRCC results to a specific
+    #     - The date provides an audit trail linking HPC cluster results to a specific
     #       snapshot of the analysis code.
     #
     # WHY PREVIOUS ZIPS ARE NOT DELETED:
@@ -264,15 +264,15 @@ try {
     #   artefacts only.
     #
     # FILENAME SCHEME — multiple builds on the same day:
-    #   First build of the day  : pad_oler_ssi_val_prcc_YYYYMMDD.zip
-    #   Second build of the day : pad_oler_ssi_val_prcc_YYYYMMDD_1.zip
-    #   Third build of the day  : pad_oler_ssi_val_prcc_YYYYMMDD_2.zip
+    #   First build of the day  : transportable_bundle_YYYYMMDD.zip
+    #   Second build of the day : transportable_bundle_YYYYMMDD_1.zip
+    #   Third build of the day  : transportable_bundle_YYYYMMDD_2.zip
     #   ...and so on.
     #   The counter is found by scanning dist/ for existing files that match
     #   the date prefix and taking the next available number.
     #
     # WHAT IS INCLUDED IN THE ZIP:
-    #   Everything under portable/prcc_bundle/* is zipped EXCEPT output/.
+    #   Everything under portable/transportable_bundle/* is zipped EXCEPT output/.
     #   The output/ directory is excluded because:
     #     - It is created at runtime by run_integer_risk_score_pipeline().
     #     - Including a pre-existing directory in the zip causes it to be
@@ -283,29 +283,29 @@ try {
     #     - risk_score/   integer score reference CSVs
     #     - cohorts/      OMOP SQL templates
     #     - drivers/      mssql-jdbc-*.jre11.jar (just synced in Step 2)
-    #     - config.R             PRCC-specific config with CHANGE_ME placeholders
-    #     - run_analysis.R       PRCC entry-point script
-    #     - connection.R         PRCC Kerberos/JVM setup (inside R/)
+    #     - config.R             bundle config with CHANGE_ME placeholders
+    #     - run_analysis.R       HPC cluster entry-point script
+    #     - connection.R         HPC cluster Kerberos/JVM setup (inside R/)
     #     - install_packages.R   R package installer (called by install_r_packages.sh)
-    #     - setup_prcc_env.sh    Step 1: conda env creation + Kerberos ticket
+    #     - setup_env.sh    Step 1: conda env creation + Kerberos ticket
     #     - install_r_packages.sh  Step 2: activates env + runs install_packages.R
     #
     # WHAT IS *NOT* IN THE ZIP:
-    #     - prcc-jdbc-mssql-1.0-SNAPSHOT.jar  (Duke SOM-HPC JAR, not ours to ship)
+    #     - hpc-jdbc-wrapper.jar  (your HPC support team JAR, not ours to ship)
     #     - jaas.conf                           (generated at runtime from env vars)
     #     - Any files under dist/, workflow/, or the main project R/ directly
     # -------------------------------------------------------------------------
     Write-Host "[Step 9] Building zip ..." -ForegroundColor Cyan
 
     $stamp    = Get-Date -Format "yyyyMMdd"
-    $base     = "pad_oler_ssi_val_prcc_$stamp"
+    $base     = "transportable_bundle_$stamp"
 
     # Find the next available filename for today.
     # Existing files that match today's date are counted so the new zip always
     # gets a unique name:
-    #   pad_oler_ssi_val_prcc_YYYYMMDD.zip      (no suffix — first of the day)
-    #   pad_oler_ssi_val_prcc_YYYYMMDD_1.zip    (second build)
-    #   pad_oler_ssi_val_prcc_YYYYMMDD_2.zip    (third build)  ...
+    #   transportable_bundle_YYYYMMDD.zip      (no suffix — first of the day)
+    #   transportable_bundle_YYYYMMDD_1.zip    (second build)
+    #   transportable_bundle_YYYYMMDD_2.zip    (third build)  ...
     $existing = @(Get-ChildItem -Path $dist -Filter "${base}*.zip" -ErrorAction SilentlyContinue)
     if ($existing.Count -eq 0) {
         $zipName = "${base}.zip"

@@ -3,14 +3,14 @@
 # install_r_packages.sh
 #
 # Step 2 of 2 — R package installation for the PAD/OLER SSI validation
-# bundle on Duke PRCC.
+# bundle on protected analytic space.
 #
-# Run this AFTER setup_prcc_env.sh has completed successfully.
+# Run this AFTER setup_env.sh has completed successfully.
 # You only need to run this once — packages persist in your conda
 # environment between sessions.
 #
 # FULL SETUP SEQUENCE (first time):
-#   bash setup_prcc_env.sh        # Step 1 — Java + Kerberos
+#   bash setup_env.sh        # Step 1 — Java + Kerberos
 #   bash install_r_packages.sh    # Step 2 — R packages (this script)
 #
 # What this script does:
@@ -25,7 +25,7 @@
 #        c. Verifies all packages load successfully and prints a summary.
 #
 # Prerequisites:
-#   - setup_prcc_env.sh must have been run first (conda env must exist)
+#   - setup_env.sh must have been run first (conda env must exist)
 #   - module load R (or R must be on PATH via another mechanism)
 # =============================================================================
 
@@ -54,8 +54,8 @@ module load miniforge
 
 if ! conda env list | grep -qE '^openjdk[[:space:]]'; then
   echo "ERROR: conda env 'openjdk' not found."
-  echo "       Please run setup_prcc_env.sh first:"
-  echo "         bash setup_prcc_env.sh"
+  echo "       Please run setup_env.sh first:"
+  echo "         bash setup_env.sh"
   exit 1
 fi
 
@@ -67,7 +67,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 2 — Fix linker paths for rJava compilation
 #
-# R is installed system-wide on PRCC and was compiled against system libraries
+# R is installed system-wide on the protected analytic space and was compiled against system libraries
 # (liblzma, libz, libbz2, libzstd, libdeflate, libicuuc, libpcre2, etc.).
 # When rJava is compiled, it links against R — which pulls in all of R's own
 # system library dependencies.
@@ -83,7 +83,7 @@ echo ""
 # -----------------------------------------------------------------------------
 echo "[2/3] Configuring linker paths for rJava compilation ..."
 
-# Common system library locations on RHEL/CentOS-based HPC nodes (PRCC uses
+# Common system library locations on RHEL/CentOS-based HPC nodes (common on
 # Rocky Linux).  We prepend conda's own lib dir so conda-provided libraries
 # still take priority; system dirs are the fallback for anything R pulled in
 # from the system at its own compile time.
@@ -119,7 +119,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 3 — Set a user-writable R package library
 #
-# R is installed system-wide on PRCC and users do not have write access to
+# R is installed system-wide on the protected analytic space and users do not have write access to
 # the system library ($(R RHOME)/library).  R_LIBS_USER tells R to install
 # packages into a directory under the user's home folder instead.
 #

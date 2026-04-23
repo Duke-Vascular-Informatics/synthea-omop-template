@@ -1,12 +1,12 @@
 # =============================================================================
-# R/drivers.R — PRCC bundle edition
+# R/drivers.R — transportable bundle edition
 #
 # The MSSQL JDBC 13.2.1 JAR is bundled directly in drivers/ so no download is
 # needed. This file provides ensure_jdbc_bundle() which simply verifies the JAR
 # is present and sets the DATABASECONNECTOR_JAR_FOLDER environment variable.
 #
 # On the local Windows dev setup the equivalent file downloads and extracts the
-# full JDBC zip. On PRCC/Linux the zip extraction step is skipped — the JAR is
+# full JDBC zip. On HPC/Linux the zip extraction step is skipped — the JAR is
 # included in the bundle directly.
 # =============================================================================
 
@@ -28,7 +28,7 @@ ensure_jdbc_bundle <- function(config) {
     stop(
       "No mssql-jdbc*.jar found in: ", dir, "\n",
       "Expected: drivers/mssql-jdbc-13.2.1.jre11.jar\n",
-      "Re-unzip the PRCC bundle or contact the study coordinator to obtain the JAR."
+      "Re-unzip the transportable bundle or contact the study coordinator to obtain the JAR."
     )
   }
 

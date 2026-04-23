@@ -105,7 +105,7 @@ library(SqlRender)            # SQL parameterization and dialect translation
 library(FeatureExtraction)    # covariate extraction for PLP model
 library(PatientLevelPrediction)  # prognostic model development and validation
 
-# Output packages (tidyverse / Duke CRAN)
+# Output packages (tidyverse / CRAN)
 library(dplyr)      # data frame manipulation
 library(ggplot2)    # result visualization
 library(officer)    # Word report generation

@@ -272,7 +272,7 @@ Step 8 must be run in a **fresh R session** (the Java/JDBC guard will stop it ot
 
 ## Package Management
 
-R packages are pinned in `renv.lock` (R 4.5.2, Duke CRAN mirror). OHDSI packages not
+R packages are pinned in `renv.lock` (R 4.5.2, cloud.r-project.org). OHDSI packages not
 available on CRAN ship as prebuilt binaries in `internal_repo/bin/` for offline
 installation.
 
@@ -300,7 +300,7 @@ on every session. It encodes three hard rules for AI-assisted coding:
 1. **Concept ID transparency** — every concept ID recommendation must be tagged `[vocab query]`
    (confirmed against the live vocabulary) or `[pretraining]` (unverified, with explicit warning).
 2. **HADES-first package selection** — use OHDSI HADES packages for all OHDSI methodology;
-   fall back to tidyverse; all packages must be on the Duke CRAN mirror.
+   fall back to tidyverse; all packages must be on the project CRAN mirror.
 3. **Verbose comments** — all code follows OHDSI GitHub repository commenting conventions.
 
 | File | Scope | Purpose |

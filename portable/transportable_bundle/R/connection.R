@@ -1,11 +1,11 @@
 # =============================================================================
-# R/connection.R — PRCC bundle edition
+# R/connection.R — transportable bundle edition
 #
 # Configures Java and connects to SQL Server via Kerberos authentication on
-# Duke PRCC, following the approach provided by Duke SOM-HPC.
+# protected analytic space, following the approach provided by your HPC support team.
 #
 # Authentication model:
-#   - The user runs `kinit` (via setup_prcc_env.sh) before starting R.
+#   - The user runs `kinit` (via setup_env.sh) before starting R.
 #     The Kerberos ticket is stored at ~/krb5cc_java.
 #   - A JAAS config (drivers/jaas.conf) is written at runtime pointing the
 #     MSSQL JDBC driver at the Krb5LoginModule and ticket cache.
@@ -13,14 +13,14 @@
 #     library(DatabaseConnector) is called — this is required so that
 #     java.parameters (including the JAAS path) take effect.
 #   - Two JARs are added to the classpath:
-#       1. prcc-jdbc-mssql-1.0-SNAPSHOT.jar  (Duke SOM-HPC wrapper, ~/drivers/)
+#       1. hpc-jdbc-wrapper.jar  (your HPC support team wrapper, ~/drivers/)
 #       2. mssql-jdbc-13.2.1.jre11.jar       (bundled in drivers/)
 #   - The JDBC URL uses integratedSecurity=true + authenticationScheme=JavaKerberos.
 #   - No username or password is embedded in the script.
 #
 # Call order (enforced by run_analysis.R):
-#   1. source("config.R")          — resolves java_home, prcc_jar, jdbc_runtime_dir
-#   2. configure_java_prcc(config) — sets java.parameters, writes jaas.conf,
+#   1. source("config.R")          — resolves java_home, hpc_jar, jdbc_runtime_dir
+#   2. configure_java_hpc(config) — sets java.parameters, writes jaas.conf,
 #                                    calls .jinit(), adds JARs to classpath
 #   3. library(DatabaseConnector)  — JVM already running; picks up classpath
 #   4. build_connection_details()  — constructs JDBC URL, returns ConnectionDetails
@@ -38,18 +38,18 @@
 # to use the existing ticket cache obtained by `kinit` (doNotPrompt=true).
 #
 # The ticketCache path is taken from the KRB5CCNAME environment variable
-# (set by setup_prcc_env.sh as FILE:~/krb5cc_java) with the FILE: prefix
+# (set by setup_env.sh as FILE:~/krb5cc_java) with the FILE: prefix
 # stripped and ~ expanded.  If KRB5CCNAME is unset the ticketCache line is
 # omitted and the JVM falls back to its default cache location.
 #
-# The file is (re)written every time configure_java_prcc() is called so the
-# path is always current; this is safe because configure_java_prcc() must
+# The file is (re)written every time configure_java_hpc() is called so the
+# path is always current; this is safe because configure_java_hpc() must
 # run before rJava is loaded.
 # ---------------------------------------------------------------------------
 write_jaas_conf <- function(jaas_path) {
 
   # Resolve Kerberos ticket cache path from the environment variable set by
-  # setup_prcc_env.sh: KRB5CCNAME=FILE:~/krb5cc_java
+  # setup_env.sh: KRB5CCNAME=FILE:~/krb5cc_java
   krb5_env  <- Sys.getenv("KRB5CCNAME")
   krb5_file <- path.expand(sub("^FILE:", "", krb5_env))
 
@@ -82,7 +82,7 @@ write_jaas_conf <- function(jaas_path) {
 }
 
 # ---------------------------------------------------------------------------
-# configure_java_prcc()
+# configure_java_hpc()
 #
 # Sets JAVA_HOME and PATH, writes jaas.conf, sets java.parameters, then
 # explicitly initialises the JVM via rJava::.jinit() and adds both JDBC JARs
@@ -91,7 +91,7 @@ write_jaas_conf <- function(jaas_path) {
 # MUST be called BEFORE library(DatabaseConnector) — run_analysis.R does this.
 # Once the JVM is running, java.parameters cannot be changed.
 # ---------------------------------------------------------------------------
-configure_java_prcc <- function(config) {
+configure_java_hpc <- function(config) {
   java_home <- config$java_home
 
   if (is.null(java_home) || nchar(trimws(java_home)) == 0) {
@@ -111,7 +111,7 @@ configure_java_prcc <- function(config) {
 
   # Add $JAVA_HOME/lib/server to LD_LIBRARY_PATH so the dynamic linker can
   # find libjvm.so at runtime when rJava calls dyn.load().
-  # Without this, rJava compiles successfully but fails to load on PRCC with:
+  # Without this, rJava compiles successfully but fails to load on the protected analytic space with:
   #   "libjvm.so: cannot open shared object file: No such file or directory"
   # The JVM shared library lives inside the conda env's JDK rather than in a
   # standard system path, so it must be added explicitly before .jinit().
@@ -165,29 +165,29 @@ configure_java_prcc <- function(config) {
   rJava::.jinit()
 
   # Add both JDBC JARs to the running JVM's classpath:
-  #   1. Duke SOM-HPC Kerberos wrapper — required for authentication on PRCC.
+  #   1. your HPC support team Kerberos wrapper — required for authentication on the protected analytic space.
   #   2. Standard MSSQL JDBC driver   — bundled in drivers/.
-  prcc_jar     <- normalizePath(config$prcc_jar,     mustWork = FALSE)
+  hpc_jar     <- normalizePath(config$hpc_jar,     mustWork = FALSE)
   bundled_jar  <- normalizePath(
     file.path(config$jdbc_runtime_dir,
               "mssql-jdbc-13.2.1.jre11.jar"),
     mustWork = FALSE
   )
 
-  if (!file.exists(prcc_jar)) {
+  if (!file.exists(hpc_jar)) {
     stop(
-      "PRCC custom JAR not found: ", prcc_jar, "\n",
-      "Expected at ~/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar on PRCC.\n",
-      "Contact Duke SOM-HPC to obtain this file."
+      "Institution-provided JDBC wrapper JAR not found: ", hpc_jar, "\n",
+      "Expected at ~/drivers/hpc-jdbc-wrapper.jar on the protected analytic space.\n",
+      "Contact your HPC support team to obtain this file."
     )
   }
   if (!file.exists(bundled_jar)) {
     stop("Bundled MSSQL JDBC JAR not found: ", bundled_jar)
   }
 
-  rJava::.jaddClassPath(prcc_jar)
+  rJava::.jaddClassPath(hpc_jar)
   rJava::.jaddClassPath(bundled_jar)
-  message("Classpath: ", basename(prcc_jar), " + ", basename(bundled_jar))
+  message("Classpath: ", basename(hpc_jar), " + ", basename(bundled_jar))
 
   # Tell DatabaseConnector where to scan for JDBC JARs (fallback).
   Sys.setenv(DATABASECONNECTOR_JAR_FOLDER =
@@ -201,17 +201,17 @@ configure_java_prcc <- function(config) {
 # build_connection_details()
 #
 # Builds a DatabaseConnector ConnectionDetails object using the full JDBC URL
-# approach confirmed by Duke SOM-HPC for Kerberos authentication on PRCC:
+# approach confirmed by your HPC support team for Kerberos authentication on the protected analytic space:
 #
 #   jdbc:sqlserver://<server>;databaseName=<db>;integratedSecurity=true;
 #     authenticationScheme=JavaKerberos;trustServerCertificate=true
 #
-# configure_java_prcc() must have been called before this function (and before
+# configure_java_hpc() must have been called before this function (and before
 # library(DatabaseConnector)) so the JVM is already running with the correct
 # classpath and JAAS config.
 #
 # Prerequisites:
-#   1. configure_java_prcc(config) called before library(DatabaseConnector).
+#   1. configure_java_hpc(config) called before library(DatabaseConnector).
 #   2. KRB5CCNAME set and a valid Kerberos ticket obtained via kinit.
 # ---------------------------------------------------------------------------
 build_connection_details <- function(config) {
@@ -235,7 +235,7 @@ build_connection_details <- function(config) {
     )
   }
 
-  # Full JDBC URL — matches the approach confirmed by Duke SOM-HPC.
+  # Full JDBC URL — matches the approach confirmed by your HPC support team.
   #
   # serverSpn: The Kerberos Service Principal Name (SPN) registered for the
   # SQL Server instance in Active Directory.  Without this, the JDBC driver

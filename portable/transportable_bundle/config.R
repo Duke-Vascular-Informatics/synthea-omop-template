@@ -5,7 +5,7 @@
 # Set them in a .env file at the bundle root or export them in your shell
 # before launching R.  See .env.example for the full list.
 #
-# Authentication: Kerberos (NetID). Run setup_prcc_env.sh first to obtain
+# Authentication: Kerberos (NetID). Run setup_env.sh first to obtain
 # a Kerberos ticket. Java is provided by the conda openjdk environment; this
 # script resolves JAVA_HOME automatically from the active environment.
 # =============================================================================
@@ -39,17 +39,17 @@ get_validation_config <- function() {
   jdbc_runtime_dir <- file.path(getwd(), "drivers")
 
   # ---------------------------------------------------------------------------
-  # PRCC custom JDBC wrapper JAR — located in a drivers/ folder one level above
-  # the bundle directory.
-  # Expected path: /data/pro00119168/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
-  # (i.e. a sibling 'drivers' folder next to the unzipped bundle folder)
-  # Provided by Duke SOM-HPC; required for Kerberos authentication on PRCC.
+  # Institution-provided JDBC wrapper JAR — required for Kerberos authentication.
+  # Set OMOP_HPC_JAR in .env to the absolute path of this file.
+  # If your institution does not require a custom wrapper, set OMOP_HPC_JAR=""
+  # and update configure_java_hpc() in R/connection.R accordingly.
   # ---------------------------------------------------------------------------
-  prcc_jar <- file.path(
+  hpc_jar_default <- file.path(
     dirname(normalizePath(getwd(), mustWork = FALSE)),
     "drivers",
-    "prcc-jdbc-mssql-1.0-SNAPSHOT.jar"
+    "hpc-jdbc-wrapper.jar"
   )
+  hpc_jar <- Sys.getenv("OMOP_HPC_JAR", unset = hpc_jar_default)
 
   # ---------------------------------------------------------------------------
   # SQL Server connection — FILL IN THESE VALUES
@@ -58,7 +58,7 @@ get_validation_config <- function() {
     # Java
     java_home        = java_home,
     jdbc_runtime_dir = jdbc_runtime_dir,
-    prcc_jar         = prcc_jar,
+    hpc_jar         = hpc_jar,
 
     # ---- CONNECTION (read from environment variables — set in .env) ---------
     # SQL Server hostname. Omit the port when using the default (1433).
@@ -120,7 +120,7 @@ get_validation_config <- function() {
     risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
 
     # SSI attribution window in days after the index procedure date.
-    # 90 days matches the PRCC validation study design.
+    # 90 days matches the HPC cluster validation study design.
     prediction_window_days     = 90L,
 
     # Study date window — adjust to match your CDM coverage.

@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# install_packages.R — PAD/OLER SSI Validation Bundle — PRCC edition
+# install_packages.R — PAD/OLER SSI Validation Bundle — HPC / protected analytic space edition
 #
 # Installs all R packages required to run the integer risk score pipeline and
 # generate the manuscript-format Word report.
@@ -14,7 +14,7 @@
 #
 # WHY NO R CMD javareconf:
 #   R CMD javareconf writes to $(R RHOME)/etc/javaconf, which is a system-wide
-#   R installation directory.  On PRCC, R is installed system-wide and users
+#   R installation directory.  On shared HPC clusters, R is typically installed system-wide and users
 #   do not have write access there — javareconf will fail with a permissions
 #   error.  It is also unnecessary: rJava's own configure script reads
 #   JAVA_HOME directly from the environment at compile time.  As long as
@@ -31,7 +31,7 @@
 #                It does not need to be listed explicitly here.
 #   RPostgres  — a *suggested* (optional) dependency of DatabaseConnector for
 #                PostgreSQL connections.  We use SQL Server only; installing it
-#                would require libpq system headers unavailable on PRCC nodes.
+#                would require libpq system headers unavailable on HPC nodes.
 #   ssh        — another *suggested* dependency of DatabaseConnector for tunnel
 #                connections.  Not needed for our direct Kerberos JDBC approach;
 #                installing it would require libssh2 system headers.
@@ -113,7 +113,7 @@ if (!file.access(lib_path, mode = 2) == 0) {
 # *hard* dependencies of each package — those listed under Depends, Imports,
 # or LinkingTo in DESCRIPTION.  It deliberately excludes Suggests, which
 # would pull in RPostgres (needs libpq) and ssh (needs libssh2), neither of
-# which are available as compiled system libraries on PRCC compute nodes and
+# which are available as compiled system libraries on the protected analytic space compute nodes and
 # neither of which are needed for our SQL Server / Kerberos workflow.
 # ---------------------------------------------------------------------------
 core_packages <- c(
@@ -168,11 +168,11 @@ if (length(failed) > 0) {
   stop(
     "The following package(s) failed to install or load:\n",
     paste("  -", failed, collapse = "\n"), "\n\n",
-    "Common causes on PRCC:\n",
+    "Common causes on the protected analytic space:\n",
     "  - rJava: JAVA_HOME not set or jni.h not found.\n",
     "           Fix: use 'bash install_r_packages.sh' (not Rscript directly).\n",
-    "  - Any package: network issue reaching the Duke CRAN mirror.\n",
-    "           Fix: check PRCC internet access and retry.\n",
+    "  - Any package: network issue reaching the CRAN mirror (CRAN_MIRROR in .env).\n",
+    "           Fix: check HPC cluster internet access and retry.\n",
     "  - DatabaseConnector: rJava failed, so it could not load.\n",
     "           Fix: resolve rJava first (see above), then retry."
   )
