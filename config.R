@@ -105,6 +105,17 @@ get_validation_config <- function() {
     outcome_cohort_sql    = file.path("cohorts", "outcome_ssi.sql"),       # <-- RENAME to match your file
 
     # -------------------------------------------------------------------------
+    # TODO [CONFIG]: Visit type filter for the target cohort index event.
+    # Integer vector of OMOP visit_concept_id values:
+    #   9201L = Inpatient Visit
+    #   9202L = Outpatient Visit
+    #   9203L = Emergency Room Visit
+    # Set to NULL or integer(0) to include ALL visit types (no filter applied).
+    # Multiple types: c(9201L, 9203L) — inpatient or ED.
+    # -------------------------------------------------------------------------
+    target_visit_concept_ids = c(9201L),    # <-- REPLACE or set to NULL for all visits
+
+    # -------------------------------------------------------------------------
     # Existing ATLAS cohorts (optional).
     # If use_atlas_cohorts = TRUE the target cohort is copied from ATLAS rather
     # than being instantiated from the local SQL file.

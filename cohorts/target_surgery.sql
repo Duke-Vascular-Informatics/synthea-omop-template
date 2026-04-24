@@ -175,14 +175,15 @@ FROM (
     ON p.person_id = vo.person_id
 
   WHERE
+    1 = 1    -- anchor: all clauses below start with AND and can be removed safely
 
-    -- TODO [TARGET COHORT]: Set visit type filter.
-    -- Standard visit_concept_id values:
-    --   9201 = Inpatient Visit
-    --   9202 = Outpatient Visit
-    --   9203 = Emergency Room Visit
-    -- Remove this filter to include all visit types.
-    vo.visit_concept_id = 9201
+    -- Visit type filter — driven by config$target_visit_concept_ids in config.R.
+    -- Standard visit_concept_id values: 9201 Inpatient, 9202 Outpatient, 9203 ED.
+    -- Set target_visit_concept_ids = NULL in config.R to include all visit types.
+    -- When visit_concept_ids is empty the block below is omitted entirely by SqlRender.
+    {@visit_concept_ids != ""} ? {
+    AND vo.visit_concept_id IN (@visit_concept_ids)
+    }
 
     -- Study date window (driven by config.R — do not hard-code dates here)
     AND vo.visit_start_date >= CAST('@study_start_date' AS DATE)

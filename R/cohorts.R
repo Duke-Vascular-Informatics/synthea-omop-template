@@ -238,6 +238,17 @@ build_cohorts <- function(connection, config) {
   )
 
   # ---- Target cohort --------------------------------------------------------
+  # Format target_visit_concept_ids (from config) as a comma-separated string
+  # for SqlRender's @visit_concept_ids parameter.  An empty string tells the
+  # SqlRender conditional block to omit the visit type filter entirely so that
+  # all visit types are included without leaving a dangling AND in the SQL.
+  visit_ids <- config$target_visit_concept_ids
+  visit_ids_str <- if (is.null(visit_ids) || length(visit_ids) == 0L) {
+    ""
+  } else {
+    paste(as.integer(visit_ids), collapse = ", ")
+  }
+
   if (isTRUE(config$use_atlas_cohorts)) {
     copy_atlas_cohort(
       connection            = connection,
@@ -255,7 +266,8 @@ build_cohorts <- function(connection, config) {
       connection    = connection,
       sql_file      = config$target_cohort_sql,
       render_params = c(common_params,
-                        list(target_cohort_id = config$target_cohort_id)),
+                        list(target_cohort_id  = config$target_cohort_id,
+                             visit_concept_ids = visit_ids_str)),
       label         = paste0("Target cohort (id ", config$target_cohort_id, ")")
     )
   }

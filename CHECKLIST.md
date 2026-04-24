@@ -46,8 +46,9 @@ Run `Rscript scripts/find_todos.R` at any time to see all remaining placeholders
       and update `config$target_cohort_sql` to match
 - [ ] **Index event** — replace `concept_id = 0` in the `AND EXISTS` block with your
       verified exposure ancestor concept ID(s)
-- [ ] **Visit type filter** — change `visit_concept_id = 9201` to the correct visit type,
-      or remove the filter if the exposure can occur across visit types
+- [ ] **Visit type filter** — set `target_visit_concept_ids` in `config.R` to the correct
+      visit concept ID(s) (e.g. `c(9201L)` for Inpatient, `c(9201L, 9203L)` for Inpatient + ED),
+      or `NULL` to include all visit types (no filter applied)
 - [ ] **Age filter** — change `>= 18` to your minimum age threshold, or remove if not needed
 - [ ] **Index date** — confirm `vo.visit_start_date` is the right date field, or switch to
       `po.procedure_date`, `de.drug_exposure_start_date`, etc.
