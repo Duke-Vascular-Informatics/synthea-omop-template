@@ -22,180 +22,14 @@
 #   • Descriptive comparison   — target + comparator (no formal outcome)
 #
 # =============================================================================
-# TEMPLATE — COMPLETE THE THREE SECTIONS BELOW BEFORE RUNNING THIS STEP
+# STUDY PARAMETERS — read from study_params.yaml via config.R
 # =============================================================================
-
-
+# All study-specific settings (study design, cohort SQL paths, concept IDs,
+# analysis parameters) live in study_params.yaml. This script reads them via
+# get_validation_config() below and uses them for validation only.
+#
+# To change any setting: edit study_params.yaml, then re-run this script.
 # =============================================================================
-# SECTION A — STUDY DESIGN
-# =============================================================================
-# TODO [STUDY DESIGN]: Set study_design to match your analysis.
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# HOW TO CHOOSE YOUR STUDY DESIGN
-# ─────────────────────────────────────────────────────────────────────────────
-# Not sure which design fits your research question? Work through these prompts:
-#
-#   Step 1 — What is the core question?
-#
-#     "Who ARE these patients and what do they look like?"
-#       → "cohort_characterization"
-#          Describe demographics, comorbidities, medications, and healthcare
-#          utilisation in a single cohort. No comparison or outcome required.
-#          Example: "Describe patients undergoing hip replacement surgery."
-#
-#     "Who will DEVELOP a complication or event in the future?"
-#       → "prognostic_model"
-#          Build a prediction model: use patient characteristics at baseline
-#          (covariates) to predict whether an outcome occurs within a follow-up
-#          window. You still need ONE cohort and ONE outcome.
-#          Example: "Predict 90-day VTE risk after total knee replacement."
-#          Key question: "Who is at risk?"
-#
-#     "Did the TREATMENT cause a better (or worse) outcome?"
-#       → "causal_inference"
-#          Compare outcomes between a treated group (target) and a control
-#          group (comparator). Requires matching or propensity score adjustment
-#          to handle confounding.
-#          Example: "Does prophylactic antibiotics reduce 30-day SSI rate
-#                    vs. no prophylaxis?"
-#          Key question: "Did the treatment help?"
-#
-#     "How do two groups DIFFER in their baseline characteristics?"
-#       → "descriptive"
-#          Compare demographics and comorbidities between two cohorts without
-#          estimating a causal effect or predicting an outcome.
-#          Example: "Compare laparoscopic vs. open colectomy patients."
-#
-#     None of the above fits → "custom" (minimal validation).
-#
-#   Step 2 — What do I need?
-#
-#     Design                  | Target | Comparator | Outcome | Covariates
-#     ─────────────────────────────────────────────────────────────────────
-#     cohort_characterization |  Yes   |     No     |   No    | Optional
-#     prognostic_model        |  Yes   |     No     |   Yes   | Required
-#     causal_inference        |  Yes   |    Yes     |   Yes   | Required
-#     descriptive             |  Yes   |    Yes     |   No    | Optional
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# Options:
-#   "cohort_characterization" — Describe a single cohort. No outcome or
-#                               comparator required. Step 8 will typically
-#                               call FeatureExtraction or CohortDiagnostics.
-#
-#   "prognostic_model"        — Predict an outcome in a single cohort.
-#                               Requires: target cohort + outcome cohort +
-#                               covariate definitions.
-#                               Step 8 will typically call
-#                               PatientLevelPrediction::runPlp().
-#
-#   "causal_inference"        — Estimate a treatment effect.
-#                               Requires: target (treated) + comparator
-#                               (control) + outcome + covariate definitions.
-#                               Step 8 will typically call
-#                               CohortMethod::runCmAnalyses() or
-#                               SelfControlledCaseSeries::runSccsAnalyses().
-#
-#   "descriptive"             — Compare two cohorts without a formal outcome.
-#                               Requires: target + comparator.
-#                               Step 8 will typically produce summary tables.
-#
-#   "custom"                  — Any other design. Validation is minimal.
-#
-study_design <- "prognostic_model"   # <-- REPLACE with your study design
-
-
-# =============================================================================
-# SECTION B — PHENOTYPE ARTIFACT PATHS
-# =============================================================================
-# TODO [PHENOTYPE PATHS]: Set the path to each SQL file and covariate
-# definition file for your study. Paths are relative to the project root.
-#
-# Set a variable to NULL to mark it as unused for your design.
-# Step 2 will skip validation for NULL entries and emit a reminder if a
-# non-NULL file is missing.
-#
-# SQL FILE NAMING CONVENTION
-# ─────────────────────────
-# Name your files to reflect the study concept, not the template default.
-# Examples:
-#   Target cohort   : "cohorts/initiators_statin.sql"
-#                     "cohorts/hip_replacement_index.sql"
-#   Comparator      : "cohorts/initiators_fibrate.sql"
-#                     "cohorts/knee_replacement_index.sql"
-#   Outcome         : "cohorts/mi_outcome.sql"
-#                     "cohorts/vte_90day.sql"
-#
-# The two template SQL files already in cohorts/ use generic names:
-#   cohorts/target_surgery.sql  — target / exposure cohort template
-#   cohorts/outcome_ssi.sql     — outcome cohort template
-# Rename or copy them as needed for your study.
-
-# --- Cohort SQL paths are read from config.R (single source of truth) ---
-# Set target_cohort_sql, comparator_cohort_sql, and outcome_cohort_sql in
-# config.R. This step reads those values automatically — no duplication needed.
-#
-# Names your files to reflect the study concept, not the template default, and
-# update config$target_cohort_sql / config$outcome_cohort_sql to match.
-#
-# config.R is sourced in Chunk 1 below; the three path variables are set there
-# from config$target_cohort_sql, config$comparator_cohort_sql, and
-# config$outcome_cohort_sql.  Do not set them here.
-
-# --- Covariate / feature definitions ---
-# How you define covariates depends on your analysis approach:
-#
-#   Option 1 — FeatureExtraction settings object (R object, not a file):
-#     Define a FeatureExtraction::createCovariateSettings() call in Step 8.
-#     Set both covariate_* paths to NULL here.
-#
-#   Option 2 — Custom CSV specification (as used by this template's pipeline):
-#     Populate covariates/components.csv and covariates/component_concepts.csv.
-#     Set paths below.
-#
-#   Option 3 — ATLAS concept sets or cohort features (JSON files):
-#     Point the paths below to your JSON specification files.
-#
-#   Option 4 — No pre-specified covariates (e.g. cohort characterization only):
-#     Set both to NULL.
-#
-covariate_components_path <- "covariates/components.csv"          # <-- SET path, or NULL
-covariate_concepts_path   <- "covariates/component_concepts.csv"  # <-- SET path, or NULL
-
-
-# =============================================================================
-# SECTION C — STUDY PARAMETERS
-# =============================================================================
-# TODO [STUDY PARAMETERS]: Set the analysis parameters that are NOT in config.R.
-# These are study-design–specific values referenced in Step 8.
-#
-# These variables are defined here (not in config.R) because they describe
-# the analytic structure of the study, not the infrastructure.
-# Add or remove parameters as your design requires.
-
-# Prediction / follow-up window (days after index date for outcome attribution).
-# Used by prognostic_model and causal_inference designs.
-# Set to NULL if not applicable.
-prediction_window_days <- 90L        # <-- REPLACE or set to NULL
-
-# Minimum required days of prior observation before index date.
-# Patients with fewer prior days are excluded from the cohort.
-# Set to NULL to skip this restriction.
-min_prior_observation_days <- 365L   # <-- REPLACE or set to NULL
-
-# Covariate lookback window (days before index to extract covariates).
-# Used when configuring FeatureExtraction or custom covariate queries.
-# Set to NULL if using a fixed window defined in covariate files.
-covariate_lookback_days <- 365L      # <-- REPLACE or set to NULL
-
-# TODO [STUDY PARAMETERS]: Add any other study-specific parameters here.
-# Examples:
-#   washout_days           <- 365L    # Prior-event washout window
-#   time_at_risk_start     <- 1L      # Days after index to start follow-up
-#   time_at_risk_end       <- 365L    # Days after index to end follow-up
-#   ps_model_covariates    <- TRUE    # Include propensity score covariates
-#   negative_control_ids   <- c(...)  # Negative control outcome concept IDs
 
 
 # =============================================================================
@@ -221,13 +55,19 @@ bootstrap_path <- local({
 source(bootstrap_path)
 set_workflow_root()
 
-# Read cohort SQL paths from config.R — single source of truth.
-# Step 8 (build_cohorts) reads the same config, so the paths never diverge.
+# Read all study parameters from config.R (which reads study_params.yaml).
+# Step 8 (build_cohorts) reads the same config, so the values never diverge.
 source("config.R")
 config <- get_validation_config()
 target_cohort_sql_path     <- config$target_cohort_sql
 comparator_cohort_sql_path <- config$comparator_cohort_sql
 outcome_cohort_sql_path    <- config$outcome_cohort_sql
+study_design               <- config$study_design
+prediction_window_days     <- config$prediction_window_days
+min_prior_observation_days <- config$min_prior_observation_days
+covariate_lookback_days    <- config$covariate_lookback_days
+covariate_components_path  <- config$covariate_components_file
+covariate_concepts_path    <- config$covariate_concepts_file
 
 
 # -----------------------------------------------------------------------------
@@ -246,7 +86,7 @@ if (study_design %in% c("prognostic_model", "causal_inference", "descriptive")) 
   } else if (study_design %in% c("causal_inference", "descriptive")) {
     warning(
       "[Step 2] study_design = '", study_design, "' typically requires a comparator cohort.\n",
-      "  TODO [PHENOTYPE PATHS]: Set comparator_cohort_sql_path or change study_design."
+      "  Set comparator.sql_file in study_params.yaml or change study_design."
     )
   }
 }
@@ -276,7 +116,7 @@ if (length(missing_required) > 0) {
   stop(
     "Missing required phenotype artifact(s):\n",
     paste0("  [", names(missing_required), "] ", unlist(missing_required), collapse = "\n"),
-    "\nCreate the file(s) or update the paths in Section B above."
+    "\nCreate the file(s) or update the sql_file paths in study_params.yaml."
   )
 }
 
@@ -297,10 +137,13 @@ load_sql <- function(path, label) {
   if (nchar(trimws(sql)) == 0)
     stop(label, " SQL file is empty: ", path)
   # Warn if placeholder concept_id = 0 values are still present.
+  # For parameterized templates this is the YAML-level check; for custom SQL
+  # files this catches any hardcoded 0 values that bypass YAML.
   if (grepl("concept_id\\s*=\\s*0\\b|IN\\s*\\(\\s*0\\s*\\)", sql)) {
     warning(
       "[Step 2] ", label, " (", path, ") may contain placeholder concept_id = 0 values.\n",
-      "  Replace all 0 placeholders with verified standard OMOP concept IDs before Step 8."
+      "  For standard templates: set concept IDs in study_params.yaml.\n",
+      "  For custom SQL files: replace hardcoded 0 values with verified OMOP concept IDs."
     )
   }
   sql

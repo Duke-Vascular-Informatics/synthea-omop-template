@@ -10,10 +10,9 @@
 # =============================================================================
 
 targets <- c(
-  "config.R",
-  list.files("cohorts",   pattern = "\\.sql$", full.names = TRUE, recursive = TRUE),
-  list.files("covariates", pattern = "\\.csv$|.R$", full.names = TRUE, recursive = TRUE),
-  list.files("workflow",  pattern = "^02|^07|^08", full.names = TRUE)
+  "study_params.yaml",
+  list.files("covariates", pattern = "\\.csv$", full.names = TRUE, recursive = TRUE),
+  list.files("workflow",  pattern = "^07|^08", full.names = TRUE)
 )
 targets <- targets[file.exists(targets)]
 

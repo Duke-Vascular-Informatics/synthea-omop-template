@@ -1,0 +1,123 @@
+# =============================================================================
+# study_params.yaml
+# OMOP Observational Study Parameters
+#
+# This is the ONLY file you need to edit for a new study.
+# All settings here flow automatically to SQL templates and analysis scripts.
+#
+# SETUP ORDER:
+#   1. Fill in every TODO item in this file
+#   2. Run: Rscript scripts/find_todos.R   — check remaining placeholders
+#   3. Run: Rscript workflow/02_define_omop_cohort_outcome_covariates.R  — validate
+#   4. Populate covariates/components.csv and covariates/component_concepts.csv
+#   5. Write your analysis in workflow/08 Sections 7–9, then run Step 8
+#
+# CONCEPT ID LOOKUP — before writing any concept ID, run in Claude Code chat:
+#   /concept-lookup total hip replacement procedure
+#   /concept-lookup venous thromboembolism condition
+# =============================================================================
+
+# =============================================================================
+# STUDY IDENTITY
+# =============================================================================
+study_name:   "my_study"          # TODO [CONFIG]: lowercase, underscores only; used in output file names
+study_design: "prognostic_model"  # TODO [CONFIG]: cohort_characterization | prognostic_model | causal_inference | descriptive
+
+# =============================================================================
+# STUDY DATE WINDOW
+# Index events outside this range are excluded from all cohorts.
+# =============================================================================
+study_start_date: "2017-01-01"   # TODO [CONFIG]
+study_end_date:   "2025-12-31"   # TODO [CONFIG]
+
+# =============================================================================
+# DATABASE SCHEMAS
+# =============================================================================
+cdm_schema:     "cdm_my_study"       # TODO [CONFIG]: CDM schema populated by Step 5 ETL
+results_schema: "my_study_results"   # TODO [CONFIG]: schema for cohort table and outputs
+cohort_table:   "my_study_cohort"    # TODO [CONFIG]: cohort table name (study-specific to avoid conflicts)
+
+# Optional: set only when the results schema is in a different SQL Server database
+# from the CDM. Leave commented out otherwise.
+# results_database: ~
+
+# =============================================================================
+# TARGET / EXPOSURE COHORT
+# Defines WHO enters the study (index event) and WHEN (index date).
+# =============================================================================
+target:
+  cohort_id: 1
+  sql_file:  "cohorts/target_surgery.sql"
+
+  # Visit type filter — OMOP visit_concept_id values.
+  # 9201 = Inpatient Visit | 9202 = Outpatient Visit | 9203 = Emergency Room
+  # Set to [] to include all visit types (no filter applied).
+  visit_concept_ids: [9201]   # TODO [CONFIG]: adjust or set to [] for all visit types
+
+  # Minimum age at index date (years). Set to 0 for no age restriction.
+  min_age_at_index: 18   # TODO [CONFIG]: adjust or set to 0 for no restriction
+
+  # Index event — the qualifying exposure that marks study entry.
+  # domain: procedure | condition | drug
+  # ancestor_concept_ids: one or more standard OMOP concept IDs; all descendants
+  # are captured automatically via concept_ancestor rollup.
+  # TODO [TARGET COHORT]: Replace 0 with your verified index event concept ID(s).
+  index_event:
+    domain: "procedure"
+    ancestor_concept_ids: [0]   # TODO [TARGET COHORT]: replace 0 — use /concept-lookup [REQUIRES vocab query]
+
+  # Washout: patients who had this condition before their index date are excluded.
+  # Typical use: exclude patients with a prior outcome (incident / new-user design).
+  # Set ancestor_concept_ids to [] to disable washout entirely.
+  # TODO [TARGET COHORT]: Replace 0 with your washout concept ID, or set to [].
+  washout:
+    domain: "condition"
+    ancestor_concept_ids: [0]   # TODO [TARGET COHORT]: replace 0 or set to [] to disable [REQUIRES vocab query]
+    lookback_days: 365
+
+# =============================================================================
+# OUTCOME COHORT
+# Defines WHAT the study is measuring.
+# Set cohort_id and sql_file to ~ (null) for cohort_characterization or descriptive designs.
+# =============================================================================
+outcome:
+  cohort_id: 2
+  sql_file:  "cohorts/outcome_ssi.sql"
+
+  # Outcome ancestor concept IDs. All descendants are captured via concept_ancestor.
+  # TODO [OUTCOME COHORT]: Replace 0 with your verified outcome concept ID.
+  ancestor_concept_ids: [0]   # TODO [OUTCOME COHORT]: replace 0 — use /concept-lookup [REQUIRES vocab query]
+
+# =============================================================================
+# COMPARATOR COHORT (causal inference only — set both fields to ~ for other designs)
+# =============================================================================
+comparator:
+  cohort_id: ~   # ~ = null (no comparator). Set to an integer e.g. 3 for causal inference
+  sql_file:  ~   # e.g. "cohorts/comparator_cohort.sql"
+
+# =============================================================================
+# ANALYSIS PARAMETERS
+# =============================================================================
+# Days after index date during which the outcome is counted.
+# Must match riskWindowEnd in Step 8 analysis settings.
+prediction_window_days: 90   # TODO [CONFIG]: set to your follow-up window in days
+
+# Minimum days of prior observation required before index date.
+# Patients with fewer prior observation days are excluded.
+min_prior_observation_days: 365   # TODO [CONFIG]: adjust or set to 0 for no restriction
+
+# Days before index date for covariate extraction window.
+covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
+
+# =============================================================================
+# OUTPUT
+# =============================================================================
+output_folder: "output/my_study"   # TODO [CONFIG]: update to match study_name
+
+# =============================================================================
+# DATABASE METADATA
+# Used in PatientLevelPrediction result objects and analysis reports.
+# =============================================================================
+cdm_database_id:          "my_cdm_v5.4"                                            # TODO [CONFIG]
+cdm_database_name:        "My Study Database"                                       # TODO [CONFIG]
+cdm_database_description: "Brief description of the patient population and database."  # TODO [CONFIG]

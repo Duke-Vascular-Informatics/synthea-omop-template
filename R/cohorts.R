@@ -134,16 +134,16 @@ instantiate_cohort <- function(connection, sql_file, render_params, label) {
   raw_sql <- paste(raw_sql, collapse = "\n")
 
   # Guard: refuse to execute if ancestor_concept_id = 0 placeholders remain.
-  # Running with 0 silently produces empty cohorts — concept_id 0 ("No matching
-  # concept") has no real clinical descendants in concept_ancestor.
+  # Catches custom SQL files that still have hardcoded concept_id = 0.
+  # For parameterized templates (target_surgery.sql, outcome_ssi.sql) the
+  # primary validation happens in build_cohorts() before this function is called.
   if (grepl("ancestor_concept_id\\s*(=|IN\\s*\\()\\s*0\\b", raw_sql, perl = TRUE)) {
     stop(
       "SETUP REQUIRED - ", basename(sql_file), ":\n",
-      "  ancestor_concept_id = 0 placeholder(s) have not been replaced.\n",
+      "  ancestor_concept_id = 0 placeholder(s) detected in SQL.\n",
       "  Running with concept_id 0 produces an empty cohort with no error.\n\n",
-      "  Fix: edit '", sql_file, "'\n",
-      "  Replace every 'ancestor_concept_id = 0' and 'IN (0' with a\n",
-      "  verified OMOP standard concept ID (use /concept-lookup to find one).\n\n",
+      "  For the standard templates: set concept IDs in study_params.yaml.\n",
+      "  For custom SQL files: replace hardcoded 0 values with verified concept IDs.\n",
       "  Run Rscript scripts/find_todos.R to list all remaining placeholders."
     )
   }
@@ -224,10 +224,50 @@ count_cohort <- function(connection, config, cohort_id, label) {
   n
 }
 
-# Main entry point: create schema + table, instantiate both cohorts, print
-# counts.
+# Main entry point: validate concept IDs, create schema + table, instantiate
+# all cohorts, print row counts.
 build_cohorts <- function(connection, config) {
   ensure_results_schema(connection, config)
+
+  # Helper: return y when x is NULL.
+  `%||%` <- function(x, y) if (is.null(x)) y else x
+
+  # Helper: format an integer vector as a comma-separated string for SqlRender.
+  # An empty string signals SqlRender conditional blocks to omit that clause.
+  fmt_ids <- function(ids) {
+    if (is.null(ids) || length(ids) == 0L) "" else paste(as.integer(ids), collapse = ", ")
+  }
+
+  # ---- Validate concept IDs before touching the database -------------------
+  # Fail early with a clear message rather than silently producing empty cohorts.
+  if (length(config$target_index_concept_ids) > 0 &&
+      any(config$target_index_concept_ids == 0L)) {
+    stop(
+      "SETUP REQUIRED: target index event concept IDs contain placeholder value 0.\n",
+      "  Fix: set target.index_event.ancestor_concept_ids in study_params.yaml.\n",
+      "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
+    )
+  }
+  if (length(config$target_washout_concept_ids) > 0 &&
+      any(config$target_washout_concept_ids == 0L)) {
+    stop(
+      "SETUP REQUIRED: target washout concept IDs contain placeholder value 0.\n",
+      "  Fix: set target.washout.ancestor_concept_ids in study_params.yaml,\n",
+      "  or set it to [] to disable washout entirely.\n",
+      "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
+    )
+  }
+  has_outcome <- !is.null(config$outcome_cohort_sql) &&
+                 !is.na(config$outcome_cohort_id)
+  if (has_outcome &&
+      length(config$outcome_concept_ids) > 0 &&
+      any(config$outcome_concept_ids == 0L)) {
+    stop(
+      "SETUP REQUIRED: outcome concept IDs contain placeholder value 0.\n",
+      "  Fix: set outcome.ancestor_concept_ids in study_params.yaml.\n",
+      "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
+    )
+  }
 
   common_params <- list(
     cdm_database_schema    = config$cdm_schema,
@@ -238,17 +278,6 @@ build_cohorts <- function(connection, config) {
   )
 
   # ---- Target cohort --------------------------------------------------------
-  # Format target_visit_concept_ids (from config) as a comma-separated string
-  # for SqlRender's @visit_concept_ids parameter.  An empty string tells the
-  # SqlRender conditional block to omit the visit type filter entirely so that
-  # all visit types are included without leaving a dangling AND in the SQL.
-  visit_ids <- config$target_visit_concept_ids
-  visit_ids_str <- if (is.null(visit_ids) || length(visit_ids) == 0L) {
-    ""
-  } else {
-    paste(as.integer(visit_ids), collapse = ", ")
-  }
-
   if (isTRUE(config$use_atlas_cohorts)) {
     copy_atlas_cohort(
       connection            = connection,
@@ -266,9 +295,16 @@ build_cohorts <- function(connection, config) {
       connection    = connection,
       sql_file      = config$target_cohort_sql,
       render_params = c(common_params,
-                        list(target_cohort_id  = config$target_cohort_id,
-                             visit_concept_ids = visit_ids_str)),
-      label         = paste0("Target cohort (id ", config$target_cohort_id, ")")
+                        list(
+                          target_cohort_id      = config$target_cohort_id,
+                          visit_concept_ids     = fmt_ids(config$target_visit_concept_ids),
+                          min_age               = as.integer(config$target_min_age %||% 0L),
+                          index_concept_ids     = fmt_ids(config$target_index_concept_ids),
+                          washout_concept_ids   = fmt_ids(config$target_washout_concept_ids),
+                          washout_lookback_days = as.integer(
+                            config$target_washout_lookback_days %||% 365L)
+                        )),
+      label = paste0("Target cohort (id ", config$target_cohort_id, ")")
     )
   }
 
@@ -286,8 +322,6 @@ build_cohorts <- function(connection, config) {
   }
 
   # ---- Outcome cohort (skipped for cohort characterization) -----------------
-  has_outcome <- !is.null(config$outcome_cohort_sql) &&
-                 !is.na(config$outcome_cohort_id)
   if (has_outcome) {
     if (isTRUE(config$use_atlas_cohorts) && !is.na(config$atlas_outcome_cohort_id)) {
       copy_atlas_cohort(
@@ -306,8 +340,11 @@ build_cohorts <- function(connection, config) {
         connection    = connection,
         sql_file      = config$outcome_cohort_sql,
         render_params = c(common_params,
-                          list(outcome_cohort_id = config$outcome_cohort_id)),
-        label         = paste0("Outcome cohort (id ", config$outcome_cohort_id, ")")
+                          list(
+                            outcome_cohort_id   = config$outcome_cohort_id,
+                            outcome_concept_ids = fmt_ids(config$outcome_concept_ids)
+                          )),
+        label = paste0("Outcome cohort (id ", config$outcome_cohort_id, ")")
       )
     }
   }
@@ -329,8 +366,7 @@ build_cohorts <- function(connection, config) {
 
   if (has_outcome && outcome_n == 0) {
     warning(
-      "Outcome cohort is EMPTY. Check the concept IDs in '",
-      config$outcome_cohort_sql, "'."
+      "Outcome cohort is EMPTY. Check outcome.ancestor_concept_ids in study_params.yaml."
     )
   }
 
