@@ -60,9 +60,6 @@ dist/*.zip
 # Institution-specific environment variables — never commit
 .env
 
-# Study-specific parameters — each study has its own copy; not committed.
-# The committed template is study_params.yaml.example.
-study_params.yaml
 
 # Claude Code session files
 .claude/
