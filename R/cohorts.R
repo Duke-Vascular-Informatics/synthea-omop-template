@@ -257,6 +257,28 @@ build_cohorts <- function(connection, config) {
       "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
     )
   }
+  has_comparator <- !is.null(config$comparator_cohort_sql) &&
+                    !is.na(config$comparator_cohort_id)
+  if (has_comparator &&
+      length(config$comparator_index_concept_ids) > 0 &&
+      any(config$comparator_index_concept_ids == 0L)) {
+    stop(
+      "SETUP REQUIRED: comparator index event concept IDs contain placeholder value 0.\n",
+      "  Fix: set comparator.index_event.ancestor_concept_ids in study_params.yaml.\n",
+      "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
+    )
+  }
+  if (has_comparator &&
+      length(config$comparator_washout_concept_ids) > 0 &&
+      any(config$comparator_washout_concept_ids == 0L)) {
+    stop(
+      "SETUP REQUIRED: comparator washout concept IDs contain placeholder value 0.\n",
+      "  Fix: set comparator.washout.ancestor_concept_ids in study_params.yaml,\n",
+      "  or set it to [] to disable washout entirely.\n",
+      "  Use /concept-lookup in Claude Code to find verified OMOP concept IDs."
+    )
+  }
+
   has_outcome <- !is.null(config$outcome_cohort_sql) &&
                  !is.na(config$outcome_cohort_id)
   if (has_outcome &&
@@ -309,15 +331,21 @@ build_cohorts <- function(connection, config) {
   }
 
   # ---- Comparator cohort (causal inference; skipped when NULL or NA) --------
-  has_comparator <- !is.null(config$comparator_cohort_sql) &&
-                    !is.na(config$comparator_cohort_id)
   if (has_comparator) {
     instantiate_cohort(
       connection    = connection,
       sql_file      = config$comparator_cohort_sql,
       render_params = c(common_params,
-                        list(comparator_cohort_id = config$comparator_cohort_id)),
-      label         = paste0("Comparator cohort (id ", config$comparator_cohort_id, ")")
+                        list(
+                          comparator_cohort_id  = config$comparator_cohort_id,
+                          visit_concept_ids     = fmt_ids(config$comparator_visit_concept_ids),
+                          min_age               = as.integer(config$comparator_min_age %||% 0L),
+                          index_concept_ids     = fmt_ids(config$comparator_index_concept_ids),
+                          washout_concept_ids   = fmt_ids(config$comparator_washout_concept_ids),
+                          washout_lookback_days = as.integer(
+                            config$comparator_washout_lookback_days %||% 365L)
+                        )),
+      label = paste0("Comparator cohort (id ", config$comparator_cohort_id, ")")
     )
   }
 

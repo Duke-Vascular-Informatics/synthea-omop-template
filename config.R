@@ -113,8 +113,8 @@ get_validation_config <- function() {
     # -------------------------------------------------------------------------
     # Cohort SQL file paths — from study_params.yaml
     # -------------------------------------------------------------------------
-    target_cohort_sql     = p$target$sql_file   %||% "cohorts/target_surgery.sql",
-    comparator_cohort_sql = p$comparator$sql_file,
+    target_cohort_sql     = p$target$sql_file     %||% "cohorts/target_surgery.sql",
+    comparator_cohort_sql = p$comparator$sql_file %||% "cohorts/comparator_cohort.sql",
     outcome_cohort_sql    = p$outcome$sql_file,
 
     # -------------------------------------------------------------------------
@@ -127,6 +127,18 @@ get_validation_config <- function() {
     target_washout_concept_ids  = as_int_vec(p$target$washout$ancestor_concept_ids),
     target_washout_lookback_days = as.integer(
                                     p$target$washout$lookback_days %||% 365L),
+
+    # -------------------------------------------------------------------------
+    # Comparator cohort phenotype parameters — passed as SqlRender params at runtime.
+    # These are only used when comparator.cohort_id is set in study_params.yaml.
+    # -------------------------------------------------------------------------
+    comparator_visit_concept_ids     = as_int_vec(p$comparator$visit_concept_ids),
+    comparator_min_age               = as.integer(p$comparator$min_age_at_index %||% 0L),
+    comparator_index_concept_ids     = as_int_vec(p$comparator$index_event$ancestor_concept_ids),
+    comparator_index_domain          = p$comparator$index_event$domain %||% "procedure",
+    comparator_washout_concept_ids   = as_int_vec(p$comparator$washout$ancestor_concept_ids),
+    comparator_washout_lookback_days = as.integer(
+                                         p$comparator$washout$lookback_days %||% 365L),
 
     # -------------------------------------------------------------------------
     # Outcome cohort phenotype parameters

@@ -89,11 +89,24 @@ outcome:
   ancestor_concept_ids: [0]   # TODO [OUTCOME COHORT]: replace 0 — use /concept-lookup [REQUIRES vocab query]
 
 # =============================================================================
-# COMPARATOR COHORT (causal inference only — set both fields to ~ for other designs)
+# COMPARATOR COHORT (causal inference only)
+# Set cohort_id to ~ (null) to disable for all other study designs.
+# When enabled, fill in index_event.ancestor_concept_ids exactly as you did
+# for the target cohort — the comparator is the ALTERNATIVE exposure being
+# compared against the target (e.g. Drug A vs Drug B, Procedure X vs Procedure Y).
 # =============================================================================
 comparator:
-  cohort_id: ~   # ~ = null (no comparator). Set to an integer e.g. 3 for causal inference
-  sql_file:  ~   # e.g. "cohorts/comparator_cohort.sql"
+  cohort_id: ~   # ~ = disabled. Set to an integer (e.g. 3) for causal inference
+  sql_file:  "cohorts/comparator_cohort.sql"
+  visit_concept_ids: [9201]
+  min_age_at_index: 18
+  index_event:
+    domain: "procedure"
+    ancestor_concept_ids: ~   # TODO [COMPARATOR]: set when cohort_id is enabled [REQUIRES vocab query]
+  washout:
+    domain: "condition"
+    ancestor_concept_ids: ~   # ~ = no washout; set to concept IDs to enable
+    lookback_days: 365
 
 # =============================================================================
 # ANALYSIS PARAMETERS

@@ -32,8 +32,9 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 - [ ] `output_folder` — update to match `study_name`
 - [ ] `cdm_database_id` / `cdm_database_name` / `cdm_database_description` — metadata for reports
 
-> **Comparator cohort** (causal inference only): set `comparator.cohort_id` and `comparator.sql_file`;
-> create `cohorts/comparator_cohort.sql` (copy and adapt `target_surgery.sql`).
+> **Comparator cohort** (causal inference only): set `comparator.cohort_id` to an integer and
+> fill in `comparator.index_event.ancestor_concept_ids` in `study_params.yaml`.
+> `cohorts/comparator_cohort.sql` is already in the repo — no file creation needed.
 
 ---
 
