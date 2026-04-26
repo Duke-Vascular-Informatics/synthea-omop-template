@@ -28,10 +28,11 @@
 #                                      (weight/height for BMI, sub-covariate
 #                                      roles for mFI) and value_concept_ids
 #                                      (for observation value filtering)
-#   risk_score/risk_lookup.csv        — integer score → published risk mapping
-#                                       (optional; enables lookup-model metrics)
+#   risk_lookup.csv (optional)        — integer score → published risk mapping;
+#                                       pass path as lookup_file= argument to
+#                                       run_integer_risk_score_pipeline()
 #
-# Outputs (written to config$risk_score_output_folder):
+# Outputs (written to the output_folder argument of run_integer_risk_score_pipeline):
 #   person_level_scores.csv       — one row per patient; covariate point columns
 #                                   (score_<covariate_id>), total_score, outcome,
 #                                   predicted_risk_lookup, predicted_risk_recalibrated
@@ -46,9 +47,19 @@
 # -----------------------------------------------------------------------------
 # read_score_specs()
 #
-# Reads and validates the three specification CSV files that define the integer
-# risk score.  Returns a named list with elements $covariates, $concepts, and
-# $lookup (NULL when risk_lookup.csv is absent).
+# Reads and validates the covariate specification CSV files that define the
+# integer risk score.  Returns a named list with elements $covariates,
+# $concepts, and $lookup (NULL when no lookup file is supplied or found).
+#
+# Arguments:
+#   config      — list from get_validation_config() in config.R.
+#                 Reads config$covariate_definitions_file and
+#                 config$covariate_concepts_file — the same standard keys used
+#                 by all other analyses in this template.
+#   lookup_file — optional path to a score → probability lookup CSV
+#                 (columns: score, risk).  Pass NULL to skip.  When supplied,
+#                 the file is read and validated; if the path does not exist
+#                 the lookup is silently omitted (fallback: logistic recalibration).
 #
 # Validation performed:
 #   - All required column names are present in each CSV.
@@ -56,14 +67,15 @@
 #   - Integer/numeric columns are coerced and checked for NA.
 #   - concept_role and value_concept_ids are normalised to lowercase / NA.
 #   - Every covariate_id in covariates.csv has at least one concept mapping.
+#   - The points column is optional (used by the integer scoring path only).
 # -----------------------------------------------------------------------------
-read_score_specs <- function(config) {
-  covariates <- read.csv(config$risk_score_covariates_file, stringsAsFactors = FALSE, comment.char = "#")
-  concepts <- read.csv(config$risk_score_concepts_file, stringsAsFactors = FALSE, comment.char = "#")
+read_score_specs <- function(config, lookup_file = NULL) {
+  covariates <- read.csv(config$covariate_definitions_file, stringsAsFactors = FALSE, comment.char = "#")
+  concepts   <- read.csv(config$covariate_concepts_file,    stringsAsFactors = FALSE, comment.char = "#")
 
   required_covariate_cols <- c(
     "covariate_id", "covariate_name", "domain",
-    "lookback_start_day", "lookback_end_day", "min_count", "points"
+    "lookback_start_day", "lookback_end_day", "min_count"
   )
   missing_covariate_cols <- setdiff(required_covariate_cols, names(covariates))
   if (length(missing_covariate_cols) > 0) {
@@ -84,9 +96,16 @@ read_score_specs <- function(config) {
   }
 
   covariates$lookback_start_day <- as.integer(covariates$lookback_start_day)
-  covariates$lookback_end_day <- as.integer(covariates$lookback_end_day)
-  covariates$min_count <- as.integer(covariates$min_count)
-  covariates$points <- as.numeric(covariates$points)
+  covariates$lookback_end_day   <- as.integer(covariates$lookback_end_day)
+  covariates$min_count          <- as.integer(covariates$min_count)
+
+  # points: optional — only required for the integer risk score scoring path.
+  # Default to 1 (binary presence/absence) when the column is absent.
+  if ("points" %in% names(covariates)) {
+    covariates$points <- as.numeric(covariates$points)
+  } else {
+    covariates$points <- 1L
+  }
 
   # missing_is_negative: optional column added in covariates.csv.
   # TRUE  = absence of CDM records for this covariate is a true negative
@@ -125,14 +144,17 @@ read_score_specs <- function(config) {
     stop("No concept mappings found for covariate_id(s): ", paste(missing_covariates, collapse = ", "))
   }
 
+  # Load optional score → probability lookup table.
+  # When lookup_file is NULL or the file does not exist the pipeline falls back
+  # to logistic recalibration on the validation data.
   lookup <- NULL
-  if (file.exists(config$risk_score_lookup_file)) {
-    lookup <- read.csv(config$risk_score_lookup_file, stringsAsFactors = FALSE)
+  if (!is.null(lookup_file) && file.exists(lookup_file)) {
+    lookup <- read.csv(lookup_file, stringsAsFactors = FALSE)
     if (!all(c("score", "risk") %in% names(lookup))) {
-      stop("risk_lookup.csv must contain columns: score,risk")
+      stop("lookup_file must contain columns: score, risk")
     }
     lookup$score <- as.integer(lookup$score)
-    lookup$risk <- as.numeric(lookup$risk)
+    lookup$risk  <- as.numeric(lookup$risk)
   }
 
   list(covariates = covariates, concepts = concepts, lookup = lookup)
@@ -1966,25 +1988,37 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 #   8. save_calibration_plot()   — save calibration_*.png for each model
 #
 # Arguments:
-#   config             — list from get_validation_config() in config.R
+#   config             — list from get_validation_config() in config.R.
+#                        Uses config$covariate_definitions_file,
+#                        config$covariate_concepts_file, and
+#                        config$output_folder as the output root.
 #   connection_details — DatabaseConnector ConnectionDetails object
+#   output_folder      — directory for pipeline outputs (person_level_scores.csv,
+#                        covariate_summary.csv, metrics.csv, calibration_*.png).
+#                        Defaults to config$output_folder/risk_score_eval.
+#   lookup_file        — optional path to a score → probability lookup CSV
+#                        (columns: score, risk). Pass NULL to use logistic
+#                        recalibration only.
 #
 # Returns the eval_results list (invisibly); primary side effect is writing
-# files to config$risk_score_output_folder.
+# output files to output_folder.
 # =============================================================================
-run_integer_risk_score_pipeline <- function(config, connection_details) {
-  dir.create(config$risk_score_output_folder, recursive = TRUE, showWarnings = TRUE)
-  if (!dir.exists(config$risk_score_output_folder)) {
+run_integer_risk_score_pipeline <- function(config, connection_details,
+                                            output_folder = file.path(config$output_folder,
+                                                                      "risk_score_eval"),
+                                            lookup_file   = NULL) {
+  dir.create(output_folder, recursive = TRUE, showWarnings = TRUE)
+  if (!dir.exists(output_folder)) {
     stop(
-      "Could not create output directory: ", config$risk_score_output_folder, "\n",
+      "Could not create output directory: ", output_folder, "\n",
       "Check that you have write access to: ",
-      dirname(dirname(config$risk_score_output_folder))
+      dirname(output_folder)
     )
   }
 
   message("\n=== Integer risk score pipeline ===")
   message("Reading score specification files ...")
-  specs <- read_score_specs(config)
+  specs <- read_score_specs(config, lookup_file = lookup_file)
 
   conn <- DatabaseConnector::connect(connection_details)
   on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
@@ -1999,7 +2033,7 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
   message("Evaluating discrimination and calibration ...")
   eval_results <- evaluate_integer_risk_score(person_level, specs$lookup)
 
-  out <- config$risk_score_output_folder
+  out <- output_folder
 
   readr::write_csv(eval_results$person_level, file.path(out, "person_level_scores.csv"))
   readr::write_csv(score_data$covariate_summary, file.path(out, "covariate_summary.csv"))

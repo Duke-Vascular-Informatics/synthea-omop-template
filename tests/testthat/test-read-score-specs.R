@@ -2,10 +2,11 @@ source(file.path(.PROJ_ROOT, "R/risk_score_pipeline.R"))
 
 # Helpers to write minimal valid CSV files into a temp directory.
 make_valid_covariates_csv <- function(path) {
+  # points column is optional — omit here to test the default-to-1 path
   writeLines(c(
-    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
-    "female,Female sex,condition,-365,0,1,1",
-    "obese,Obesity,condition,-365,0,1,2"
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count",
+    "female,Female sex,condition,-365,0,1",
+    "obese,Obesity,condition,-365,0,1"
   ), path)
 }
 
@@ -17,11 +18,12 @@ make_valid_concepts_csv <- function(path) {
   ), path)
 }
 
-make_config <- function(comp_path, conc_path, lookup_path = tempfile(fileext = ".csv")) {
+make_config <- function(comp_path, conc_path) {
+  # Uses the same key names as config.R so read_score_specs() works with the
+  # standard template config without requiring pipeline-specific keys.
   list(
-    risk_score_covariates_file = comp_path,
-    risk_score_concepts_file   = conc_path,
-    risk_score_lookup_file     = lookup_path
+    covariate_definitions_file = comp_path,
+    covariate_concepts_file    = conc_path
   )
 }
 
@@ -58,8 +60,8 @@ test_that("read_score_specs normalizes domain to lowercase", {
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
   writeLines(c(
-    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
-    "female,Female sex,CONDITION,-365,0,1,1"
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count",
+    "female,Female sex,CONDITION,-365,0,1"
   ), comp)
   writeLines(c(
     "covariate_id,concept_id,include_descendants",
@@ -95,7 +97,8 @@ test_that("read_score_specs loads an optional lookup table when present", {
   make_valid_concepts_csv(conc)
   writeLines(c("score,risk", "0,0.05", "1,0.10", "2,0.20"), lkup)
 
-  result <- read_score_specs(make_config(comp, conc, lkup))
+  # lookup_file is a separate argument, not a config key
+  result <- read_score_specs(make_config(comp, conc), lookup_file = lkup)
   expect_false(is.null(result$lookup))
   expect_equal(nrow(result$lookup), 3)
 })
@@ -135,8 +138,8 @@ test_that("read_score_specs stops on unsupported domain", {
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
   writeLines(c(
-    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
-    "female,Female sex,device,-365,0,1,1"
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count",
+    "female,Female sex,device,-365,0,1"
   ), comp)
   make_valid_concepts_csv(conc)
 

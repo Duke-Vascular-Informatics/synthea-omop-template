@@ -1,33 +1,33 @@
 # covariates/
 
 CSV specification files that define the covariates (patient features) used in your study.
-These files are the primary inputs to `R/covariates_pipeline.R` and validated by Step 2.
+These files are validated by Step 2 and consumed by whichever analysis pipeline you wire
+up in `workflow/08`.
 
 They support any study design — prognostic models, causal inference, cohort characterization —
-wherever you need a structured, reusable covariate specification rather than defining
-covariates inline in R code.
+wherever you need a structured, version-controlled covariate specification rather than
+defining covariates inline in R code.
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `covariates.csv` | One row per covariate. Defines the name, OMOP domain, lookback window, minimum event count, and optional point value (for scored models). |
+| `covariates.csv` | One row per covariate. Defines the name, OMOP domain, lookback window, and minimum event count. |
 | `covariate_concepts.csv` | OMOP concept ID mappings for each covariate. Supports `include_descendants = TRUE` for ancestor rollup via `concept_ancestor`. |
-| `risk_lookup.csv` | Optional. Maps an integer total score to a calibrated predicted probability. Leave empty if using logistic regression only. |
 
 ## When to use these files
 
 **Use this CSV approach when:**
-- You have a pre-specified covariate list (e.g. from a published risk model or protocol).
-- You want to version-control the exact concepts used.
-- You are building an integer risk score with point values per covariate.
+- You have a pre-specified covariate list (e.g. from a published protocol or risk model).
+- You want to version-control the exact concepts used and keep them reviewable as plain text.
+- You need per-covariate control over lookback windows or concept expansion.
 
 **Use `FeatureExtraction::createCovariateSettings()` instead when:**
 - You want automated, data-driven covariate extraction across all OMOP domains.
 - You are running PatientLevelPrediction or CohortMethod with a broad feature set.
 
-Set both covariate file paths to `NULL` in `config.R` to skip this pipeline and define
-covariates directly in Step 8.
+Set both file paths to `NULL` in workflow/08 to skip this CSV pipeline and pass a
+`FeatureExtraction` settings object directly.
 
 ---
 
@@ -41,7 +41,7 @@ covariates directly in Step 8.
 | `lookback_start_day` | Start of lookback window relative to index date (negative = before index). Examples: `-365`, `-3650`, `-30` |
 | `lookback_end_day` | End of lookback window. `-1` = day before index (strictly prior). `0` = include index date. |
 | `min_count` | Minimum qualifying records to count the covariate as present. Almost always `1`. |
-| `points` | Score points assigned when present. Positive = risk factor. Negative = protective factor. Use `1` for binary presence/absence covariates. |
+| `points` | **Integer risk score pipeline only.** Point value assigned when present. Positive = risk factor, negative = protective. Set to `1` for simple binary presence/absence. Ignored by FeatureExtraction-based analyses. |
 | `missing_is_negative` | `TRUE` = absence means covariate is absent (default). `FALSE` = for derived covariates where missing ≠ absent (e.g. BMI from weight/height). |
 
 **Notes:**

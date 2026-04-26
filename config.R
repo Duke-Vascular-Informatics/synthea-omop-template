@@ -156,12 +156,14 @@ get_validation_config <- function() {
     atlas_outcome_cohort_id = NA_integer_,
 
     # -------------------------------------------------------------------------
-    # Covariate / feature definition files.
-    # Set to NULL if using FeatureExtraction settings objects in Step 8 instead.
+    # Covariate / feature definition files (pre-specified covariate list).
+    # Used when you have a version-controlled, protocol-specified set of
+    # covariates rather than automated FeatureExtraction across all domains.
+    # Set either to NULL in workflow/08 to skip this pipeline and use
+    # FeatureExtraction::createCovariateSettings() directly instead.
     # -------------------------------------------------------------------------
     covariate_definitions_file = file.path("covariates", "covariates.csv"),
     covariate_concepts_file    = file.path("covariates", "covariate_concepts.csv"),
-    covariate_lookup_file     = file.path("covariates", "risk_lookup.csv"),
 
     # -------------------------------------------------------------------------
     # Analysis parameters — from study_params.yaml

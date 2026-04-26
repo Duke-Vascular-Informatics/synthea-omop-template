@@ -40,14 +40,14 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 ## covariates/covariates.csv
 
-> Only needed if using the custom CSV-based covariate pipeline.
-> Set `covariate_definitions_file = NULL` in `config.R` if using
-> `FeatureExtraction::createCovariateSettings()` in Step 8 instead.
+> Only needed when using the pre-specified CSV covariate pipeline.
+> Skip this and pass a `FeatureExtraction::createCovariateSettings()` object
+> directly in Step 8 if you want automated, broad feature extraction instead.
 
 - [ ] Replace placeholder rows (`covariate_1`, `covariate_2`, etc.) with your study covariates
 - [ ] Set `domain` to one of: `condition`, `drug`, `procedure`, `measurement`, `observation`, `visit`, `demographic`, `bmi`, `operative_time`
 - [ ] Set `lookback_start_day` and `lookback_end_day` relative to index date
-- [ ] Set `points` for a scored model, or `1` for binary presence/absence
+- [ ] *(Integer risk score pipeline only)* Add a `points` column and set point values per covariate
 
 ---
 
