@@ -1,5 +1,5 @@
 {
-  "name": "PAD OLER SSI Validation (R + SQL Server)",
+  "name": "OMOP Study (R + SQL Server)",
   "dockerComposeFile": ["docker-compose.extend.yml"],
   "service": "devcontainer",
   "workspaceFolder": "/workspace",

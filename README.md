@@ -13,98 +13,90 @@ so the resulting analytic code runs in air-gapped or restricted-network environm
 
 ## Using this Template
 
+### 0 — Prerequisites (do this once per machine)
+
+Before cloning the study repo you need:
+1. Docker Desktop running with a SQL Server Developer container
+2. The OMOP vocabulary downloaded from Athena and loaded into that container
+
+**→ Follow [docs/SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
+
+That guide covers the required `OMOP_Dev/` folder layout, the `docker-compose.yml` for
+SQL Server, downloading the correct Athena vocabulary bundles, running the CPT-4 rebuild,
+and loading the vocabulary into SQL Server. It takes about an hour the first time (mostly
+waiting for vocabulary load).
+
+---
+
 ### 1 — Create your study repository
 
 Click **"Use this template" → "Create a new repository"** at the top of this page.
 Give it a study-specific name (e.g. `colectomy-ssi-omop`, `hip-replace-vte-omop`).
 
-Clone the new repo and open it in the dev container (see [Dev Container Setup](#dev-container-setup)):
+Clone the new repo **inside** your `OMOP_Dev/` folder (the relative paths in the dev
+container depend on this):
 
 ```bash
+cd OMOP_Dev
 git clone https://github.com/<your-org>/<your-study>.git
 cd <your-study>
-# VS Code → "Reopen in Container"
 ```
+
+Then open in the dev container (VS Code → **Reopen in Container**, or
+`Cmd+Shift+P` → `Dev Containers: Reopen in Container`).
 
 ---
 
-### 2 — Complete the setup checklist
+### 2 — Complete the study setup checklist
 
-Work through the files below **in order**. Each one feeds the next.
-Run this command first to see every placeholder that needs your input:
+Run the pre-flight check to see everything that still needs your input:
 
-```r
-Rscript scripts/find_todos.R
+```bash
+Rscript scripts/check_setup.R
+# or in Claude Code chat: /check-setup
 ```
 
-#### `config.R` — study identity and infrastructure
+Then work through `CHECKLIST.md` top-to-bottom. All study-specific settings live in
+`study_params.yaml`:
 
-| Setting | What to change |
-|---------|---------------|
-| `cdm_schema` | CDM schema populated by Step 5 ETL (e.g. `"cdm_my_study_01"`) |
-| `results_schema` | Schema for cohort table and outputs (e.g. `"my_study_results"`) |
-| `cohort_table` | Cohort table name (e.g. `"my_study_cohort"`) |
-| `target_cohort_id` / `comparator_cohort_id` / `outcome_cohort_id` | Integer IDs for each cohort population |
-| `target_cohort_sql` / `comparator_cohort_sql` / `outcome_cohort_sql` | Paths to your renamed SQL files |
-| `study_name` | Short identifier used in output file names |
-| `prediction_window_days` | Follow-up window for outcome attribution (days) |
+| Setting | What to fill in |
+|---------|----------------|
+| `study_name` | Short identifier, lowercase with underscores |
+| `study_design` | `cohort_characterization` \| `prognostic_model` \| `causal_inference` \| `descriptive` |
+| `cdm_schema` | CDM schema populated by Step 5 ETL |
+| `results_schema` | Schema for cohort table and analysis outputs |
+| `cohort_table` | Cohort table name |
+| `target.index_event.ancestor_concept_ids` | Index event concept IDs — run `/concept-lookup` first |
+| `outcome.ancestor_concept_ids` | Outcome concept IDs — run `/concept-lookup` first |
+| `prediction_window_days` | Follow-up window for outcome (days) |
 | `study_start_date` / `study_end_date` | Date range for index event inclusion |
-| `output_folder` | Where outputs (CSVs, plots, reports) are written |
+| `output_folder` | Where outputs are written (e.g. `output/my_study`) |
+| `analyses.*` | Set `true` for each analysis to run in Step 8 |
 
-#### `cohorts/target_surgery.sql` — exposure / target cohort
+For every concept ID, look it up before writing it:
 
-Rename the file to match your study (e.g. `cohorts/hip_replacement_index.sql`) and
-update `config$target_cohort_sql` to match. Then edit the SQL:
+```bash
+Rscript scripts/concept_lookup.R "<clinical term>" [domain]
+# Example: Rscript scripts/concept_lookup.R "total hip replacement" Procedure
+# or in Claude Code chat: /concept-lookup total hip replacement Procedure
+```
 
-- Replace `concept_id = 0` in the `AND EXISTS` block with your exposure concept ancestor ID(s)
-- Set `visit_concept_id` (9201 inpatient / 9202 outpatient / 9203 ED) or remove the filter
-- Adjust or remove the minimum age filter
-- Replace `concept_id = 0` in the `NOT EXISTS` washout block with your washout concept ID,
-  or remove the block entirely
+#### Cohort SQL files
 
-#### `cohorts/outcome_ssi.sql` — outcome cohort
+Edit the template SQL files in `cohorts/` to match your study phenotype:
 
-Rename (e.g. `cohorts/vte_outcome.sql`) and update `config$outcome_cohort_sql`. Then edit:
+- `cohorts/target_surgery.sql` — index event (exposure / target cohort)
+- `cohorts/outcome_ssi.sql` — outcome cohort
+- `cohorts/comparator_cohort.sql` — comparator cohort (causal inference only)
 
-- Replace `ancestor_concept_id = 0` with your outcome concept ancestor ID
-- Add or remove `NOT EXISTS` exclusion blocks for unrelated sub-types
-- Set to `NULL` in config if your design has no formal outcome (cohort characterization)
+Replace every `concept_id = 0` placeholder with a verified concept ID from
+`/concept-lookup`. Rename the files to match your study and update the `sql_file:`
+paths in `study_params.yaml`.
 
-#### `cohorts/comparator_cohort.sql` *(causal inference only)*
+#### Covariate files
 
-Create this file (copy and adapt `target_surgery.sql`) and set `config$comparator_cohort_sql`
-and `config$comparator_cohort_id`. Leave `comparator_cohort_sql = NULL` for other designs.
-
-#### `covariates/covariates.csv` — covariate definitions
-
-Replace the placeholder rows (`covariate_1`, `covariate_2`, …) with your study covariates.
-Each row defines one scored predictor: domain, lookback window (days), and point value.
-See the inline column documentation in the file for full details.
-
-Set both covariate paths to `NULL` in config if you will define covariates using a
-`FeatureExtraction::createCovariateSettings()` object in Step 8 instead.
-
-#### `covariates/covariate_concepts.csv` — OMOP concept mappings
-
-Map each `covariate_id` from `covariates.csv` to one or more verified standard OMOP
-concept IDs. Use the concept lookup query in the file header to find the right IDs.
-Replace all `concept_id = 0` placeholders before running Step 8.
-
-#### `covariates/risk_lookup.csv` — score-to-probability table *(optional)*
-
-Populate from your model's published lookup table, or leave empty to use
-recalibrated logistic regression only.
-
-#### `workflow/07_setup_analysis_env.R` — analysis packages
-
-Uncomment the packages your Step 8 analysis needs. Reference lists for each study
-design are in the file.
-
-#### `workflow/08_run_analysis_and_manuscript_report.R` — analysis code
-
-Sections 1–6 are pre-wired (renv, Java, connection, cohort instantiation).
-Fill in **Section 7** (your analysis) and **Section 8** (your output).
-Starter patterns for all three study designs are provided as commented examples.
+- `covariates/covariates.csv` — replace placeholder rows with your study covariates
+- `covariates/covariate_concepts.csv` — map each covariate to verified OMOP concept IDs
 
 ---
 
@@ -126,18 +118,21 @@ proceeding.
 Rscript workflow/01_setup_synthea_etl_qc_env.R   # install packages, verify DB
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
 # Steps 3–6: Synthea module, synthetic data generation, ETL, QC
-# (skip 3–6 if running against a real CDM that is already populated)
+# (skip 3–6 if running against a real CDM already populated)
 Rscript workflow/07_setup_analysis_env.R
 Rscript workflow/08_run_analysis_and_manuscript_report.R
 ```
+
+No editing of `workflow/07` or `workflow/08` is needed. All analysis choices are
+controlled by the `analyses:` flags in `study_params.yaml`.
 
 ---
 
 ### 5 — Commit your study definition
 
 ```bash
-git add config.R cohorts/ covariates/ workflow/07* workflow/08*
-git commit -m "Define <study name> cohort, covariates, and analysis"
+git add study_params.yaml cohorts/ covariates/
+git commit -m "Define <study name> cohort, covariates, and analyses"
 git push
 ```
 
@@ -147,11 +142,11 @@ git push
 
 | Change for every study | Leave as-is |
 |------------------------|-------------|
-| `config.R` (all TODO items) | `R/drivers.R`, `R/connection.R` |
-| `cohorts/*.sql` | `setup/`, `.devcontainer/` |
-| `covariates/*.csv` | `renv.lock` (update only if you need a different package version) |
-| `workflow/07` package list | `workflow/01`, `03–06` |
-| `workflow/08` sections 7–9 | `R/cohorts.R` |
+| `study_params.yaml` | `config.R` (infrastructure only — no study edits needed) |
+| `cohorts/*.sql` | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
+| `covariates/*.csv` | `setup/`, `.devcontainer/` |
+| `analyses:` flags in `study_params.yaml` | `workflow/07`, `workflow/08` (no code editing) |
+| `output_folder` in `study_params.yaml` | `renv.lock` (update only to add a new package) |
 
 ---
 
@@ -160,66 +155,53 @@ git push
 The repo ships a `.devcontainer/` folder that provides a fully configured Linux R + Java 17
 environment inside Docker via VS Code. No local R or Java installation is needed.
 
-### Required folder layout
+**Complete setup instructions — including SQL Server, the required folder layout,
+Athena vocabulary download, and CPT-4 rebuild — are in [docs/SETUP.md](docs/SETUP.md).**
 
-Clone this repo into an `OMOP_Dev/` parent folder alongside the MSSQL container:
+### Quick summary
+
+The dev container uses **relative paths** to find the SQL Server container and the
+vocabulary files. Everything must live inside a single parent folder:
 
 ```
-OMOP_Dev/
-  .env                      ← SA password (never commit)
-  docker-compose.yml        ← MSSQL container definition
-  omop_vocab/               ← Athena vocabulary download (never commit)
-  <your-study>/             ← this repo
+OMOP_Dev/                  ← parent folder (create once, shared across studies)
+  .env                     ← MSSQL_SA_PASSWORD  (never commit)
+  docker-compose.yml       ← SQL Server container definition  (see docs/SETUP.md)
+  omop_vocab/              ← Athena vocabulary CSVs  (never commit)
+  <your-study>/            ← this repo, cloned here
     .devcontainer/
+      devcontainer.json
+      docker-compose.extend.yml   ← mounts ../../omop_vocab and ../../.env
 ```
 
-### Step 1 — Install Docker Desktop and start the MSSQL container
+The one-time setup sequence:
 
 ```bash
+# 1. Create parent folder and .env
 mkdir OMOP_Dev && cd OMOP_Dev
-git clone https://github.com/<your-org>/<your-study>.git
+echo 'MSSQL_SA_PASSWORD=YourStrong@Passw0rd' > .env
 
-# Create the .env file with your SQL Server SA password
-# If you have not created a SQL Server password before, you can create one now. Avoid using an exclamation mark in the password
-echo "MSSQL_SA_PASSWORD=YourStrong@Passw0rd" > .env
-
-# Copy docker-compose.yml from the repo to OMOP_Dev/ and start the container
+# 2. Create docker-compose.yml (see docs/SETUP.md for full contents) and start SQL Server
 docker compose up -d
 
-# Create the project database (first time only)
-docker exec mssql_dev bash -c \
-  '/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P "YourStrong@Passw0rd" -C -Q "CREATE DATABASE omop_synth;"'
-```
+# 3. Download Athena vocabulary to OMOP_Dev/omop_vocab/ and rebuild CPT-4
+#    (see docs/SETUP.md — requires a free UMLS API key for CPT-4)
 
-### Step 2 — Download the OMOP Vocabulary from Athena
+# 4. Clone study repo inside OMOP_Dev/
+git clone https://github.com/<your-org>/<your-study>.git
 
-1. Go to [athena.ohdsi.org](https://athena.ohdsi.org) and create a free account.
-2. Download at minimum: `SNOMED`, `LOINC`, `RxNorm`, `ICD10CM`, `CPT4`.
-3. Extract to `OMOP_Dev/omop_vocab/`.
-4. Rebuild CPT-4 codes (requires a free [UMLS API key](https://uts.nlm.nih.gov)):
-   ```bash
-   bash omop_vocab/cpt.sh   # macOS/Linux
-   # omop_vocab\cpt.bat <UMLS API Key> 4   # Windows
-   ```
+# 5. Open in VS Code → Reopen in Container
 
-### Step 3 — Install VS Code and open the dev container
-
-1. Install [VS Code](https://code.visualstudio.com) and the **Dev Containers** extension
-   (`ms-vscode-remote.remote-containers`).
-2. Open the study folder in VS Code.
-3. When prompted, click **Reopen in Container** — or use
-   `Cmd+Shift+P` → `Dev Containers: Reopen in Container`.
-4. First build takes ~5 minutes; subsequent opens are instant.
-
-### Step 4 — One-time environment and vocabulary setup
-
-```bash
-# Install R packages and verify DB connectivity (~5–10 min, cached after first run)
+# 6. Inside the container: install R packages and verify DB
 Rscript workflow/01_setup_synthea_etl_qc_env.R
 
-# Load OMOP vocabulary into shared omop_vocab schema (~30–60 min, once per SQL Server instance)
+# 7. Load OMOP vocabulary into SQL Server (~30–60 min, once per SQL Server instance)
 Rscript scripts/setup_omop_vocab_schema.R
 ```
+
+See [docs/SETUP.md](docs/SETUP.md) for the full `docker-compose.yml` contents, the
+complete list of required Athena vocabularies, CPT-4 rebuild instructions, disk space
+requirements, and troubleshooting guidance.
 
 ---
 
