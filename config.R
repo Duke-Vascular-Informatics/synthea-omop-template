@@ -190,6 +190,16 @@ get_validation_config <- function() {
     cdm_database_id          = p$cdm_database_id          %||% "my_cdm_v5.4",
     cdm_database_name        = p$cdm_database_name        %||% "My Study Database",
     cdm_database_description = p$cdm_database_description %||%
-                                 "Brief description of the patient population."
+                                 "Brief description of the patient population.",
+
+    # -------------------------------------------------------------------------
+    # Analysis flags — from study_params.yaml analyses: section.
+    # These drive workflow/08 — no code editing in that script is needed.
+    # -------------------------------------------------------------------------
+    run_cohort_characterization = isTRUE(p$analyses$cohort_characterization),
+    run_prognostic_model        = isTRUE(p$analyses$prognostic_model),
+    run_causal_inference        = isTRUE(p$analyses$causal_inference),
+    run_integer_risk_score      = isTRUE(p$analyses$integer_risk_score),
+    run_word_report             = isTRUE(p$analyses$word_report)
   )
 }

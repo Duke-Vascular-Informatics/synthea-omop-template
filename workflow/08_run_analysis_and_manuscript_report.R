@@ -6,25 +6,26 @@
 #
 # PURPOSE
 # -------
-# This script is your analysis entry point. The infrastructure sections (1–6)
-# are pre-wired: they activate renv, load config, initialise the JDBC driver,
-# open a database connection, and instantiate your cohorts.
+# Executes the analysis blocks enabled in study_params.yaml (analyses: section)
+# and writes outputs to config$output_folder.
 #
-# Sections 7–9 are blank scaffolds. Fill them in with your analysis code.
-# The TODO comments indicate what belongs in each section and include starter
-# patterns for the three most common OMOP study designs.
+# No editing of this script is needed for standard analyses.
+# To enable an analysis, set its flag to true in study_params.yaml:
 #
-# STUDY DESIGN QUICK-START
-# ─────────────────────────
-#   Cohort characterization  → fill in Section 7 (FeatureExtraction / CohortDiagnostics)
-#   Prognostic modelling     → fill in Section 7 (PatientLevelPrediction::runPlp)
-#   Causal inference         → fill in Section 7 (CohortMethod / SCCS)
-#   Custom analysis          → fill in Section 7 with any R analysis code
+#   analyses:
+#     cohort_characterization: true   # FeatureExtraction covariate summary
+#     prognostic_model:         false  # PatientLevelPrediction LASSO
+#     causal_inference:         false  # CohortMethod PS matching
+#     integer_risk_score:       false  # custom integer score pipeline
+#     word_report:              false  # Word report (run after a pipeline above)
+#
+# To customise a default analysis (e.g. swap the PLP model algorithm, change
+# covariate settings) edit the relevant if-block in Section 7 below.
 #
 # PREREQUISITES
 # -------------
 #   - Steps 1–7 completed successfully.
-#   - Step 5 (ETL) populated the CDM schema referenced in config.R.
+#   - Step 5 (ETL) populated the CDM schema referenced in study_params.yaml.
 #   - Step 7 confirmed all required packages are installed.
 #
 # EXECUTION
@@ -74,7 +75,7 @@ if (length(loaded_java_ns) > 0) {
 
 
 # =============================================================================
-# 3. Activate renv and load infrastructure modules
+# 3. Activate renv, load config, and source helper modules
 # =============================================================================
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
@@ -83,56 +84,52 @@ source("R/drivers.R")    # configure_java(), ensure_jdbc_bundle()
 source("R/connection.R") # build_connection_details()
 source("R/cohorts.R")    # ensure_results_schema(), build_cohorts()
 
-# TODO [MODULES]: Source any additional R helper modules your analysis needs.
-# Examples:
-#   source("R/risk_score_pipeline.R")   # custom scoring pipeline
-#   source("R/report_extended.R")       # Word report generation
-#   source("R/my_analysis_helpers.R")   # your own helper functions
-
-
-# =============================================================================
-# 4. Initialise Java and load database packages
-# =============================================================================
-# configure_java() must be called BEFORE library(DatabaseConnector) to ensure
-# the JVM starts with the correct heap size and JDBC driver on the class path.
+# Read config before Java initialisation (only YAML parsing; no JDBC yet).
 config <- get_validation_config()
+
+# Source analysis-specific helper modules for the analyses that are enabled.
+if (config$run_integer_risk_score) source("R/risk_score_pipeline.R")
+if (config$run_word_report)         source("R/report_extended.R")
+
+
+# =============================================================================
+# 4. Initialise Java and load packages
+# =============================================================================
+# configure_java() sets the JVM heap and JDBC class path; must run before any
+# library() call that depends on rJava.
 configure_java(config)
 
-library(DatabaseConnector)   # JDBC connectivity to SQL Server OMOP CDM
+# Core database packages — always required.
+library(DatabaseConnector)
+library(SqlRender)
 
-# TODO [PACKAGES]: Load your analysis-specific packages here.
-# Load them AFTER configure_java() — the JVM must be running before any HADES
-# package that uses rJava (PatientLevelPrediction, CohortMethod, FeatureExtraction).
-#
-# Uncomment the lines for your study design. See workflow/07 for the full
-# reference list with one-sentence descriptions of each package's role.
-#
-# --- Core SQL utilities (uncomment if needed in Section 7) ---
-# library(SqlRender)           # SQL parameterization and SQL Server dialect translation
-#
-# --- Cohort characterization ---
-# library(FeatureExtraction)   # extracts patient features (demographics, Dx, Rx, Px)
-#                              # from the OMOP CDM into an analysis-ready matrix
-# library(CohortDiagnostics)   # validates cohort phenotypes before running analysis
-#
-# --- Prognostic modelling (note: FeatureExtraction is REQUIRED by PLP) ---
-# library(FeatureExtraction)         # covariate extraction — must load before PLP
-# library(PatientLevelPrediction)    # model training, evaluation, and validation
-# library(pROC)                      # AUROC with CIs for model discrimination
-# library(PRROC)                     # precision-recall AUC (better metric when outcome is rare)
-#
-# --- Causal inference (note: FeatureExtraction is REQUIRED by CohortMethod) ---
-# library(FeatureExtraction)         # propensity score covariate extraction
-# library(CohortMethod)              # new-user comparative cohort design (HR/RR/OR)
-# library(EmpiricalCalibration)      # corrects for residual confounding via negative controls
-# library(EvidenceSynthesis)         # meta-analysis when running across multiple sites
-#
-# --- Output and reporting ---
-# library(dplyr)       # data manipulation (filter, join, summarise)
-# library(ggplot2)     # plots (calibration curves, ROC, KM)
-# library(officer)     # generate Word (.docx) reports programmatically
-# library(flextable)   # formatted tables inside Word / HTML reports
-# library(openxlsx)    # Excel (.xlsx) output
+# Load analysis packages based on the flags in study_params.yaml.
+# FeatureExtraction is a shared dependency for PLP, CohortMethod, and
+# CohortDiagnostics and is loaded once when any of those are enabled.
+if (config$run_cohort_characterization ||
+    config$run_prognostic_model        ||
+    config$run_causal_inference) {
+  library(FeatureExtraction)
+}
+if (config$run_cohort_characterization) {
+  library(CohortDiagnostics)
+}
+if (config$run_prognostic_model) {
+  library(PatientLevelPrediction)
+  library(pROC)    # AUROC with confidence intervals
+  library(PRROC)   # area under precision-recall curve
+}
+if (config$run_causal_inference) {
+  library(CohortMethod)
+  library(EmpiricalCalibration)
+}
+if (config$run_integer_risk_score || config$run_word_report) {
+  library(ggplot2)
+  library(officer)
+  library(flextable)
+}
+library(dplyr)   # data wrangling — broadly useful
+library(readr)   # CSV I/O
 
 
 # =============================================================================
@@ -140,8 +137,8 @@ library(DatabaseConnector)   # JDBC connectivity to SQL Server OMOP CDM
 # =============================================================================
 # build_connection_details() returns a DatabaseConnector ConnectionDetails
 # object (credentials only — no open connection yet) from the settings in
-# config.R. All downstream functions that need a database connection accept
-# this object and open/close their own connections internally.
+# config.R. All downstream HADES functions accept this object and manage their
+# own connections internally.
 message("[Step 8] Building connection details ...")
 connection_details <- build_connection_details(config)
 
@@ -150,14 +147,12 @@ connection_details <- build_connection_details(config)
 # 6. Prepare results schema and instantiate cohorts
 # =============================================================================
 # ensure_results_schema() creates the results schema and cohort table if they
-# do not already exist (idempotent — safe to run on every execution).
+# do not already exist (idempotent — safe to re-run).
 #
 # build_cohorts() renders and executes the SqlRender-parameterised cohort SQL
-# files whose paths are declared in config.R (target_cohort_sql,
-# comparator_cohort_sql, outcome_cohort_sql). Each SQL DELETEs its existing
-# rows before inserting, so re-runs produce a fresh, non-duplicated cohort.
-# Comparator and outcome cohorts are skipped automatically when their config
-# paths are NULL or their cohort IDs are NA.
+# files declared in study_params.yaml. Each SQL deletes existing rows before
+# inserting, so re-runs produce a fresh, non-duplicated cohort.
+# Comparator and outcome cohorts are skipped when their IDs are NA.
 message("[Step 8] Preparing results schema and instantiating cohorts ...")
 cohort_conn <- DatabaseConnector::connect(connection_details)
 ensure_results_schema(cohort_conn, config)
@@ -165,204 +160,217 @@ build_cohorts(cohort_conn, config)
 DatabaseConnector::disconnect(cohort_conn)
 message("[Step 8] Cohorts instantiated.")
 
-# TODO [COHORTS]: If build_cohorts() does not yet support your comparator
-# cohort or a custom cohort SQL, add the instantiation logic here.
-# Example of executing additional SQL directly:
-#
-#   extra_conn <- DatabaseConnector::connect(connection_details)
-#   sql <- SqlRender::render(
-#     paste(readLines("cohorts/my_extra_cohort.sql"), collapse = "\n"),
-#     cdm_database_schema    = config$cdm_schema,
-#     target_database_schema = config$results_schema,
-#     target_cohort_table    = config$cohort_table,
-#     cohort_id              = 3L,
-#     study_start_date       = config$study_start_date,
-#     study_end_date         = config$study_end_date
-#   )
-#   DatabaseConnector::executeSql(extra_conn, SqlRender::translate(sql, "sql server"))
-#   DatabaseConnector::disconnect(extra_conn)
+
+# =============================================================================
+# 7. ANALYSIS
+# =============================================================================
+# Each block below runs only when its flag is true in study_params.yaml.
+# Customise default settings (e.g. model algorithm, covariate settings) by
+# editing the relevant block here.
+
+dir.create(config$output_folder, recursive = TRUE, showWarnings = FALSE)
+
+# -----------------------------------------------------------------------------
+# Cohort characterization — FeatureExtraction default covariate summary
+# -----------------------------------------------------------------------------
+if (config$run_cohort_characterization) {
+  message("[Step 8] Running cohort characterization ...")
+
+  # createDefaultCovariateSettings() extracts demographics, conditions, drugs,
+  # and procedures across standard OHDSI lookback windows. Swap for
+  # createCovariateSettings() to specify individual domains and windows.
+  covariate_settings <- FeatureExtraction::createDefaultCovariateSettings()
+
+  covariate_data <- FeatureExtraction::getDbCovariateData(
+    connectionDetails    = connection_details,
+    cdmDatabaseSchema    = config$cdm_schema,
+    cohortDatabaseSchema = config$results_schema,
+    cohortTable          = config$cohort_table,
+    cohortId             = config$target_cohort_id,
+    rowIdField           = "subject_id",
+    covariateSettings    = covariate_settings
+  )
+
+  FeatureExtraction::saveCovariateData(
+    covariateData = covariate_data,
+    file          = file.path(config$output_folder, "covariate_data")
+  )
+  message("[Step 8] Cohort characterization complete. ",
+          "Saved to: ", file.path(config$output_folder, "covariate_data"))
+}
+
+
+# -----------------------------------------------------------------------------
+# Prognostic model — PatientLevelPrediction (LASSO logistic regression default)
+# To change the model algorithm replace setLassoLogisticRegression() with
+# setRandomForest(), setGradientBoostingMachine(), etc.
+# -----------------------------------------------------------------------------
+if (config$run_prognostic_model) {
+  message("[Step 8] Running prognostic model (PatientLevelPrediction) ...")
+
+  covariate_settings <- FeatureExtraction::createDefaultCovariateSettings()
+
+  # Study population settings — use study_params.yaml values for the key
+  # time windows so this block requires no editing for most studies.
+  population_settings <- PatientLevelPrediction::createStudyPopulationSettings(
+    washoutPeriod                  = config$min_prior_observation_days,
+    firstExposureOnly              = TRUE,
+    removeSubjectsWithPriorOutcome = TRUE,
+    priorOutcomeLookback           = config$min_prior_observation_days,
+    riskWindowStart                = 1L,
+    riskWindowEnd                  = config$prediction_window_days,
+    startAnchor                    = "cohort start",
+    endAnchor                      = "cohort start",
+    minTimeAtRisk                  = 1L,
+    requireTimeAtRisk              = TRUE
+  )
+
+  plp_data <- PatientLevelPrediction::getPlpData(
+    databaseDetails = PatientLevelPrediction::createDatabaseDetails(
+      connectionDetails    = connection_details,
+      cdmDatabaseSchema    = config$cdm_schema,
+      cohortDatabaseSchema = config$results_schema,
+      cohortTable          = config$cohort_table,
+      targetId             = config$target_cohort_id,
+      outcomeIds           = config$outcome_cohort_id
+    ),
+    covariateSettings        = covariate_settings,
+    restrictPlpDataToIPeriod = FALSE
+  )
+
+  results <- PatientLevelPrediction::runPlp(
+    plpData            = plp_data,
+    outcomeId          = config$outcome_cohort_id,
+    analysisId         = config$study_name,
+    analysisName       = config$cdm_database_name,
+    populationSettings = population_settings,
+    splitSettings      = PatientLevelPrediction::createDefaultSplitSetting(
+                           testFraction = 0.25, nfold = 3L),
+    sampleSettings            = PatientLevelPrediction::createSampleSettings(),
+    featureEngineeringSettings = PatientLevelPrediction::createFeatureEngineeringSettings(),
+    preprocessSettings        = PatientLevelPrediction::createPreprocessSettings(),
+    modelSettings             = PatientLevelPrediction::setLassoLogisticRegression(),
+    logSettings               = PatientLevelPrediction::createLogSettings(),
+    executeSettings           = PatientLevelPrediction::createExecuteSettings(
+                                  runSplitData          = TRUE,
+                                  runSampleData         = TRUE,
+                                  runfeatureEngineering = TRUE,
+                                  runPreprocessData     = TRUE,
+                                  runModelDevelopment   = TRUE,
+                                  runCovariateSummary   = TRUE),
+    saveDirectory      = config$output_folder
+  )
+
+  message("[Step 8] Prognostic model complete. ",
+          "Results saved to: ", config$output_folder)
+}
+
+
+# -----------------------------------------------------------------------------
+# Causal inference — CohortMethod (propensity score matching, Cox outcome model)
+# Requires comparator.cohort_id set in study_params.yaml.
+# -----------------------------------------------------------------------------
+if (config$run_causal_inference) {
+  if (is.na(config$comparator_cohort_id)) {
+    warning("[Step 8] run_causal_inference = TRUE but comparator_cohort_id is NA. ",
+            "Set comparator.cohort_id in study_params.yaml and re-run.")
+  } else {
+    message("[Step 8] Running causal inference (CohortMethod) ...")
+
+    # Exclude the exposure concept IDs from the propensity score covariate set
+    # to avoid conditioning on the treatment itself.
+    covariate_settings <- FeatureExtraction::createDefaultCovariateSettings(
+      excludedCovariateConceptIds = config$target_index_concept_ids,
+      addDescendantsToExclude     = TRUE
+    )
+
+    cm_data <- CohortMethod::getDbCohortMethodData(
+      connectionDetails      = connection_details,
+      cdmDatabaseSchema      = config$cdm_schema,
+      targetId               = config$target_cohort_id,
+      comparatorId           = config$comparator_cohort_id,
+      outcomeIds             = config$outcome_cohort_id,
+      exposureDatabaseSchema = config$results_schema,
+      exposureTable          = config$cohort_table,
+      outcomeDatabaseSchema  = config$results_schema,
+      outcomeTable           = config$cohort_table,
+      covariateSettings      = covariate_settings
+    )
+
+    study_pop <- CohortMethod::createStudyPopulation(
+      cohortMethodData = cm_data,
+      outcomeId        = config$outcome_cohort_id,
+      riskWindowStart  = 1L,
+      startAnchor      = "cohort start",
+      riskWindowEnd    = config$prediction_window_days,
+      endAnchor        = "cohort start"
+    )
+
+    ps_model    <- CohortMethod::createPs(cm_data, study_pop)
+    matched_pop <- CohortMethod::matchOnPs(
+      ps_model,
+      caliper      = 0.2,
+      caliperScale = "standardized logit"
+    )
+
+    outcome_model <- CohortMethod::fitOutcomeModel(
+      population = matched_pop,
+      modelType  = "cox"
+    )
+    print(outcome_model)
+
+    # Persist the data and model for downstream review / meta-analysis.
+    CohortMethod::saveCohortMethodData(
+      cm_data,
+      file.path(config$output_folder, "cm_data")
+    )
+    saveRDS(outcome_model,
+            file.path(config$output_folder, "outcome_model.rds"))
+
+    message("[Step 8] Causal inference complete. ",
+            "Results saved to: ", config$output_folder)
+  }
+}
+
+
+# -----------------------------------------------------------------------------
+# Integer risk score validation — custom pipeline
+# Reads covariates/covariates.csv and covariates/covariate_concepts.csv.
+# Those files must have a points column and verified concept IDs.
+# Pass lookup_file= to supply a score → probability table.
+# -----------------------------------------------------------------------------
+if (config$run_integer_risk_score) {
+  message("[Step 8] Running integer risk score pipeline ...")
+  run_integer_risk_score_pipeline(config, connection_details)
+  message("[Step 8] Integer risk score pipeline complete.")
+}
+
+
+# -----------------------------------------------------------------------------
+# Word report — requires a pipeline above to have written its outputs first.
+# Reads person_level_scores.csv, covariate_summary.csv, and metrics.csv from
+# config$output_folder.
+# -----------------------------------------------------------------------------
+if (config$run_word_report) {
+  message("[Step 8] Generating Word report ...")
+  generate_word_report(
+    output_dir      = config$output_folder,
+    score_output_dir = config$output_folder
+  )
+  message("[Step 8] Word report complete.")
+}
 
 
 # =============================================================================
-# 7. YOUR ANALYSIS
+# 8. DONE
 # =============================================================================
-# TODO [ANALYSIS]: Write your analysis code here.
-#
-# At this point you have:
-#   config              — named list with all study settings (from config.R)
-#   connection_details  — DatabaseConnector ConnectionDetails object
-#   config$cdm_schema   — CDM schema name (populated by Step 5 ETL)
-#   config$results_schema / config$cohort_table — cohort table with rows for:
-#       cohort_definition_id = config$target_cohort_id    (target / exposed)
-#       cohort_definition_id = config$outcome_cohort_id   (outcome)
-#       (and comparator_cohort_id if you defined one)
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# STARTER PATTERN A — Cohort characterization (FeatureExtraction)
-# ─────────────────────────────────────────────────────────────────────────────
-# library(FeatureExtraction)
-#
-# covariate_settings <- FeatureExtraction::createDefaultCovariateSettings()
-# # Adjust: createCovariateSettings(useDemographicsAge = TRUE,
-# #   useConditionGroupEraLongTerm = TRUE, longTermStartDays = -365, ...)
-#
-# covariate_data <- FeatureExtraction::getDbCovariateData(
-#   connectionDetails      = connection_details,
-#   cdmDatabaseSchema      = config$cdm_schema,
-#   cohortDatabaseSchema   = config$results_schema,
-#   cohortTable            = config$cohort_table,
-#   cohortId               = config$target_cohort_id,
-#   rowIdField             = "subject_id",
-#   covariateSettings      = covariate_settings
-# )
-# FeatureExtraction::saveCovariateData(covariate_data, config$output_folder)
-# summary(covariate_data)
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# STARTER PATTERN B — Prognostic modelling (PatientLevelPrediction)
-# ─────────────────────────────────────────────────────────────────────────────
-# library(PatientLevelPrediction)
-# library(FeatureExtraction)
-#
-# covariate_settings <- FeatureExtraction::createDefaultCovariateSettings()
-#
-# population_settings <- PatientLevelPrediction::createStudyPopulationSettings(
-#   washoutPeriod            = 365L,
-#   firstExposureOnly        = TRUE,
-#   removeSubjectsWithPriorOutcome = TRUE,
-#   priorOutcomeLookback     = 365L,
-#   riskWindowStart          = 1L,
-#   riskWindowEnd            = config$prediction_window_days,
-#   startAnchor              = "cohort start",
-#   endAnchor                = "cohort start",
-#   minTimeAtRisk            = 1L,
-#   requireTimeAtRisk        = TRUE
-# )
-#
-# plp_data <- PatientLevelPrediction::getPlpData(
-#   databaseDetails        = PatientLevelPrediction::createDatabaseDetails(
-#     connectionDetails    = connection_details,
-#     cdmDatabaseSchema    = config$cdm_schema,
-#     cohortDatabaseSchema = config$results_schema,
-#     cohortTable          = config$cohort_table,
-#     targetId             = config$target_cohort_id,
-#     outcomeIds           = config$outcome_cohort_id
-#   ),
-#   covariateSettings      = covariate_settings,
-#   restrictPlpDataToIPeriod = FALSE
-# )
-#
-# model_settings <- PatientLevelPrediction::setLassoLogisticRegression()
-# # Alternatives: setRandomForest(), setGradientBoostingMachine(), setDeepLearning()
-#
-# results <- PatientLevelPrediction::runPlp(
-#   plpData             = plp_data,
-#   outcomeId           = config$outcome_cohort_id,
-#   analysisId          = config$model_name,
-#   analysisName        = config$model_name,
-#   populationSettings  = population_settings,
-#   splitSettings       = PatientLevelPrediction::createDefaultSplitSetting(
-#                           testFraction = 0.25, nfold = 3L),
-#   sampleSettings      = PatientLevelPrediction::createSampleSettings(),
-#   featureEngineeringSettings = PatientLevelPrediction::createFeatureEngineeringSettings(),
-#   preprocessSettings  = PatientLevelPrediction::createPreprocessSettings(),
-#   modelSettings       = model_settings,
-#   logSettings         = PatientLevelPrediction::createLogSettings(),
-#   executeSettings     = PatientLevelPrediction::createExecuteSettings(
-#                           runSplitData = TRUE, runSampleData = TRUE,
-#                           runfeatureEngineering = TRUE, runPreprocessData = TRUE,
-#                           runModelDevelopment = TRUE, runCovariateSummary = TRUE),
-#   saveDirectory       = config$output_folder
-# )
-# PatientLevelPrediction::viewPlp(results)
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# STARTER PATTERN C — Causal inference (CohortMethod)
-# ─────────────────────────────────────────────────────────────────────────────
-# library(CohortMethod)
-# library(FeatureExtraction)
-#
-# covariate_settings <- FeatureExtraction::createDefaultCovariateSettings(
-#   excludedCovariateConceptIds = c(),  # add concept IDs to exclude (e.g. the exposure itself)
-#   addDescendantsToExclude     = TRUE
-# )
-#
-# cm_data <- CohortMethod::getDbCohortMethodData(
-#   connectionDetails        = connection_details,
-#   cdmDatabaseSchema        = config$cdm_schema,
-#   targetId                 = config$target_cohort_id,
-#   comparatorId             = config$comparator_cohort_id,  # set in config.R TODO [CONFIG]
-#   outcomeIds               = config$outcome_cohort_id,
-#   exposureDatabaseSchema   = config$results_schema,
-#   exposureTable            = config$cohort_table,
-#   outcomeDatabaseSchema    = config$results_schema,
-#   outcomeTable             = config$cohort_table,
-#   covariateSettings        = covariate_settings
-# )
-#
-# study_pop <- CohortMethod::createStudyPopulation(
-#   cohortMethodData         = cm_data,
-#   outcomeId                = config$outcome_cohort_id,
-#   riskWindowStart          = 1L,
-#   startAnchor              = "cohort start",
-#   riskWindowEnd            = config$prediction_window_days,
-#   endAnchor                = "cohort start"
-# )
-#
-# ps_model <- CohortMethod::createPs(cm_data, study_pop)
-# matched_pop <- CohortMethod::matchOnPs(ps_model, caliper = 0.2, caliperScale = "standardized logit")
-# balance <- CohortMethod::computeCovariateBalance(matched_pop, cm_data)
-# CohortMethod::plotCovariateBalanceScatterPlot(balance)
-#
-# outcome_model <- CohortMethod::fitOutcomeModel(
-#   population     = matched_pop,
-#   modelType      = "cox"
-# )
-# print(outcome_model)
-#
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-# =============================================================================
-# 8. YOUR OUTPUT
-# =============================================================================
-# TODO [OUTPUT]: Write your results to files.
-#
-# The output folder from config.R is available as config$output_folder.
-# Create it first if it does not exist:
-#   dir.create(config$output_folder, recursive = TRUE, showWarnings = FALSE)
-#
-# Common output patterns:
-#
-#   CSV results:
-#     write.csv(my_results_df, file.path(config$output_folder, "results.csv"),
-#               row.names = FALSE)
-#
-#   Word report (officer + flextable):
-#     library(officer)
-#     library(flextable)
-#     doc <- officer::read_docx()
-#     doc <- officer::body_add_par(doc, "Results", style = "heading 1")
-#     doc <- flextable::body_add_flextable(doc, flextable::flextable(my_summary_table))
-#     print(doc, target = file.path(config$output_folder,
-#                                   paste0(config$model_name, "_report.docx")))
-#
-#   HTML / Shiny viewer (PatientLevelPrediction):
-#     PatientLevelPrediction::viewPlp(results)
-#
-#   Plot files:
-#     ggplot2::ggsave(file.path(config$output_folder, "my_plot.png"),
-#                    plot = my_gg_object, width = 8, height = 6, dpi = 150)
-#
-#   Excel:
-#     openxlsx::write.xlsx(my_results_df,
-#                          file.path(config$output_folder, "results.xlsx"))
-
-
-# =============================================================================
-# 9. DONE
-# =============================================================================
-# TODO [DONE]: Replace the message below with a summary of what was produced.
-message("[Step 8] Analysis complete.")
-message("[Step 8] Output written to: ", config$output_folder)
-cat("Step 8 complete.\n")
+enabled <- Filter(isTRUE, list(
+  cohort_characterization = config$run_cohort_characterization,
+  prognostic_model        = config$run_prognostic_model,
+  causal_inference        = config$run_causal_inference,
+  integer_risk_score      = config$run_integer_risk_score,
+  word_report             = config$run_word_report
+))
+message("\n[Step 8] Complete. Analyses run: ",
+        if (length(enabled) > 0) paste(names(enabled), collapse = ", ") else "none")
+message("[Step 8] Output folder: ", config$output_folder)

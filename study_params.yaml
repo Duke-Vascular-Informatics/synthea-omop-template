@@ -123,6 +123,19 @@ min_prior_observation_days: 365   # TODO [CONFIG]: adjust or set to 0 for no res
 covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 
 # =============================================================================
+# ANALYSES
+# Set each flag to true to enable that analysis block in workflow/08.
+# Multiple analyses can run in a single Step 8 execution.
+# No editing of workflow/08 is needed — these flags drive everything.
+# =============================================================================
+analyses:
+  cohort_characterization: false  # FeatureExtraction default covariate summary of the target cohort
+  prognostic_model:         false  # PatientLevelPrediction LASSO (default; swap model in workflow/08)
+  causal_inference:         false  # CohortMethod PS matching (requires comparator cohort in config)
+  integer_risk_score:       false  # custom integer score pipeline (R/risk_score_pipeline.R)
+  word_report:              false  # Word report via R/report_extended.R (run after a pipeline above)
+
+# =============================================================================
 # OUTPUT
 # =============================================================================
 output_folder: "output/my_study"   # TODO [CONFIG]: update to match study_name

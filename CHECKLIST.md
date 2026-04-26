@@ -31,6 +31,7 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 - [ ] `prediction_window_days` — days after index to count outcome
 - [ ] `output_folder` — update to match `study_name`
 - [ ] `cdm_database_id` / `cdm_database_name` / `cdm_database_description` — metadata for reports
+- [ ] `analyses.*` — set flags to `true` for each analysis you want workflow/08 to run
 
 > **Comparator cohort** (causal inference only): set `comparator.cohort_id` to an integer and
 > fill in `comparator.index_event.ancestor_concept_ids` in `study_params.yaml`.
@@ -68,9 +69,11 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 ## workflow/08_run_analysis_and_manuscript_report.R
 
-- [ ] Uncomment the `library()` calls for your analysis packages (Section 4)
-- [ ] Write your analysis code in **Section 7**
-- [ ] Write your output code in **Section 8**
+- [ ] In `study_params.yaml`, set the `analyses:` flags for what you want to run:
+      `cohort_characterization`, `prognostic_model`, `causal_inference`,
+      `integer_risk_score`, `word_report`
+- [ ] *(Optional)* Customise default settings (model algorithm, covariate scope)
+      by editing the relevant `if` block in Section 7 of workflow/08
 - [ ] **Run Step 8 in a fresh R session**: `Rscript workflow/08_run_analysis_and_manuscript_report.R`
 
 ---
@@ -82,6 +85,6 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 - [ ] `Rscript workflow/07_setup_analysis_env.R` — all packages verified
 - [ ] `Rscript workflow/08_run_analysis_and_manuscript_report.R` — runs to completion
 - [ ] Output files in `config$output_folder` — review for correctness
-- [ ] Commit: `git add study_params.yaml covariates/ workflow/07* workflow/08*`
-      `git commit -m "Define <study name> cohort, covariates, and analysis"`
+- [ ] Commit: `git add study_params.yaml covariates/`
+      `git commit -m "Define <study name> cohort, covariates, and analyses"`
       `git push`
