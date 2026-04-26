@@ -11,8 +11,8 @@ covariates inline in R code.
 
 | File | Description |
 |------|-------------|
-| `components.csv` | One row per covariate. Defines the name, OMOP domain, lookback window, minimum event count, and optional point value (for scored models). |
-| `component_concepts.csv` | OMOP concept ID mappings for each component. Supports `include_descendants = TRUE` for ancestor rollup via `concept_ancestor`. |
+| `covariates.csv` | One row per covariate. Defines the name, OMOP domain, lookback window, minimum event count, and optional point value (for scored models). |
+| `covariate_concepts.csv` | OMOP concept ID mappings for each covariate. Supports `include_descendants = TRUE` for ancestor rollup via `concept_ancestor`. |
 | `risk_lookup.csv` | Optional. Maps an integer total score to a calibrated predicted probability. Leave empty if using logistic regression only. |
 
 ## When to use these files
@@ -31,36 +31,36 @@ covariates directly in Step 8.
 
 ---
 
-## components.csv — column definitions
+## covariates.csv — column definitions
 
 | Column | Description |
 |--------|-------------|
-| `component_id` | Short unique identifier. Lowercase, letters/numbers/underscores only. Must match `component_id` values in `component_concepts.csv`. Examples: `female`, `diabetes`, `prior_hosp` |
-| `component_name` | Human-readable label used in reports and output tables. |
+| `covariate_id` | Short unique identifier. Lowercase, letters/numbers/underscores only. Must match `covariate_id` values in `covariate_concepts.csv`. Examples: `female`, `diabetes`, `prior_hosp` |
+| `covariate_name` | Human-readable label used in reports and output tables. |
 | `domain` | OMOP CDM domain: `condition` → `condition_occurrence`, `procedure` → `procedure_occurrence`, `drug` → `drug_exposure`, `measurement` → `measurement`, `observation` → `observation` |
 | `lookback_start_day` | Start of lookback window relative to index date (negative = before index). Examples: `-365`, `-3650`, `-30` |
 | `lookback_end_day` | End of lookback window. `-1` = day before index (strictly prior). `0` = include index date. |
-| `min_count` | Minimum qualifying records to count the component as present. Almost always `1`. |
+| `min_count` | Minimum qualifying records to count the covariate as present. Almost always `1`. |
 | `points` | Score points assigned when present. Positive = risk factor. Negative = protective factor. Use `1` for binary presence/absence covariates. |
-| `missing_is_negative` | `TRUE` = absence means component is absent (default). `FALSE` = for derived components where missing ≠ absent (e.g. BMI from weight/height). |
+| `missing_is_negative` | `TRUE` = absence means covariate is absent (default). `FALSE` = for derived covariates where missing ≠ absent (e.g. BMI from weight/height). |
 
 **Notes:**
-- Mutually exclusive categories (e.g. overweight vs. obese) should be separate rows with distinct `component_id`s.
-- For multi-concept OR components, add multiple rows in `component_concepts.csv` with the same `component_id` — the component is flagged if **any** row matches.
+- Mutually exclusive categories (e.g. overweight vs. obese) should be separate rows with distinct `covariate_id`s.
+- For multi-concept OR covariates, add multiple rows in `covariate_concepts.csv` with the same `covariate_id` — the covariate is flagged if **any** row matches.
 
 ---
 
-## component_concepts.csv — column definitions
+## covariate_concepts.csv — column definitions
 
 | Column | Description |
 |--------|-------------|
-| `component_id` | Must exactly match a `component_id` in `components.csv`. |
+| `covariate_id` | Must exactly match a `covariate_id` in `covariates.csv`. |
 | `concept_id` | Standard OMOP concept ID (`standard_concept = 'S'`). Exception: ATC drug class ancestors use `standard_concept = 'C'`. Use `0` as a placeholder — Step 2 warns when `0`s remain. |
 | `include_descendants` | `TRUE` = use `concept_ancestor` rollup (matches concept and all descendants). Recommended for most clinical concepts. `FALSE` = exact match only. Use for gender, specific LOINC codes, or when descendants include unrelated concepts. |
-| `concept_role` | Optional. Tag for the concept's role within the component. Leave blank for simple presence/absence. Used for measurement sub-types (`bmi_direct`, `weight`, `height`) or to group multi-domain concepts. |
+| `concept_role` | Optional. Tag for the concept's role within the covariate. Leave blank for simple presence/absence. Used for measurement sub-types (`bmi_direct`, `weight`, `height`) or to group multi-domain concepts. |
 | `value_concept_ids` | Optional. Semicolon-separated `value_as_concept_id` values for observation-table lookups where the concept alone is insufficient. Leave blank for condition, procedure, drug, and most measurement rows. |
 
-### Special component types
+### Special covariate types
 
 **Gender / sex** (queries `person.gender_concept_id` directly — use `include_descendants = FALSE`):
 ```

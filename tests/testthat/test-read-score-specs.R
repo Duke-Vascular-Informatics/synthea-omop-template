@@ -1,9 +1,9 @@
 source(file.path(.PROJ_ROOT, "R/risk_score_pipeline.R"))
 
 # Helpers to write minimal valid CSV files into a temp directory.
-make_valid_components_csv <- function(path) {
+make_valid_covariates_csv <- function(path) {
   writeLines(c(
-    "component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points",
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
     "female,Female sex,condition,-365,0,1,1",
     "obese,Obesity,condition,-365,0,1,2"
   ), path)
@@ -11,7 +11,7 @@ make_valid_components_csv <- function(path) {
 
 make_valid_concepts_csv <- function(path) {
   writeLines(c(
-    "component_id,concept_id,include_descendants",
+    "covariate_id,concept_id,include_descendants",
     "female,8532,false",
     "obese,433736,true"
   ), path)
@@ -19,7 +19,7 @@ make_valid_concepts_csv <- function(path) {
 
 make_config <- function(comp_path, conc_path, lookup_path = tempfile(fileext = ".csv")) {
   list(
-    risk_score_components_file = comp_path,
+    risk_score_covariates_file = comp_path,
     risk_score_concepts_file   = conc_path,
     risk_score_lookup_file     = lookup_path
   )
@@ -29,24 +29,24 @@ make_config <- function(comp_path, conc_path, lookup_path = tempfile(fileext = "
 # read_score_specs() — happy path
 # ---------------------------------------------------------------------------
 
-test_that("read_score_specs returns a list with components, concepts, and lookup", {
+test_that("read_score_specs returns a list with covariates, concepts, and lookup", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   make_valid_concepts_csv(conc)
 
   result <- read_score_specs(make_config(comp, conc))
 
   expect_type(result, "list")
-  expect_named(result, c("components", "concepts", "lookup"))
+  expect_named(result, c("covariates", "concepts", "lookup"))
 })
 
 test_that("read_score_specs returns NULL lookup when file does not exist", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   make_valid_concepts_csv(conc)
 
   result <- read_score_specs(make_config(comp, conc))
@@ -58,25 +58,25 @@ test_that("read_score_specs normalizes domain to lowercase", {
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
   writeLines(c(
-    "component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points",
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
     "female,Female sex,CONDITION,-365,0,1,1"
   ), comp)
   writeLines(c(
-    "component_id,concept_id,include_descendants",
+    "covariate_id,concept_id,include_descendants",
     "female,8532,false"
   ), conc)
 
   result <- read_score_specs(make_config(comp, conc))
-  expect_equal(result$components$domain, "condition")
+  expect_equal(result$covariates$domain, "condition")
 })
 
 test_that("read_score_specs coerces include_descendants to logical", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   writeLines(c(
-    "component_id,concept_id,include_descendants",
+    "covariate_id,concept_id,include_descendants",
     "female,8532,true",
     "obese,433736,false"
   ), conc)
@@ -91,7 +91,7 @@ test_that("read_score_specs loads an optional lookup table when present", {
   conc <- tempfile(fileext = ".csv")
   lkup <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc); unlink(lkup) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   make_valid_concepts_csv(conc)
   writeLines(c("score,risk", "0,0.05", "1,0.10", "2,0.20"), lkup)
 
@@ -104,30 +104,30 @@ test_that("read_score_specs loads an optional lookup table when present", {
 # read_score_specs() — validation errors
 # ---------------------------------------------------------------------------
 
-test_that("read_score_specs stops when components.csv is missing required columns", {
+test_that("read_score_specs stops when covariates.csv is missing required columns", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
   writeLines(c(
-    "component_id,component_name",
+    "covariate_id,covariate_name",
     "female,Female sex"
   ), comp)
   make_valid_concepts_csv(conc)
 
-  expect_error(read_score_specs(make_config(comp, conc)), "Missing required columns in components.csv")
+  expect_error(read_score_specs(make_config(comp, conc)), "Missing required columns in covariates.csv")
 })
 
-test_that("read_score_specs stops when component_concepts.csv is missing required columns", {
+test_that("read_score_specs stops when covariate_concepts.csv is missing required columns", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   writeLines(c(
-    "component_id,concept_id",
+    "covariate_id,concept_id",
     "female,8532"
   ), conc)
 
-  expect_error(read_score_specs(make_config(comp, conc)), "Missing required columns in component_concepts.csv")
+  expect_error(read_score_specs(make_config(comp, conc)), "Missing required columns in covariate_concepts.csv")
 })
 
 test_that("read_score_specs stops on unsupported domain", {
@@ -135,7 +135,7 @@ test_that("read_score_specs stops on unsupported domain", {
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
   writeLines(c(
-    "component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points",
+    "covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points",
     "female,Female sex,device,-365,0,1,1"
   ), comp)
   make_valid_concepts_csv(conc)
@@ -143,27 +143,27 @@ test_that("read_score_specs stops on unsupported domain", {
   expect_error(read_score_specs(make_config(comp, conc)), "Unsupported domains")
 })
 
-test_that("read_score_specs stops when a component has no concept mappings", {
+test_that("read_score_specs stops when a covariate has no concept mappings", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   # Only map female, leave obese unmapped
   writeLines(c(
-    "component_id,concept_id,include_descendants",
+    "covariate_id,concept_id,include_descendants",
     "female,8532,false"
   ), conc)
 
-  expect_error(read_score_specs(make_config(comp, conc)), "No concept mappings found for component_id")
+  expect_error(read_score_specs(make_config(comp, conc)), "No concept mappings found for covariate_id")
 })
 
 test_that("read_score_specs stops on non-integer concept_id", {
   comp <- tempfile(fileext = ".csv")
   conc <- tempfile(fileext = ".csv")
   on.exit({ unlink(comp); unlink(conc) })
-  make_valid_components_csv(comp)
+  make_valid_covariates_csv(comp)
   writeLines(c(
-    "component_id,concept_id,include_descendants",
+    "covariate_id,concept_id,include_descendants",
     "female,not_a_number,false",
     "obese,433736,true"
   ), conc)

@@ -12,8 +12,8 @@ by the numbered workflow steps — they are not a package and should not be run 
 | `db_maintenance.R` | SQL Server maintenance utilities: pre-grows transaction log and tempdb before bulk ETL to prevent auto-growth stalls | Step 05 |
 | `cohorts.R` | Creates OMOP results schema and cohort table; instantiates target surgery and SSI outcome cohorts from SQL files | Step 08 |
 | `cohort_demographics.R` | Queries OMOP CDM for cohort summary statistics and demographic/procedural characteristics for Table 1 | Step 08 via `report_extended.R` |
-| `risk_score_pipeline.R` | Integer risk score pipeline: reads component specs, queries OMOP for each component, computes person-level scores, AUROC/AUPRC, and calibration metrics | Step 08 |
-| `report_extended.R` | Generates the manuscript-format Word report with cohort characteristics table, component prevalence, discrimination metrics, ROC curve, and calibration plots | Step 08 |
+| `risk_score_pipeline.R` | Integer risk score pipeline: reads covariate specs, queries OMOP for each covariate, computes person-level scores, AUROC/AUPRC, and calibration metrics | Step 08 |
+| `report_extended.R` | Generates the manuscript-format Word report with cohort characteristics table, covariate prevalence, discrimination metrics, ROC curve, and calibration plots | Step 08 |
 
 ## Key functions available for testing
 

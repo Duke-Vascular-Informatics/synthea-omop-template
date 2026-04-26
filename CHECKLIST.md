@@ -10,7 +10,7 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 > **Complete in this order:**
 > 1. Edit `study_params.yaml` → 2. Run `/concept-lookup` for every concept ID →
-> 3. Fill `covariates/components.csv` and `covariates/component_concepts.csv` →
+> 3. Fill `covariates/covariates.csv` and `covariates/covariate_concepts.csv` →
 > 4. Run `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` to validate
 
 ---
@@ -38,10 +38,10 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 ---
 
-## covariates/components.csv
+## covariates/covariates.csv
 
 > Only needed if using the custom CSV-based covariate pipeline.
-> Set `covariate_components_file = NULL` in `config.R` if using
+> Set `covariate_definitions_file = NULL` in `config.R` if using
 > `FeatureExtraction::createCovariateSettings()` in Step 8 instead.
 
 - [ ] Replace placeholder rows (`covariate_1`, `covariate_2`, etc.) with your study covariates
@@ -51,7 +51,7 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 ---
 
-## covariates/component_concepts.csv
+## covariates/covariate_concepts.csv
 
 - [ ] Replace all `concept_id = 0` rows with verified standard OMOP concept IDs
 - [ ] Run `/concept-lookup` for each covariate before writing any concept ID

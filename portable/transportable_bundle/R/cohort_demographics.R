@@ -105,25 +105,25 @@ calculate_cohort_summary <- function(person_level, connection, config) {
   summary_df
 }
 
-#' Build combined feature table (components + prevalence)
+#' Build combined feature table (covariates + prevalence)
 #'
-#' @param components Data frame from specs$components
-#' @param component_summary Data frame from risk_score_pipeline output
+#' @param covariates Data frame from specs$covariates
+#' @param covariate_summary Data frame from risk_score_pipeline output
 #' @return Data frame suitable for flextable display
-build_combined_feature_table <- function(components, component_summary) {
-  
-  if (is.null(component_summary)) {
+build_combined_feature_table <- function(covariates, covariate_summary) {
+
+  if (is.null(covariate_summary)) {
     return(NULL)
   }
-  
-  # Merge components with prevalence data
+
+  # Merge covariates with prevalence data
   combined <- merge(
-    components[, c("component_name", "points", "lookback_start_day", "lookback_end_day")],
-    component_summary[, c("component_name", "n_positive", "n_total")],
-    by = "component_name",
+    covariates[, c("covariate_name", "points", "lookback_start_day", "lookback_end_day")],
+    covariate_summary[, c("covariate_name", "n_positive", "n_total")],
+    by = "covariate_name",
     all.x = TRUE
   )
-  
+
   combined$lookback <- paste0(
     combined$lookback_start_day, " to ",
     combined$lookback_end_day, " days"
@@ -132,10 +132,10 @@ build_combined_feature_table <- function(components, component_summary) {
     combined$n_positive, " / ", combined$n_total, " (",
     round(100 * combined$n_positive / combined$n_total, 1), "%)"
   )
-  
+
   # Select and reorder columns
-  combined <- combined[, c("component_name", "points", "lookback", "prevalence")]
-  names(combined) <- c("Component", "Points", "Lookback Window", "Prevalence (n / N, %)")
+  combined <- combined[, c("covariate_name", "points", "lookback", "prevalence")]
+  names(combined) <- c("Covariate", "Points", "Lookback Window", "Prevalence (n / N, %)")
   
   combined
 }

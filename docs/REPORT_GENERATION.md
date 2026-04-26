@@ -8,16 +8,16 @@ The PAD/OLER SSI validation project now includes automated Word document report 
 
 The `ssi_validation_report.docx` includes:
 
-### **Table 1: Risk Score Components**
-- All ten risk score components with their point values
-- Lookback windows for each component
+### **Table 1: Risk Score Covariates**
+- All ten risk score covariates with their point values
+- Lookback windows for each covariate
 - OMOP domain and derivation method for each variable
 - Full OMOP concept mappings and transformations
 
-### **Table 2: Component Prevalence**
-- Prevalence of each risk score component in the validation cohort
+### **Table 2: Covariate Prevalence**
+- Prevalence of each risk score covariate in the validation cohort
 - Counts of positive cases and total eligible procedures
-- Prevalence percentages for each component
+- Prevalence percentages for each covariate
 
 ### **Table 3: Discrimination and Calibration Metrics**
 - **AUROC** — Area under the receiver operating characteristic curve
@@ -84,7 +84,7 @@ Rscript run_risk_score_pipeline.R
 
 This generates:
 - `output/risk_score_eval/person_level_scores.csv` — Person-level scores and outcomes
-- `output/risk_score_eval/component_summary.csv` — Component prevalence
+- `output/risk_score_eval/covariate_summary.csv` — Covariate prevalence
 - `output/risk_score_eval/metrics.csv` — Discrimination and calibration metrics
 - `output/risk_score_eval/calibration_*.png` — Calibration plots
 
@@ -159,7 +159,7 @@ renv::install("officer")
 renv::snapshot()
 ```
 
-### Missing calibration or component data
+### Missing calibration or covariate data
 The report gracefully handles missing pipeline outputs. If some sections appear blank:
 1. Ensure `run_risk_score_pipeline.R` completed successfully
 2. Check that all output files exist in `output/risk_score_eval/`

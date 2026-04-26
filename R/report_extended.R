@@ -43,11 +43,11 @@ source("R/cohort_demographics.R")
 # ---------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# .component_table_data()
+# .covariate_table_data()
 #
-# Returns a static data frame defining the 10 PAD SSI risk score components for
+# Returns a static data frame defining the 10 PAD SSI risk score covariates for
 # inclusion in the Word report as Table 2.  Each row contains:
-#   component_id  — matches the IDs in components.csv / component_summary.csv
+#   covariate_id  — matches the IDs in covariates.csv / covariate_summary.csv
 #   variable      — display name for the Word table
 #   points        — formatted point string (e.g. "+1", "−1")
 #   lookback      — human-readable lookback window
@@ -55,12 +55,12 @@ source("R/cohort_demographics.R")
 #   derivation    — plain-English description of the SQL derivation logic
 #
 # This table is static (not queried from the CDM) — it reflects the score
-# specification at the time the code was written.  If components.csv is updated,
+# specification at the time the code was written.  If covariates.csv is updated,
 # this function must be kept in sync manually.
 # -----------------------------------------------------------------------------
-.component_table_data <- function() {
+.covariate_table_data <- function() {
   data.frame(
-    component_id = c(
+    covariate_id = c(
       "female",
       "overweight",
       "obese",
@@ -651,29 +651,29 @@ source("R/cohort_demographics.R")
 }
 
 # -----------------------------------------------------------------------------
-# .build_combined_component_table()
+# .build_combined_covariate_table()
 #
-# Merges the static component definitions (.component_table_data() content)
-# with observed prevalence counts from the pipeline's component_summary.csv to
+# Merges the static covariate definitions (.covariate_table_data() content)
+# with observed prevalence counts from the pipeline's covariate_summary.csv to
 # produce a combined flextable for Table 3 in the Word report.
 #
-# Matching is done on "component_name" (exact string) with a fallback to a
+# Matching is done on "covariate_name" (exact string) with a fallback to a
 # normalized lower-case key comparison, allowing minor display-name drift
 # between the static definitions and the pipeline output.
 #
-# The resulting table shows each component's variable name, point value,
+# The resulting table shows each covariate's variable name, point value,
 # OMOP concept(s), OMOP CDM derivation method, and observed prevalence
 # (n and %) in the validation cohort.
 # -----------------------------------------------------------------------------
-.build_combined_component_table <- function(component_summary_df) {
-  # Build combined component table with definitions and prevalence
-  # Input: component_summary dataframe with columns: component_name, n_positive, n_total
-  
+.build_combined_covariate_table <- function(covariate_summary_df) {
+  # Build combined covariate table with definitions and prevalence
+  # Input: covariate_summary dataframe with columns: covariate_name, n_positive, n_total
+
   border_h  <- officer::fp_border(color = "#BFBFBF", width = 0.5)
   border_out <- officer::fp_border(color = "#1F3864", width = 1.5)
-  
-  # Map components to their definitions and derivation methods
-  component_defs <- list(
+
+  # Map covariates to their definitions and derivation methods
+  covariate_defs <- list(
     "Female sex" = list(
       points = "+1",
       definition = "Female gender",
@@ -753,25 +753,25 @@ source("R/cohort_demographics.R")
     stringsAsFactors = FALSE
   )
   
-  for (i in seq_len(nrow(component_summary_df))) {
-    comp_name <- component_summary_df$component_name[i]
-    comp_def <- component_defs[[comp_name]]
-    
-    if (is.null(comp_def)) {
-      comp_def <- list(
-        points = "—", definition = comp_name, omop_concept = "—", derivation = "—"
+  for (i in seq_len(nrow(covariate_summary_df))) {
+    cov_name <- covariate_summary_df$covariate_name[i]
+    cov_def <- covariate_defs[[cov_name]]
+
+    if (is.null(cov_def)) {
+      cov_def <- list(
+        points = "—", definition = cov_name, omop_concept = "—", derivation = "—"
       )
     }
-    
+
     combined_data <- rbind(combined_data, data.frame(
-      Component = comp_name,
-      Points = comp_def$points,
-      Definition = comp_def$definition,
-      OMOP_Concept = comp_def$omop_concept,
-      Count = component_summary_df$n_positive[i],
-      Total = component_summary_df$n_total[i],
+      Component = cov_name,
+      Points = cov_def$points,
+      Definition = cov_def$definition,
+      OMOP_Concept = cov_def$omop_concept,
+      Count = covariate_summary_df$n_positive[i],
+      Total = covariate_summary_df$n_total[i],
       Prevalence = paste0(
-        round(100 * component_summary_df$n_positive[i] / component_summary_df$n_total[i], 1), "%"
+        round(100 * covariate_summary_df$n_positive[i] / covariate_summary_df$n_total[i], 1), "%"
       ),
       stringsAsFactors = FALSE
     ))
@@ -824,16 +824,16 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
 
   # Load pipeline outputs if available
   person_level <- NULL
-  component_summary <- NULL
+  covariate_summary <- NULL
   metrics <- NULL
   calibration_plot_files <- list()
   roc_plot_file <- NULL
-  
+
   if (file.exists(file.path(score_output_dir, "person_level_scores.csv"))) {
     person_level <- read.csv(file.path(score_output_dir, "person_level_scores.csv"), stringsAsFactors = FALSE)
   }
-  if (file.exists(file.path(score_output_dir, "component_summary.csv"))) {
-    component_summary <- read.csv(file.path(score_output_dir, "component_summary.csv"), stringsAsFactors = FALSE)
+  if (file.exists(file.path(score_output_dir, "covariate_summary.csv"))) {
+    covariate_summary <- read.csv(file.path(score_output_dir, "covariate_summary.csv"), stringsAsFactors = FALSE)
   }
   if (file.exists(file.path(score_output_dir, "metrics.csv"))) {
     metrics <- read.csv(file.path(score_output_dir, "metrics.csv"), stringsAsFactors = FALSE)
@@ -1010,30 +1010,30 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
     "Table 2.  PAD SSI risk score components, point values, and OMOP CDM derivation method.",
     style = "Normal"
   )
-  doc <- body_add_flextable(doc, .build_table1(.component_table_data()))
+  doc <- body_add_flextable(doc, .build_table1(.covariate_table_data()))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- 5. Table 3: Component Summary & Cohort Counts ----------------------
-  if (!is.null(component_summary)) {
+  # ---- 5. Table 3: Covariate Summary & Cohort Counts ----------------------
+  if (!is.null(covariate_summary)) {
     doc <- body_add_par(doc, "", style = "Normal")
     doc <- body_add_par(doc, "", style = "Normal")
-    doc <- body_add_par(doc, "5.  Component Prevalence in the Validation Cohort", style = "heading 2")
+    doc <- body_add_par(doc, "5.  Covariate Prevalence in the Validation Cohort", style = "heading 2")
     doc <- body_add_par(doc,
       paste0(
-        "Table 3 displays the prevalence of each risk score component in the validation cohort, ",
-        "alongside the component definitions and OMOP concept derivation. ",
-        "Component counts and prevalence percentages are computed across all eligible procedures."
+        "Table 3 displays the prevalence of each risk score covariate in the validation cohort, ",
+        "alongside the covariate definitions and OMOP concept derivation. ",
+        "Covariate counts and prevalence percentages are computed across all eligible procedures."
       ),
       style = "Normal"
     )
     doc <- body_add_par(doc,
-      "Table 3.  Risk score components with OMOP derivation and prevalence in the validation cohort.",
+      "Table 3.  Risk score covariates with OMOP derivation and prevalence in the validation cohort.",
       style = "Normal"
     )
-    
-    # Build combined flextable for component summary with definitions
-    combined_comp_df <- .build_combined_component_table(component_summary)
-    doc <- body_add_flextable(doc, combined_comp_df)
+
+    # Build combined flextable for covariate summary with definitions
+    combined_cov_df <- .build_combined_covariate_table(covariate_summary)
+    doc <- body_add_flextable(doc, combined_cov_df)
     doc <- body_add_par(doc, "", style = "Normal")
   }
 
@@ -1286,18 +1286,18 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   on.exit(unlink(temp_figure_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
   person_level_path <- file.path(score_output_dir, "person_level_scores.csv")
-  component_summary_path <- file.path(score_output_dir, "component_summary.csv")
+  covariate_summary_path <- file.path(score_output_dir, "covariate_summary.csv")
   metrics_path <- file.path(score_output_dir, "metrics.csv")
   lookup_calibration_plot <- file.path(score_output_dir, "calibration_lookup.png")
   calibration_table_lookup_path <- file.path(score_output_dir, "calibration_table_lookup.csv")
   lookup_calibration_plot_temp <- file.path(temp_figure_dir, "calibration_lookup.png")
 
-  if (!file.exists(person_level_path) || !file.exists(component_summary_path) || !file.exists(metrics_path)) {
+  if (!file.exists(person_level_path) || !file.exists(covariate_summary_path) || !file.exists(metrics_path)) {
     stop("Missing one or more required pipeline outputs in ", score_output_dir)
   }
 
   person_level <- read.csv(person_level_path, stringsAsFactors = FALSE)
-  component_summary <- read.csv(component_summary_path, stringsAsFactors = FALSE)
+  covariate_summary <- read.csv(covariate_summary_path, stringsAsFactors = FALSE)
   metrics <- read.csv(metrics_path, stringsAsFactors = FALSE)
 
   # Backfill ECE if it is not present in the metrics file.
@@ -1445,26 +1445,25 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     trimws(x)
   }
 
-  predictor_ref <- .component_table_data()[, c("component_id", "variable", "points", "lookback", "derivation")]
-  names(predictor_ref) <- c("component_id", "Predictor", "Points", "Lookback", "Definition")
+  predictor_ref <- .covariate_table_data()[, c("covariate_id", "variable", "points", "lookback", "derivation")]
+  names(predictor_ref) <- c("covariate_id", "Predictor", "Points", "Lookback", "Definition")
 
-  has_missing_col <- "n_missing" %in% names(component_summary)
+  has_missing_col <- "n_missing" %in% names(covariate_summary)
 
-  if ("component_id" %in% names(component_summary)) {
-    keep_cols <- c("component_id", "n_positive", "mean_points",
+  if ("covariate_id" %in% names(covariate_summary)) {
+    keep_cols <- c("covariate_id", "n_positive", "mean_points",
                    if (has_missing_col) "n_missing")
-    component_act <- component_summary[, keep_cols, drop = FALSE]
-    predictor_tbl <- merge(predictor_ref, component_act, by = "component_id", all.x = TRUE, sort = FALSE)
+    covariate_act <- covariate_summary[, keep_cols, drop = FALSE]
+    predictor_tbl <- merge(predictor_ref, covariate_act, by = "covariate_id", all.x = TRUE, sort = FALSE)
   } else {
     predictor_ref$key <- normalize_label(predictor_ref$Predictor)
-    keep_cols <- c("component_name", "n_positive", "mean_points",
+    keep_cols <- c("covariate_name", "n_positive", "mean_points",
                    if (has_missing_col) "n_missing")
-    component_act <- component_summary[, keep_cols, drop = FALSE]
-    component_act$key <- normalize_label(component_act$component_name)
-    drop_cols <- c("key", "n_positive", "mean_points", if (has_missing_col) "n_missing")
-    component_act <- component_act[, c("key", "n_positive", "mean_points",
+    covariate_act <- covariate_summary[, keep_cols, drop = FALSE]
+    covariate_act$key <- normalize_label(covariate_act$covariate_name)
+    covariate_act <- covariate_act[, c("key", "n_positive", "mean_points",
                                        if (has_missing_col) "n_missing"), drop = FALSE]
-    predictor_tbl <- merge(predictor_ref, component_act, by = "key", all.x = TRUE, sort = FALSE)
+    predictor_tbl <- merge(predictor_ref, covariate_act, by = "key", all.x = TRUE, sort = FALSE)
   }
 
   predictor_tbl$n_positive[is.na(predictor_tbl$n_positive)] <- 0
@@ -2799,7 +2798,7 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
       # Keep core pipeline tabular outputs.
       if (nm %in% c(
         "person_level_scores.csv",
-        "component_summary.csv",
+        "covariate_summary.csv",
         "metrics.csv",
         "calibration_table_lookup.csv",
         "calibration_table_recalibrated.csv"

@@ -75,7 +75,7 @@ Rename (e.g. `cohorts/vte_outcome.sql`) and update `config$outcome_cohort_sql`. 
 Create this file (copy and adapt `target_surgery.sql`) and set `config$comparator_cohort_sql`
 and `config$comparator_cohort_id`. Leave `comparator_cohort_sql = NULL` for other designs.
 
-#### `covariates/components.csv` — covariate definitions
+#### `covariates/covariates.csv` — covariate definitions
 
 Replace the placeholder rows (`covariate_1`, `covariate_2`, …) with your study covariates.
 Each row defines one scored predictor: domain, lookback window (days), and point value.
@@ -84,9 +84,9 @@ See the inline column documentation in the file for full details.
 Set both covariate paths to `NULL` in config if you will define covariates using a
 `FeatureExtraction::createCovariateSettings()` object in Step 8 instead.
 
-#### `covariates/component_concepts.csv` — OMOP concept mappings
+#### `covariates/covariate_concepts.csv` — OMOP concept mappings
 
-Map each `component_id` from `components.csv` to one or more verified standard OMOP
+Map each `covariate_id` from `covariates.csv` to one or more verified standard OMOP
 concept IDs. Use the concept lookup query in the file header to find the right IDs.
 Replace all `concept_id = 0` placeholders before running Step 8.
 

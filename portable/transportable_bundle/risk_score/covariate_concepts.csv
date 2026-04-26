@@ -1,4 +1,4 @@
-component_id,concept_id,include_descendants,concept_role,value_concept_ids
+covariate_id,concept_id,include_descendants,concept_role,value_concept_ids
 # Standard OMOP concept IDs per component (verified against omop_vocab.concept).
 # All concept IDs with include_descendants = TRUE use concept_ancestor rollup.
 #

@@ -209,9 +209,9 @@ cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
 # Required concepts come from three sources:
 #   1. cohorts/target_surgery.sql  — index procedure (SNOMED 232723009)
 #   2. cohorts/outcome_ssi.sql     — SSI condition  (SNOMED 76844004)
-#   3. risk_score/component_concepts.csv — score covariates mapped back to
+#   3. risk_score/covariate_concepts.csv — score covariates mapped back to
 #      the source vocabularies used in pad_ssi.json (SNOMED-CT / LOINC / RxNorm)
-#      Note: component_concepts.csv stores OMOP standard concept_ids; the table
+#      Note: covariate_concepts.csv stores OMOP standard concept_ids; the table
 #      below translates each back to the source code actually written in the JSON.
 
 # -----------------------------------------------------------------------------

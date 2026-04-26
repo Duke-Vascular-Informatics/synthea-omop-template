@@ -18,7 +18,7 @@
 #
 # OUTPUTS (written to output/risk_score_eval/):
 #   person_level_scores.csv            — per-patient scores and outcomes
-#   component_summary.csv              — component-level prevalence
+#   covariate_summary.csv              — covariate-level prevalence
 #   metrics.csv                        — discrimination/calibration + 95% CIs
 #   calibration_table_*.csv            — calibration decile tables
 #   calibration_*.png                  — calibration plots

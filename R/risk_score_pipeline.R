@@ -5,11 +5,11 @@
 # validation study.
 #
 # This module provides all functions needed to:
-#   1. Read and validate the score specification files (components.csv,
-#      component_concepts.csv, risk_lookup.csv).
-#   2. Query the OMOP CDM for each of the 10 risk component domains, applying
-#      per-component lookback windows and concept-ancestor descendant expansion.
-#   3. Assign integer points to each patient based on component presence flags.
+#   1. Read and validate the score specification files (covariates.csv,
+#      covariate_concepts.csv, risk_lookup.csv).
+#   2. Query the OMOP CDM for each of the 10 covariate domains, applying
+#      per-covariate lookback windows and concept-ancestor descendant expansion.
+#   3. Assign integer points to each patient based on covariate presence flags.
 #   4. Map integer scores to predicted probabilities via the published lookup
 #      table and via a refitted logistic recalibration model.
 #   5. Compute discrimination (AUROC, AUPRC), calibration (Brier, ECE,
@@ -19,23 +19,23 @@
 # Entry point: run_integer_risk_score_pipeline(config, connection_details)
 #
 # Inputs:
-#   risk_score/components.csv        — component_id, domain, lookback window,
+#   risk_score/covariates.csv        — covariate_id, domain, lookback window,
 #                                      min_count, and point value for each of
-#                                      the 10 score components
-#   risk_score/component_concepts.csv — OMOP concept_id(s) and descendant-
-#                                      expansion flag per component; some
-#                                      components carry additional concept_role
-#                                      (weight/height for BMI, sub-component
+#                                      the 10 score covariates
+#   risk_score/covariate_concepts.csv — OMOP concept_id(s) and descendant-
+#                                      expansion flag per covariate; some
+#                                      covariates carry additional concept_role
+#                                      (weight/height for BMI, sub-covariate
 #                                      roles for mFI) and value_concept_ids
 #                                      (for observation value filtering)
 #   risk_score/risk_lookup.csv        — integer score → published risk mapping
 #                                       (optional; enables lookup-model metrics)
 #
 # Outputs (written to config$risk_score_output_folder):
-#   person_level_scores.csv       — one row per patient; component point columns
-#                                   (score_<component_id>), total_score, outcome,
+#   person_level_scores.csv       — one row per patient; covariate point columns
+#                                   (score_<covariate_id>), total_score, outcome,
 #                                   predicted_risk_lookup, predicted_risk_recalibrated
-#   component_summary.csv         — per-component n_positive, mean_points
+#   covariate_summary.csv         — per-covariate n_positive, mean_points
 #   metrics.csv                   — AUROC, AUPRC, Brier, ECE, CalibrationIntercept,
 #                                   CalibrationSlope for score_only / lookup /
 #                                   recalibrated models, with ci_lower / ci_upper
@@ -47,7 +47,7 @@
 # read_score_specs()
 #
 # Reads and validates the three specification CSV files that define the integer
-# risk score.  Returns a named list with elements $components, $concepts, and
+# risk score.  Returns a named list with elements $covariates, $concepts, and
 # $lookup (NULL when risk_lookup.csv is absent).
 #
 # Validation performed:
@@ -55,48 +55,48 @@
 #   - domain values are restricted to the supported OMOP CDM domains.
 #   - Integer/numeric columns are coerced and checked for NA.
 #   - concept_role and value_concept_ids are normalised to lowercase / NA.
-#   - Every component_id in components.csv has at least one concept mapping.
+#   - Every covariate_id in covariates.csv has at least one concept mapping.
 # -----------------------------------------------------------------------------
 read_score_specs <- function(config) {
-  components <- read.csv(config$risk_score_components_file, stringsAsFactors = FALSE, comment.char = "#")
+  covariates <- read.csv(config$risk_score_covariates_file, stringsAsFactors = FALSE, comment.char = "#")
   concepts <- read.csv(config$risk_score_concepts_file, stringsAsFactors = FALSE, comment.char = "#")
 
-  required_component_cols <- c(
-    "component_id", "component_name", "domain",
+  required_covariate_cols <- c(
+    "covariate_id", "covariate_name", "domain",
     "lookback_start_day", "lookback_end_day", "min_count", "points"
   )
-  missing_component_cols <- setdiff(required_component_cols, names(components))
-  if (length(missing_component_cols) > 0) {
-    stop("Missing required columns in components.csv: ", paste(missing_component_cols, collapse = ", "))
+  missing_covariate_cols <- setdiff(required_covariate_cols, names(covariates))
+  if (length(missing_covariate_cols) > 0) {
+    stop("Missing required columns in covariates.csv: ", paste(missing_covariate_cols, collapse = ", "))
   }
 
-  required_concept_cols <- c("component_id", "concept_id", "include_descendants")
+  required_concept_cols <- c("covariate_id", "concept_id", "include_descendants")
   missing_concept_cols <- setdiff(required_concept_cols, names(concepts))
   if (length(missing_concept_cols) > 0) {
-    stop("Missing required columns in component_concepts.csv: ", paste(missing_concept_cols, collapse = ", "))
+    stop("Missing required columns in covariate_concepts.csv: ", paste(missing_concept_cols, collapse = ", "))
   }
 
-  components$domain <- tolower(trimws(components$domain))
+  covariates$domain <- tolower(trimws(covariates$domain))
   valid_domains <- c("condition", "drug", "procedure", "measurement", "observation", "visit")
-  invalid_domains <- unique(components$domain[!components$domain %in% valid_domains])
+  invalid_domains <- unique(covariates$domain[!covariates$domain %in% valid_domains])
   if (length(invalid_domains) > 0) {
-    stop("Unsupported domains in components.csv: ", paste(invalid_domains, collapse = ", "))
+    stop("Unsupported domains in covariates.csv: ", paste(invalid_domains, collapse = ", "))
   }
 
-  components$lookback_start_day <- as.integer(components$lookback_start_day)
-  components$lookback_end_day <- as.integer(components$lookback_end_day)
-  components$min_count <- as.integer(components$min_count)
-  components$points <- as.numeric(components$points)
+  covariates$lookback_start_day <- as.integer(covariates$lookback_start_day)
+  covariates$lookback_end_day <- as.integer(covariates$lookback_end_day)
+  covariates$min_count <- as.integer(covariates$min_count)
+  covariates$points <- as.numeric(covariates$points)
 
-  # missing_is_negative: optional column added in components.csv.
-  # TRUE  = absence of CDM records for this component is a true negative
+  # missing_is_negative: optional column added in covariates.csv.
+  # TRUE  = absence of CDM records for this covariate is a true negative
   #         (e.g. sex, indication, prior procedures) — n_missing should be 0.
   # FALSE = absence may reflect unmeasured data (e.g. BMI, ABI, op time).
   # Defaults to FALSE when the column is absent (backward-compatible).
-  if (!"missing_is_negative" %in% names(components)) {
-    components$missing_is_negative <- FALSE
+  if (!"missing_is_negative" %in% names(covariates)) {
+    covariates$missing_is_negative <- FALSE
   }
-  components$missing_is_negative <- tolower(trimws(as.character(components$missing_is_negative))) %in%
+  covariates$missing_is_negative <- tolower(trimws(as.character(covariates$missing_is_negative))) %in%
     c("true", "1", "t", "yes", "y")
 
   concepts$concept_id <- as.integer(concepts$concept_id)
@@ -117,12 +117,12 @@ read_score_specs <- function(config) {
   concepts$value_concept_ids[concepts$value_concept_ids %in% c("", "NA")] <- NA_character_
 
   if (any(is.na(concepts$concept_id))) {
-    stop("component_concepts.csv contains non-integer concept_id values.")
+    stop("covariate_concepts.csv contains non-integer concept_id values.")
   }
 
-  missing_components <- setdiff(components$component_id, concepts$component_id)
-  if (length(missing_components) > 0) {
-    stop("No concept mappings found for component_id(s): ", paste(missing_components, collapse = ", "))
+  missing_covariates <- setdiff(covariates$covariate_id, concepts$covariate_id)
+  if (length(missing_covariates) > 0) {
+    stop("No concept mappings found for covariate_id(s): ", paste(missing_covariates, collapse = ", "))
   }
 
   lookup <- NULL
@@ -135,7 +135,7 @@ read_score_specs <- function(config) {
     lookup$risk <- as.numeric(lookup$risk)
   }
 
-  list(components = components, concepts = concepts, lookup = lookup)
+  list(covariates = covariates, concepts = concepts, lookup = lookup)
 }
 
 # -----------------------------------------------------------------------------
@@ -354,7 +354,7 @@ ensure_concept_ancestor_indexes <- function(connection, config) {
 }
 
 # -----------------------------------------------------------------------------
-# query_bmi_component_counts()
+# query_bmi_covariate_counts()
 #
 # Resolves BMI for each patient using a three-tier priority strategy:
 #
@@ -369,7 +369,7 @@ ensure_concept_ancestor_indexes <- function(connection, config) {
 #        calculated as weight_kg / height_m².  Used as fallback when no
 #        direct BMI reading is available.
 #
-#   3. Neither — patient is not flagged for this component.
+#   3. Neither — patient is not flagged for this covariate.
 #
 # Priority is implemented via a UNION ALL + ROW_NUMBER with an explicit
 # priority column (1 = direct, 2 = computed); the lowest priority value
@@ -384,18 +384,18 @@ ensure_concept_ancestor_indexes <- function(connection, config) {
 #   Height — m  (9546) as-is; cm (8582) ÷ 100; in (9326, 9327, 9330) × 0.0254.
 #   BMI    — kg/m² (9531 or no unit) used directly from value_as_number.
 #
-# concept_role column in component_concepts.csv is required.  At least one of
+# concept_role column in covariate_concepts.csv is required.  At least one of
 # (bmi_direct) or (weight + height) must be present; stop() if neither is.
 # -----------------------------------------------------------------------------
-query_bmi_component_counts <- function(connection, config, component, component_concepts) {
-  if (!"concept_role" %in% names(component_concepts)) {
-    stop("BMI-derived components require concept_role values in component_concepts.csv.")
+query_bmi_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
+  if (!"concept_role" %in% names(covariate_concepts)) {
+    stop("BMI-derived covariates require concept_role values in covariate_concepts.csv.")
   }
 
-  roles          <- tolower(trimws(as.character(component_concepts$concept_role)))
-  weight_ids     <- unique(component_concepts$concept_id[roles == "weight"])
-  height_ids     <- unique(component_concepts$concept_id[roles == "height"])
-  bmi_direct_ids <- unique(component_concepts$concept_id[roles == "bmi_direct"])
+  roles          <- tolower(trimws(as.character(covariate_concepts$concept_role)))
+  weight_ids     <- unique(covariate_concepts$concept_id[roles == "weight"])
+  height_ids     <- unique(covariate_concepts$concept_id[roles == "height"])
+  bmi_direct_ids <- unique(covariate_concepts$concept_id[roles == "bmi_direct"])
 
   weight_ids     <- weight_ids[!is.na(weight_ids) & weight_ids > 0]
   height_ids     <- height_ids[!is.na(height_ids) & height_ids > 0]
@@ -406,17 +406,17 @@ query_bmi_component_counts <- function(connection, config, component, component_
 
   if (!has_direct && !has_computed) {
     stop(
-      "Component ", component$component_id,
-      ": component_concepts.csv must supply either bmi_direct concept(s) or ",
+      "Covariate ", covariate$covariate_id,
+      ": covariate_concepts.csv must supply either bmi_direct concept(s) or ",
       "both weight and height concept(s)."
     )
   }
 
   bmi_where_clause <- switch(
-    component$component_id,
+    covariate$covariate_id,
     overweight = "b.bmi >= 25 AND b.bmi < 30",
     obese      = "b.bmi >= 30",
-    stop("Unsupported BMI-derived component_id: ", component$component_id)
+    stop("Unsupported BMI-derived covariate_id: ", covariate$covariate_id)
   )
 
   # OMOP standard UCUM unit concept IDs.
@@ -580,36 +580,36 @@ query_bmi_component_counts <- function(connection, config, component, component_
     meter_unit_id     = meter_unit_id,
     centimeter_unit_id = centimeter_unit_id,
     inch_unit_ids     = paste(inch_unit_ids,     collapse = ","),
-    lookback_start  = as.integer(component$lookback_start_day),
-    lookback_end    = as.integer(component$lookback_end_day)
+    lookback_start  = as.integer(covariate$lookback_start_day),
+    lookback_end    = as.integer(covariate$lookback_end_day)
   )
 
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
 }
 
 # -----------------------------------------------------------------------------
-# query_abi_component_counts()
+# query_abi_covariate_counts()
 #
 # Counts qualifying ankle-brachial index (ABI) measurements per patient.
 # A measurement qualifies when:
 #   - Its measurement_concept_id is in the configured ABI concept set (optionally
 #     expanded to include all descendants via concept_ancestor).
 #   - value_as_number IS NOT NULL.
-#   - value_as_number < 0.35 (the ABI threshold for this risk component).
-#   - The measurement_date is within the component lookback window.
+#   - value_as_number < 0.35 (the ABI threshold for this risk covariate).
+#   - The measurement_date is within the covariate lookback window.
 #
 # Returns one row per patient with event_count > 0, which calculate_scores()
-# will convert to the component point value when event_count ≥ min_count.
+# will convert to the covariate point value when event_count ≥ min_count.
 # -----------------------------------------------------------------------------
-query_abi_component_counts <- function(connection, config, component, component_concepts) {
-  concept_ids <- unique(component_concepts$concept_id)
+query_abi_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
+  concept_ids <- unique(covariate_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
-  include_desc <- any(component_concepts$include_descendants)
+  include_desc <- any(covariate_concepts$include_descendants)
 
   if (length(concept_ids) == 0) {
     stop(
-      "Component ", component$component_id,
-      " requires at least one ABI measurement concept_id in component_concepts.csv"
+      "Covariate ", covariate$covariate_id,
+      " requires at least one ABI measurement concept_id in covariate_concepts.csv"
     )
   }
 
@@ -651,8 +651,8 @@ query_abi_component_counts <- function(connection, config, component, component_
     cdm_schema = config$cdm_schema,
     concept_ids = paste(concept_ids, collapse = ","),
     include_descendants = ifelse(include_desc, 1, 0),
-    lookback_start = as.integer(component$lookback_start_day),
-    lookback_end = as.integer(component$lookback_end_day),
+    lookback_start = as.integer(covariate$lookback_start_day),
+    lookback_end = as.integer(covariate$lookback_end_day),
     abi_threshold = 0.35
   )
 
@@ -676,15 +676,15 @@ query_abi_component_counts <- function(connection, config, component, component_
 # must be <= index − 1) and min_treatment_days (2) are explicit constants so
 # they can be adjusted without changing SQL logic.
 # -----------------------------------------------------------------------------
-query_prolonged_antibiotic_counts <- function(connection, config, component, component_concepts) {
-  concept_ids <- unique(component_concepts$concept_id)
+query_prolonged_antibiotic_counts <- function(connection, config, covariate, covariate_concepts) {
+  concept_ids <- unique(covariate_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
-  include_desc <- any(component_concepts$include_descendants)
+  include_desc <- any(covariate_concepts$include_descendants)
 
   if (length(concept_ids) == 0) {
     stop(
-      "Component ", component$component_id,
-      " requires at least one antibiotic drug concept_id in component_concepts.csv"
+      "Covariate ", covariate$covariate_id,
+      " requires at least one antibiotic drug concept_id in covariate_concepts.csv"
     )
   }
 
@@ -733,8 +733,8 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
     cdm_schema = config$cdm_schema,
     concept_ids = paste(concept_ids, collapse = ","),
     include_descendants = ifelse(include_desc, 1, 0),
-    lookback_start = as.integer(component$lookback_start_day),
-    lookback_end = as.integer(component$lookback_end_day),
+    lookback_start = as.integer(covariate$lookback_start_day),
+    lookback_end = as.integer(covariate$lookback_end_day),
     non_prophylaxis_buffer_days = 0,
     min_treatment_days = 2
   )
@@ -743,7 +743,7 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
 }
 
 # -----------------------------------------------------------------------------
-# query_operative_time_component_counts()
+# query_operative_time_covariate_counts()
 #
 # Identifies patients with operative time ≥ 4 hours (240 minutes) using two
 # complementary sources, combined with UNION (de-duplicated):
@@ -755,13 +755,13 @@ query_prolonged_antibiotic_counts <- function(connection, config, component, com
 #     them to procedure_datetime / procedure_end_datetime.
 #
 #   Source 2 — measurement table operative-time concepts:
-#     Matching measurement_concept_id values (from component_concepts.csv) with
+#     Matching measurement_concept_id values (from covariate_concepts.csv) with
 #     value_as_number > 240 within the lookback window.
 #
 # If neither source has data the function returns an empty data frame; the
-# patient is then scored 0 for this component.
+# patient is then scored 0 for this covariate.
 # -----------------------------------------------------------------------------
-query_operative_time_component_counts <- function(connection, config, component, component_concepts) {
+query_operative_time_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
   # Captures operative time >= 4 hours (240 minutes) using two complementary
   # sources, combined with UNION (de-duplicated):
   #
@@ -775,12 +775,12 @@ query_operative_time_component_counts <- function(connection, config, component,
   #     and the surgery occurs on a subsequent day of the same admission.
   #
   #   Source 2 — measurement table operative-time concepts:
-  #     Matching measurement_concept_id values (from component_concepts.csv)
-  #     with value_as_number > 240 within the component lookback window.
+  #     Matching measurement_concept_id values (from covariate_concepts.csv)
+  #     with value_as_number > 240 within the covariate lookback window.
 
-  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- unique(covariate_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
-  include_desc <- any(component_concepts$include_descendants)
+  include_desc <- any(covariate_concepts$include_descendants)
 
   operative_time_threshold_minutes <- 240  # 4 hours
 
@@ -852,8 +852,8 @@ query_operative_time_component_counts <- function(connection, config, component,
     cdm_schema = config$cdm_schema,
     concept_ids = paste(concept_ids, collapse = ","),
     include_descendants = ifelse(include_desc, 1, 0),
-    lookback_start = as.integer(component$lookback_start_day),
-    lookback_end = as.integer(component$lookback_end_day),
+    lookback_start = as.integer(covariate$lookback_start_day),
+    lookback_end = as.integer(covariate$lookback_end_day),
     operative_time_threshold = operative_time_threshold_minutes
   )
 
@@ -861,47 +861,47 @@ query_operative_time_component_counts <- function(connection, config, component,
 }
 
 # -----------------------------------------------------------------------------
-# query_mfi_component_counts()
+# query_mfi_covariate_counts()
 #
 # Computes the modified Frailty Index (mFI) composite flag.  A patient is
 # flagged (event_count = 1) when more than mfi_threshold (0.25) of the
-# configured sub-components are present.  With 5 sub-components the effective
+# configured sub-covariates are present.  With 5 sub-covariates the effective
 # threshold is > 1 out of 5 (i.e., ≥ 2 conditions present).
 #
-# Sub-components are identified by concept_role in component_concepts.csv:
+# Sub-covariates are identified by concept_role in covariate_concepts.csv:
 #   diabetes, copd, chf, hypertension, functional_status
 # (or any non-empty role values defined there).
 #
 # Query strategy:
-#   - A separate CTE is built dynamically for each sub-component role, joining
+#   - A separate CTE is built dynamically for each sub-covariate role, joining
 #     target_population to either condition_occurrence (default) or observation
 #     (when value_concept_ids is set) to detect qualifying records within the
 #     lookback window.
-#   - A final mfi_counts CTE sums the sub-component flags (0/1) per patient
+#   - A final mfi_counts CTE sums the sub-covariate flags (0/1) per patient
 #     using a dynamic CASE WHEN IS NOT NULL expression.
 #   - Patients with sub_count / n_sub > mfi_threshold (0.25) are returned.
 #
 # All CTEs are assembled as plain-SQL strings (no SqlRender::render) because
-# the number of sub-components is variable.  DatabaseConnector::querySql() +
+# the number of sub-covariates is variable.  DatabaseConnector::querySql() +
 # SqlRender::translate() is still called for dialect normalisation.
 # -----------------------------------------------------------------------------
-query_mfi_component_counts <- function(connection, config, component, component_concepts) {
-  # Modified Frailty Index: binary flag if (# sub-components present / total sub-components) > 0.25
-  # Each sub-component is identified by concept_role in component_concepts.
-  # Sub-components are queried from condition_occurrence.
+query_mfi_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
+  # Modified Frailty Index: binary flag if (# sub-covariates present / total sub-covariates) > 0.25
+  # Each sub-covariate is identified by concept_role in covariate_concepts.
+  # Sub-covariates are queried from condition_occurrence.
   mfi_threshold <- 0.25
 
-  valid_rows <- component_concepts[
-    !is.na(component_concepts$concept_role) &
-    trimws(component_concepts$concept_role) != "" &
-    !is.na(component_concepts$concept_id) &
-    component_concepts$concept_id > 0, ]
+  valid_rows <- covariate_concepts[
+    !is.na(covariate_concepts$concept_role) &
+    trimws(covariate_concepts$concept_role) != "" &
+    !is.na(covariate_concepts$concept_id) &
+    covariate_concepts$concept_id > 0, ]
 
   roles <- unique(trimws(valid_rows$concept_role))
   n_sub <- length(roles)
 
   if (n_sub == 0) {
-    stop("mFI_high requires concept_role entries with valid concept_ids in component_concepts.csv")
+    stop("mFI_high requires concept_role entries with valid concept_ids in covariate_concepts.csv")
   }
 
   # Build CTE for target population
@@ -951,8 +951,8 @@ query_mfi_component_counts <- function(connection, config, component, component_
                "    AND CAST(o.observation_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
                ")"),
         cte_name, config$cdm_schema, concept_filter,
-        as.integer(component$lookback_start_day),
-        as.integer(component$lookback_end_day)
+        as.integer(covariate$lookback_start_day),
+        as.integer(covariate$lookback_end_day)
       )
     } else {
       concept_filter <- sprintf(
@@ -974,13 +974,13 @@ query_mfi_component_counts <- function(connection, config, component, component_
                "    AND CAST(co.condition_start_date AS DATE) <= DATEADD(DAY, %d, t.index_date)\n",
                ")"),
         cte_name, config$cdm_schema, concept_filter,
-        as.integer(component$lookback_start_day),
-        as.integer(component$lookback_end_day)
+        as.integer(covariate$lookback_start_day),
+        as.integer(covariate$lookback_end_day)
       )
     }
   }, roles, sub_cte_names, SIMPLIFY = TRUE)
 
-  # CTE that sums sub-component flags per patient
+  # CTE that sums sub-covariate flags per patient
   flag_expr <- paste(
     sprintf("CASE WHEN %s.subject_id IS NOT NULL THEN 1 ELSE 0 END", sub_cte_names),
     collapse = " +\n               "
@@ -1015,21 +1015,21 @@ query_mfi_component_counts <- function(connection, config, component, component_
 }
 
 # -----------------------------------------------------------------------------
-# query_female_component_counts()
+# query_female_covariate_counts()
 #
 # Flags patients whose person.gender_concept_id matches one of the configured
 # female-sex concept IDs (typically concept 8532 — Female).
 #
-# Unlike clinical event components this query has no lookback window: sex is
+# Unlike clinical event covariates this query has no lookback window: sex is
 # a demographic attribute stored directly in the person table, not as a dated
 # clinical event.  Returns subject_id with event_count = 1 for female patients.
 # -----------------------------------------------------------------------------
-query_female_component_counts <- function(connection, config, component, component_concepts) {
-  concept_ids <- unique(component_concepts$concept_id)
+query_female_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
+  concept_ids <- unique(covariate_concepts$concept_id)
   concept_ids <- concept_ids[!is.na(concept_ids) & concept_ids > 0]
 
   if (length(concept_ids) == 0) {
-    stop("Component female requires at least one concept_id mapping in component_concepts.csv")
+    stop("Covariate female requires at least one concept_id mapping in covariate_concepts.csv")
   }
 
   sql <- SqlRender::render(
@@ -1060,56 +1060,56 @@ query_female_component_counts <- function(connection, config, component, compone
 }
 
 # -----------------------------------------------------------------------------
-# query_component_counts()
+# query_covariate_counts()
 #
-# Dispatcher function — routes each score component to its specialised query
+# Dispatcher function — routes each score covariate to its specialised query
 # function or falls back to the generic OMOP domain query.
 #
 # Routing logic:
-#   "female"           → query_female_component_counts()
-#   "overweight","obese" → query_bmi_component_counts()
-#   "abi_35"           → query_abi_component_counts()
+#   "female"           → query_female_covariate_counts()
+#   "overweight","obese" → query_bmi_covariate_counts()
+#   "abi_35"           → query_abi_covariate_counts()
 #   "prolong_abx"      → query_prolonged_antibiotic_counts()
-#   "optime4h"         → query_operative_time_component_counts()
-#   "mFI_high"         → query_mfi_component_counts()
+#   "optime4h"         → query_operative_time_covariate_counts()
+#   "mFI_high"         → query_mfi_covariate_counts()
 #   all others         → generic concept-ancestor SQL via get_domain_mapping()
 #
 # The generic path builds a WITH ... expanded_concepts AS (...) query that
 # optionally joins concept_ancestor for descendant expansion, then counts
-# qualifying domain table rows within the component lookback window.
+# qualifying domain table rows within the covariate lookback window.
 #
 # Returns a data frame with columns SUBJECT_ID and EVENT_COUNT.
 # -----------------------------------------------------------------------------
-query_component_counts <- function(connection, config, component, component_concepts) {
-  if (component$component_id == "female") {
-    return(query_female_component_counts(connection, config, component, component_concepts))
+query_covariate_counts <- function(connection, config, covariate, covariate_concepts) {
+  if (covariate$covariate_id == "female") {
+    return(query_female_covariate_counts(connection, config, covariate, covariate_concepts))
   }
 
-  if (component$component_id %in% c("overweight", "obese")) {
-    return(query_bmi_component_counts(connection, config, component, component_concepts))
+  if (covariate$covariate_id %in% c("overweight", "obese")) {
+    return(query_bmi_covariate_counts(connection, config, covariate, covariate_concepts))
   }
 
-  if (component$component_id == "abi_35") {
-    return(query_abi_component_counts(connection, config, component, component_concepts))
+  if (covariate$covariate_id == "abi_35") {
+    return(query_abi_covariate_counts(connection, config, covariate, covariate_concepts))
   }
 
-  if (component$component_id == "prolong_abx") {
-    return(query_prolonged_antibiotic_counts(connection, config, component, component_concepts))
+  if (covariate$covariate_id == "prolong_abx") {
+    return(query_prolonged_antibiotic_counts(connection, config, covariate, covariate_concepts))
   }
 
-  if (component$component_id == "optime4h") {
-    return(query_operative_time_component_counts(connection, config, component, component_concepts))
+  if (covariate$covariate_id == "optime4h") {
+    return(query_operative_time_covariate_counts(connection, config, covariate, covariate_concepts))
   }
 
-  if (component$component_id == "mFI_high") {
-    return(query_mfi_component_counts(connection, config, component, component_concepts))
+  if (covariate$covariate_id == "mFI_high") {
+    return(query_mfi_covariate_counts(connection, config, covariate, covariate_concepts))
   }
 
-  map <- get_domain_mapping(component$domain)
+  map <- get_domain_mapping(covariate$domain)
 
-  concept_ids <- unique(component_concepts$concept_id)
+  concept_ids <- unique(covariate_concepts$concept_id)
   concept_id_string <- paste(concept_ids, collapse = ",")
-  include_desc <- any(component_concepts$include_descendants)
+  include_desc <- any(covariate_concepts$include_descendants)
 
   sql <- SqlRender::render(
     sql = "WITH target_population AS (
@@ -1150,8 +1150,8 @@ query_component_counts <- function(connection, config, component, component_conc
     domain_date_col = map$date_col,
     concept_ids = concept_id_string,
     include_descendants = ifelse(include_desc, 1, 0),
-    lookback_start = as.integer(component$lookback_start_day),
-    lookback_end = as.integer(component$lookback_end_day)
+    lookback_start = as.integer(covariate$lookback_start_day),
+    lookback_end = as.integer(covariate$lookback_end_day)
   )
 
   DatabaseConnector::querySql(connection, SqlRender::translate(sql, targetDialect = "sql server"))
@@ -1160,26 +1160,26 @@ query_component_counts <- function(connection, config, component, component_conc
 # -----------------------------------------------------------------------------
 # calculate_scores()
 #
-# Iterates over all components defined in specs$components, calls
-# query_component_counts() for each, and assembles a person-level wide matrix
+# Iterates over all covariates defined in specs$covariates, calls
+# query_covariate_counts() for each, and assembles a person-level wide matrix
 # of score contributions.
 #
-# For each component:
+# For each covariate:
 #   1. Counts per patient are fetched from the CDM.
 #   2. Counts are de-duplicated by subject_id (max aggregation) to guard against
 #      Cartesian-product inflation from multi-row query results.
 #   3. Missing patients (no CDM records) receive event_count = 0.
-#   4. score_<component_id> = comp$points when event_count ≥ comp$min_count;
+#   4. score_<covariate_id> = comp$points when event_count ≥ comp$min_count;
 #      0 otherwise.  (min_count allows requiring ≥ N qualifying events.)
 #
-# The running component_matrix is de-duplicated after each merge to prevent
-# row inflation from multi-component merges.
+# The running covariate_matrix is de-duplicated after each merge to prevent
+# row inflation from multi-covariate merges.
 #
-# final total_score = row sum of all score_<component_id> columns.
+# final total_score = row sum of all score_<covariate_id> columns.
 #
 # Returns a named list:
 #   $person_level       — per-patient data frame with all score columns + outcome
-#   $component_summary  — aggregate summary (n_positive, mean_points per component)
+#   $covariate_summary  — aggregate summary (n_positive, mean_points per covariate)
 # -----------------------------------------------------------------------------
 calculate_scores <- function(connection, config, specs) {
   outcomes <- get_outcomes(connection, config)
@@ -1188,13 +1188,13 @@ calculate_scores <- function(connection, config, specs) {
   outcome_names[outcome_names == "indexdate"] <- "index_date"
   names(outcomes) <- outcome_names
 
-  components <- specs$components
+  covariates <- specs$covariates
   concepts <- specs$concepts
 
-  component_matrix <- outcomes[, c("subject_id"), drop = FALSE]
-  component_summary <- data.frame(
-    component_id = character(),
-    component_name = character(),
+  covariate_matrix <- outcomes[, c("subject_id"), drop = FALSE]
+  covariate_summary <- data.frame(
+    covariate_id = character(),
+    covariate_name = character(),
     domain = character(),
     n_positive = integer(),
     n_missing = integer(),
@@ -1202,11 +1202,11 @@ calculate_scores <- function(connection, config, specs) {
     stringsAsFactors = FALSE
   )
 
-  for (i in seq_len(nrow(components))) {
-    comp <- components[i, ]
-    comp_concepts <- concepts[concepts$component_id == comp$component_id, ]
+  for (i in seq_len(nrow(covariates))) {
+    comp <- covariates[i, ]
+    comp_concepts <- concepts[concepts$covariate_id == comp$covariate_id, ]
 
-    counts <- query_component_counts(connection, config, comp, comp_concepts)
+    counts <- query_covariate_counts(connection, config, comp, comp_concepts)
     if (nrow(counts) > 0) {
       count_names <- tolower(names(counts))
       count_names[count_names == "subjectid"] <- "subject_id"
@@ -1227,10 +1227,10 @@ calculate_scores <- function(connection, config, specs) {
       by = "subject_id",
       all.x = TRUE
     )
-    # Count patients with no CDM records for this component BEFORE 0-imputation.
-    # When missing_is_negative = TRUE the component query only returns positive
+    # Count patients with no CDM records for this covariate BEFORE 0-imputation.
+    # When missing_is_negative = TRUE the covariate query only returns positive
     # cases; all un-returned patients are true negatives, not missing data
-    # (e.g. male patients for the sex component, CLI patients for claudication).
+    # (e.g. male patients for the sex covariate, CLI patients for claudication).
     # When FALSE, absent records may genuinely reflect unmeasured data
     # (e.g. no BMI or ABI measurement in the lookback window).
     missing_is_neg <- isTRUE(comp$missing_is_negative)
@@ -1238,20 +1238,20 @@ calculate_scores <- function(connection, config, specs) {
 
     df$event_count[is.na(df$event_count)] <- 0L
 
-    score_col <- paste0("score_", comp$component_id)
+    score_col <- paste0("score_", comp$covariate_id)
     df[[score_col]] <- ifelse(df$event_count >= comp$min_count, comp$points, 0)
 
-    component_matrix <- merge(component_matrix, df[, c("subject_id", score_col)], by = "subject_id", all.x = TRUE)
+    covariate_matrix <- merge(covariate_matrix, df[, c("subject_id", score_col)], by = "subject_id", all.x = TRUE)
     # Prevent cascading duplication: keep first row per subject after each merge
-    component_matrix <- component_matrix[!duplicated(component_matrix$subject_id), ]
+    covariate_matrix <- covariate_matrix[!duplicated(covariate_matrix$subject_id), ]
 
     is_activated <- df$event_count >= comp$min_count
 
-    component_summary <- rbind(
-      component_summary,
+    covariate_summary <- rbind(
+      covariate_summary,
       data.frame(
-        component_id = comp$component_id,
-        component_name = comp$component_name,
+        covariate_id = comp$covariate_id,
+        covariate_name = comp$covariate_name,
         domain = comp$domain,
         n_positive = sum(is_activated, na.rm = TRUE),
         n_missing = n_missing_comp,
@@ -1261,10 +1261,10 @@ calculate_scores <- function(connection, config, specs) {
     )
   }
 
-  score_cols <- grep("^score_", names(component_matrix), value = TRUE)
-  component_matrix$total_score <- rowSums(component_matrix[, score_cols, drop = FALSE], na.rm = TRUE)
+  score_cols <- grep("^score_", names(covariate_matrix), value = TRUE)
+  covariate_matrix$total_score <- rowSums(covariate_matrix[, score_cols, drop = FALSE], na.rm = TRUE)
 
-  person_level <- merge(outcomes, component_matrix, by = "subject_id", all.x = TRUE)
+  person_level <- merge(outcomes, covariate_matrix, by = "subject_id", all.x = TRUE)
 
   # Join SSI sub-type (Superficial / Deep / Organ-space) — NA for non-SSI patients
   ssi_types <- tryCatch(
@@ -1281,7 +1281,7 @@ calculate_scores <- function(connection, config, specs) {
     person_level$ssi_type <- NA_character_
   }
 
-  list(person_level = person_level, component_summary = component_summary)
+  list(person_level = person_level, covariate_summary = covariate_summary)
 }
 
 # -----------------------------------------------------------------------------
@@ -1794,8 +1794,8 @@ compute_subgroup_bias <- function(person_level,
 
   # ---------------------------------------------------------------------------
   # Step 3 — derive surgical indication from score_indicationClaudication.
-  # The column name follows the pattern score_<component_id>; component_id is
-  # "indicationClaudication" as defined in components.csv.
+  # The column name follows the pattern score_<covariate_id>; covariate_id is
+  # "indicationClaudication" as defined in covariates.csv.
   # score > 0 means the Claudication component was positive at the index date.
   # ---------------------------------------------------------------------------
   ind_col <- names(df)[tolower(names(df)) == "score_indicationclaudication"][1]
@@ -1958,10 +1958,10 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 #   2. read_score_specs()        — load and validate CSV spec files
 #   3. connect()                 — open a JDBC connection using connection_details
 #   4. ensure_concept_ancestor_indexes() — create covering indexes if missing
-#   5. calculate_scores()        — query CDM and assign component points per patient
+#   5. calculate_scores()        — query CDM and assign covariate points per patient
 #   6. evaluate_integer_risk_score() — compute metrics + calibration tables
 #   7. write_csv()               — save person_level_scores.csv,
-#                                  component_summary.csv, metrics.csv,
+#                                  covariate_summary.csv, metrics.csv,
 #                                  calibration_table_*.csv
 #   8. save_calibration_plot()   — save calibration_*.png for each model
 #
@@ -1992,7 +1992,7 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
   message("Checking concept_ancestor indexes ...")
   ensure_concept_ancestor_indexes(conn, config)
 
-  message("Calculating person-level score components ...")
+  message("Calculating person-level score covariates ...")
   score_data <- calculate_scores(conn, config, specs)
   person_level <- score_data$person_level
 
@@ -2002,7 +2002,7 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
   out <- config$risk_score_output_folder
 
   readr::write_csv(eval_results$person_level, file.path(out, "person_level_scores.csv"))
-  readr::write_csv(score_data$component_summary, file.path(out, "component_summary.csv"))
+  readr::write_csv(score_data$covariate_summary, file.path(out, "covariate_summary.csv"))
   readr::write_csv(eval_results$metrics, file.path(out, "metrics.csv"))
 
   # ---------------------------------------------------------------------------
@@ -2031,7 +2031,7 @@ run_integer_risk_score_pipeline <- function(config, connection_details) {
   }
 
   message("Output folder: ", normalizePath(out, winslash = "/", mustWork = FALSE))
-  message("Wrote: person_level_scores.csv, component_summary.csv, metrics.csv, calibration tables, calibration plots")
+  message("Wrote: person_level_scores.csv, covariate_summary.csv, metrics.csv, calibration tables, calibration plots")
 
   invisible(eval_results)
 }

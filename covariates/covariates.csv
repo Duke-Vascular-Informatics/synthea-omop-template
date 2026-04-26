@@ -1,5 +1,5 @@
 # See covariates/README.md for column definitions and usage guide.
-component_id,component_name,domain,lookback_start_day,lookback_end_day,min_count,points,missing_is_negative
+covariate_id,covariate_name,domain,lookback_start_day,lookback_end_day,min_count,points,missing_is_negative
 covariate_1,Covariate 1 — replace with descriptive name,condition,-365,-1,1,1,TRUE
 covariate_2,Covariate 2 — replace with descriptive name,procedure,-30,0,1,1,TRUE
 covariate_3,Covariate 3 — replace with descriptive name,drug,-90,0,1,2,TRUE

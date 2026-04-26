@@ -159,8 +159,8 @@ get_validation_config <- function() {
     # Covariate / feature definition files.
     # Set to NULL if using FeatureExtraction settings objects in Step 8 instead.
     # -------------------------------------------------------------------------
-    covariate_components_file = file.path("covariates", "components.csv"),
-    covariate_concepts_file   = file.path("covariates", "component_concepts.csv"),
+    covariate_definitions_file = file.path("covariates", "covariates.csv"),
+    covariate_concepts_file    = file.path("covariates", "covariate_concepts.csv"),
     covariate_lookup_file     = file.path("covariates", "risk_lookup.csv"),
 
     # -------------------------------------------------------------------------

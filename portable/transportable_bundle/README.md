@@ -245,7 +245,7 @@ Done: Outcome – Surgical site infection
   SSI outcome cohort     n = ...
 
 === Integer risk score pipeline ===
-Calculating person-level score components ...
+Calculating person-level score covariates ...
 Evaluating discrimination and calibration ...
 ...
 
@@ -275,8 +275,8 @@ scp -r <your_netid>@your.hpc.cluster.hostname:~/transportable_bundle/output/risk
 
 | File | Description |
 |------|-------------|
-| `person_level_scores.csv` | Per-patient component points, total score, predicted probabilities, binary 90-day SSI outcome |
-| `component_summary.csv` | Component-level activation counts and mean points across the cohort |
+| `person_level_scores.csv` | Per-patient covariate points, total score, predicted probabilities, binary 90-day SSI outcome |
+| `covariate_summary.csv` | Covariate-level activation counts and mean points across the cohort |
 | `metrics.csv` | AUROC, AUPRC, Brier score, ECE, calibration intercept and slope with 95% bootstrap CIs (B = 500) for three model specifications |
 | `calibration_table_lookup.csv` | Calibration decile table for the published lookup model |
 | `calibration_table_recalibrated.csv` | Calibration decile table for the recalibrated model |
@@ -323,12 +323,12 @@ klist
 
 ---
 
-## Risk Score Components
+## Risk Score Covariates
 
-All 10 components are pre-mapped to OMOP standard concept IDs and require no
+All 10 covariates are pre-mapped to OMOP standard concept IDs and require no
 modification for a standard OMOP CDM v5.4 database:
 
-| Component | Points | Concept(s) | Lookback |
+| Covariate | Points | Concept(s) | Lookback |
 |---|---|---|---|
 | `female` | +1 | 8532 (Female) | Any time |
 | `overweight` | +1 | 3025315 (weight), 3036277 (height) | 365 days |
@@ -379,11 +379,11 @@ descendants) within 90 days of the index date.
 
 ## Missing Value Handling
 
-When a component has no matching records in the OMOP CDM, its event count
+When a covariate has no matching records in the OMOP CDM, its event count
 defaults to 0 and it contributes 0 points to the total score. This treats
 missing data as "no documented evidence" of the risk factor — appropriate
-when CDM completeness is high. Review the `score_<component_id>` columns in
-`person_level_scores.csv` to identify any components with zero activation
+when CDM completeness is high. Review the `score_<covariate_id>` columns in
+`person_level_scores.csv` to identify any covariates with zero activation
 across the entire cohort (which may indicate a mapping or ETL issue rather
 than true clinical absence).
 

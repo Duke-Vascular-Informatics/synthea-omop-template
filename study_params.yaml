@@ -9,7 +9,7 @@
 #   1. Fill in every TODO item in this file
 #   2. Run: Rscript scripts/find_todos.R   — check remaining placeholders
 #   3. Run: Rscript workflow/02_define_omop_cohort_outcome_covariates.R  — validate
-#   4. Populate covariates/components.csv and covariates/component_concepts.csv
+#   4. Populate covariates/covariates.csv and covariates/covariate_concepts.csv
 #   5. Write your analysis in workflow/08 Sections 7–9, then run Step 8
 #
 # CONCEPT ID LOOKUP — before writing any concept ID, run in Claude Code chat:

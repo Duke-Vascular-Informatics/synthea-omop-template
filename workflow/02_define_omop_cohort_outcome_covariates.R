@@ -66,7 +66,7 @@ study_design               <- config$study_design
 prediction_window_days     <- config$prediction_window_days
 min_prior_observation_days <- config$min_prior_observation_days
 covariate_lookback_days    <- config$covariate_lookback_days
-covariate_components_path  <- config$covariate_components_file
+covariate_definitions_path  <- config$covariate_definitions_file
 covariate_concepts_path    <- config$covariate_concepts_file
 
 
@@ -102,8 +102,8 @@ if (study_design %in% c("prognostic_model", "causal_inference")) {
   }
 }
 
-if (!is.null(covariate_components_path))
-  optional_artifacts[["covariate_components"]] <- covariate_components_path
+if (!is.null(covariate_definitions_path))
+  optional_artifacts[["covariate_definitions"]] <- covariate_definitions_path
 if (!is.null(covariate_concepts_path))
   optional_artifacts[["covariate_concepts"]] <- covariate_concepts_path
 
@@ -159,25 +159,25 @@ outcome_cohort_sql  <- if (!is.null(outcome_cohort_sql_path) && file.exists(outc
 # -----------------------------------------------------------------------------
 # Chunk 5 - Load and validate covariate definition files (if provided)
 # -----------------------------------------------------------------------------
-covariate_components <- NULL
-covariate_concepts   <- NULL
+covariate_definitions <- NULL
+covariate_concepts    <- NULL
 
-if (!is.null(covariate_components_path) && file.exists(covariate_components_path)) {
-  covariate_components <- read.csv(covariate_components_path,
-                                   stringsAsFactors = FALSE, comment.char = "#")
+if (!is.null(covariate_definitions_path) && file.exists(covariate_definitions_path)) {
+  covariate_definitions <- read.csv(covariate_definitions_path,
+                                    stringsAsFactors = FALSE, comment.char = "#")
 
-  required_cols <- c("component_id", "component_name", "domain",
+  required_cols <- c("covariate_id", "covariate_name", "domain",
                      "lookback_start_day", "lookback_end_day", "min_count", "points")
-  missing_cols  <- setdiff(required_cols, names(covariate_components))
+  missing_cols  <- setdiff(required_cols, names(covariate_definitions))
   if (length(missing_cols) > 0)
-    stop("Covariate components file is missing required columns: ",
+    stop("Covariates file is missing required columns: ",
          paste(missing_cols, collapse = ", "))
 
-  # Warn on placeholder rows (component_id still matching template defaults).
-  placeholder_ids <- grep("^covariate_[0-9]+$", covariate_components$component_id, value = TRUE)
+  # Warn on placeholder rows (covariate_id still matching template defaults).
+  placeholder_ids <- grep("^covariate_[0-9]+$", covariate_definitions$covariate_id, value = TRUE)
   if (length(placeholder_ids) > 0)
     warning(
-      "[Step 2] Covariate components file still contains ", length(placeholder_ids),
+      "[Step 2] Covariates file still contains ", length(placeholder_ids),
       " placeholder row(s): ", paste(placeholder_ids, collapse = ", "), ".\n",
       "  TODO [COVARIATES]: Replace template example rows with your study covariates."
     )
@@ -187,18 +187,18 @@ if (!is.null(covariate_concepts_path) && file.exists(covariate_concepts_path)) {
   covariate_concepts <- read.csv(covariate_concepts_path,
                                  stringsAsFactors = FALSE, comment.char = "#")
 
-  required_cols <- c("component_id", "concept_id", "include_descendants")
+  required_cols <- c("covariate_id", "concept_id", "include_descendants")
   missing_cols  <- setdiff(required_cols, names(covariate_concepts))
   if (length(missing_cols) > 0)
     stop("Covariate concepts file is missing required columns: ",
          paste(missing_cols, collapse = ", "))
 
-  # Cross-check: every concept row must reference a known component.
-  if (!is.null(covariate_components)) {
-    unknown_ids <- setdiff(unique(covariate_concepts$component_id),
-                           unique(covariate_components$component_id))
+  # Cross-check: every concept row must reference a known covariate.
+  if (!is.null(covariate_definitions)) {
+    unknown_ids <- setdiff(unique(covariate_concepts$covariate_id),
+                           unique(covariate_definitions$covariate_id))
     if (length(unknown_ids) > 0)
-      stop("Covariate concepts file references unknown component_id values: ",
+      stop("Covariate concepts file references unknown covariate_id values: ",
            paste(unknown_ids, collapse = ", "))
   }
 
@@ -229,11 +229,11 @@ if (!is.null(outcome_cohort_sql))
   cat("  [outcome]    ", outcome_cohort_sql_path,
       "  (", nchar(outcome_cohort_sql), " chars)\n", sep = "")
 cat("\nCovariate definitions:\n")
-if (!is.null(covariate_components)) {
-  cat("  components   : ", covariate_components_path,
-      "  (", nrow(covariate_components), " rows)\n", sep = "")
+if (!is.null(covariate_definitions)) {
+  cat("  covariates   : ", covariate_definitions_path,
+      "  (", nrow(covariate_definitions), " rows)\n", sep = "")
 } else {
-  cat("  components   : not provided",
+  cat("  covariates   : not provided",
       if (study_design %in% c("prognostic_model", "causal_inference"))
         " — define covariates in Step 8 using FeatureExtraction" else "", "\n")
 }

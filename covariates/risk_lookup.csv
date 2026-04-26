@@ -7,15 +7,15 @@ score,risk
 # probability mapping from your published or pre-trained model.
 #
 # Each row maps one integer total score to a calibrated predicted probability.
-# The pipeline uses this table to convert raw integer scores (sum of component
-# points from components.csv) into probability-scale outputs.
+# The pipeline uses this table to convert raw integer scores (sum of covariate
+# points from covariates.csv) into probability-scale outputs.
 #
 # COLUMN DEFINITIONS
 # ──────────────────
 # score
-#   Integer total score value (sum of component points for a patient).
-#   Range: from the minimum possible score (sum of all negative-point components)
-#   to the maximum possible score (sum of all positive-point components).
+#   Integer total score value (sum of covariate points for a patient).
+#   Range: from the minimum possible score (sum of all negative-point covariates)
+#   to the maximum possible score (sum of all positive-point covariates).
 #   Add a row for every integer value in that range.
 #
 # risk
