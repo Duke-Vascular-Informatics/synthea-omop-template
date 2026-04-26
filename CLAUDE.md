@@ -72,11 +72,24 @@ WHERE ca.ancestor_concept_id = <your_chosen_concept_id>
   AND c.invalid_reason IS NULL;
 ```
 
-Use the `/concept-lookup` slash command in chat to run this interactively:
+Two ways to run a vocabulary lookup:
 
+**Interactive (Claude Code chat):**
 ```
 /concept-lookup <clinical term> [domain]
 ```
+
+**Standalone R script (terminal / batch):**
+```bash
+Rscript scripts/concept_lookup.R "<clinical term>" [domain]
+# Examples:
+Rscript scripts/concept_lookup.R "total hip replacement" Procedure
+Rscript scripts/concept_lookup.R "venous thromboembolism" Condition
+```
+
+Both perform the same two-step query (name/synonym match, then descendant expansion)
+and label results `[vocab query]`. The R script is preferred for batch lookups or when
+a database connection is not available in the chat environment.
 
 ---
 
@@ -156,7 +169,8 @@ GitHub repositories (e.g., HADES package source code, Book of OHDSI example scri
 - `config.R` — single source of truth; always read via `get_validation_config()`.
 - `R/cohorts.R` — `build_cohorts()` reads SQL file paths from `config$target_cohort_sql`,
   `config$comparator_cohort_sql`, `config$outcome_cohort_sql`. Do not hardcode paths.
-- `workflow/08` sections 1–6 are pre-wired infrastructure; sections 7–9 are user code.
+- `workflow/08` is fully driven by `analyses:` flags in `study_params.yaml` — no code
+  editing is needed. Enable analyses by setting their flags to `true`.
 - All outputs go to `config$output_folder`. Do not hardcode output paths.
 
 ---
@@ -174,16 +188,40 @@ GitHub repositories (e.g., HADES package source code, Book of OHDSI example scri
 
 ## Template Customization Assistance
 
-When a user is setting up a new study from this template:
+### Automated pre-flight check
 
-1. Read `config.R` and identify which `TODO [CONFIG]:` items have not yet been filled in
-   (still contain placeholder values like `"my_study"`, `"cdm_my_study"`, `0` concept IDs).
-2. Read the cohort SQL files referenced in `config$target_cohort_sql` and
-   `config$outcome_cohort_sql` and flag any remaining `concept_id = 0` placeholders.
+The fastest way to assess setup status is to run the dedicated check script or skill:
+
+**Terminal:**
+```bash
+Rscript scripts/check_setup.R
+```
+
+**Claude Code chat:**
+```
+/check-setup
+```
+
+Both scan `study_params.yaml`, cohort SQL files, and covariate CSVs without a database
+connection and print a sectioned [OK] / [WARN] / [FAIL] checklist. Exit code 0 = ready
+for Step 8; exit code 1 = items require attention.
+
+### Manual checklist (when assisting interactively)
+
+When a user asks for setup help and hasn't run the script, perform these checks inline:
+
+1. Read `study_params.yaml` and identify fields still at their default placeholder values
+   (`"my_study"`, `"cdm_my_study"`, `"my_study_results"`, `"my_study_cohort"`,
+   `"output/my_study"`, concept IDs = `0`).
+2. Read the cohort SQL files referenced in `target.sql_file` and `outcome.sql_file`
+   (and `comparator.sql_file` when `comparator.cohort_id` is set) and flag any lines
+   containing `concept_id = 0`.
 3. Check `covariates/covariates.csv` for placeholder rows (`covariate_id` matching
    `covariate_1`, `covariate_2`, etc.).
 4. Check `covariates/covariate_concepts.csv` for `concept_id = 0` rows.
-5. Summarize what is complete and what still needs filling in before running Step 8.
+5. Check the `analyses:` flags — confirm at least one is set to `true`.
+6. Summarize what is complete and what still needs filling in before running Step 8,
+   using the same [OK] / [WARN] / [FAIL] format as `scripts/check_setup.R`.
 
 ---
 
