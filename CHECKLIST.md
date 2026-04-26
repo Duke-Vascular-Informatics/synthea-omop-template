@@ -61,8 +61,8 @@ Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
 
 ## workflow/07_setup_analysis_env.R
 
-- [ ] Uncomment the packages your Step 8 analysis needs
 - [ ] **Run Step 7**: `Rscript workflow/07_setup_analysis_env.R`
+      (No editing needed — checks all HADES packages and utilities at once)
 
 ---
 
