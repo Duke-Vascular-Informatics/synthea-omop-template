@@ -2,6 +2,8 @@
 
 ETL pipeline for transforming Synthea CSV exports into the OMOP CDM.
 
+For full run order and prerequisites, use [docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md).
+
 ## Files
 
 | File | Description |
@@ -21,6 +23,6 @@ run_etl(config, connection_details, csv_input_dir, run_name)
 ## Prerequisites
 
 - OMOP vocabulary must be loaded into the shared `omop_vocab` schema before running.
-  Run `setup/setup_omop_vocab_schema.R` once per SQL Server instance.
+  Run `scripts/setup_omop_vocab_schema.R` once per SQL Server instance.
 - Transaction log and tempdb should be pre-grown for bulk loads.
   `R/db_maintenance.R` handles this automatically when called by the ETL.

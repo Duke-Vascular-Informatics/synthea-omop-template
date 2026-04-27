@@ -1,19 +1,24 @@
 # cohorts/
 
-OMOP cohort SQL definitions for the PAD/SSI validation study.
+OMOP cohort SQL definitions for the current study.
 Each file is rendered by SqlRender and executed against the SQL Server CDM to populate the results cohort table.
+
+For complete setup and execution flow, use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 
 ## Files
 
 | File | Cohort | Description |
 |------|--------|-------------|
-| `target_surgery.sql` | Target cohort | Open revascularization procedures for PAD (aorto-bifemoral bypass, fem-pop bypass, fem-tibial bypass, aorto-iliac bypass). Filtered to inpatient visits; one index date per patient (most recent procedure). |
-| `outcome_ssi.sql` | Outcome cohort | Surgical site infection (SSI) diagnosis occurring within the prediction window after the index procedure. |
+| `target_surgery.sql` | Target cohort | Target/index event cohort SQL template for exposure or index procedure definition. |
+| `outcome_ssi.sql` | Outcome cohort | Outcome cohort SQL template for events observed during follow-up. |
+| `comparator_cohort.sql` | Comparator cohort | Optional comparator cohort SQL template used for causal inference studies. |
 
 ## Usage
 
-Cohort SQL files are not run directly. They are loaded and executed by `R/cohorts.R`
-during Step 08 (`workflow/08_run_analysis_and_manuscript_report.R`).
+Cohort SQL files are not run directly.
+
+- Step 02 validates the files and checks for placeholders.
+- Step 08 loads and executes the cohort SQL via `R/cohorts.R`.
 
 SqlRender template parameters used in both files:
 

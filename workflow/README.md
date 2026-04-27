@@ -4,6 +4,9 @@ Each script is a self-contained step in the study lifecycle. Scripts auto-resolv
 the project root from their own file path, so they can be run from any shell
 working directory.
 
+Use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) for the canonical run order.
+This file is a step-level reference for what each workflow script does.
+
 ---
 
 ## Steps at a glance
@@ -16,32 +19,26 @@ working directory.
 | 4 | `04_generate_synthea_csv.ps1` / `.sh` | — | Generate synthetic patients (skip if using real CDM data) |
 | 5 | `05_etl_csv_to_omop.R` | — | ETL Synthea CSV → OMOP CDM tables (skip if using real CDM data) |
 | 6 | `06_quality_check_defined_phenotypes.R` | — | Post-ETL data quality and phenotype validation checks |
-| **7** | **`07_setup_analysis_env.R`** | **Yes** | Add your analysis packages to the `required` vector |
-| **8** | **`08_run_analysis_and_manuscript_report.R`** | **Yes** | Write your analysis code (Sections 7–9) |
+| **7** | **`07_setup_analysis_env.R`** | **Optional** | Extend package checks only if your analysis needs additional packages |
+| **8** | **`08_run_analysis_and_manuscript_report.R`** | **Optional** | Add custom analysis logic in Sections 7–9 when needed |
 | 9 | `09_build_portable_analysis_bundle.ps1` / `.sh` | — | Package a self-contained bundle for deployment to external sites |
 
-Steps 2, 7, and 8 contain `TODO` blocks that you fill in for each study.
+Step 2 is the primary required study customization.
+Steps 7 and 8 are optional customization points when study-specific analysis code is needed.
 Steps 1, 3–6, and 9 are infrastructure and do not normally need changes.
 
 ---
 
 ## Execution
 
+Use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) for complete execution commands,
+skip logic, and platform-specific instructions.
+
+Minimal direct invocation example:
+
 ```bash
-# Run all steps in sequence (from project root)
-Rscript workflow/01_setup_synthea_etl_qc_env.R
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-
-# Steps 3–6 only needed when generating synthetic data (skip for real CDM)
-Rscript workflow/03_generate_synthea_module_artifacts.R
-bash   workflow/04_generate_synthea_csv.sh       # macOS/Linux
-# powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1  # Windows
-Rscript workflow/05_etl_csv_to_omop.R
-Rscript workflow/06_quality_check_defined_phenotypes.R
-
-# Analysis
-Rscript workflow/07_setup_analysis_env.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R  # FRESH R session required
+Rscript workflow/08_run_analysis_and_manuscript_report.R
 ```
 
 > **Step 8 must be run in a fresh R session.** The Java/JDBC session guard at the
