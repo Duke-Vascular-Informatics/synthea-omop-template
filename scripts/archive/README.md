@@ -10,7 +10,7 @@ assumptions may be stale.
 
 | Directory | Contents |
 |-----------|----------|
-| `legacy_entrypoints/` | Root-level entry point scripts superseded by the numbered `workflow/` steps (e.g., `run_validation.R`, `run_report.R`, `install_packages.R`, `setup_renv.R`) |
+| `legacy_entrypoints/` | Root-level entry point scripts superseded by the numbered `workflow/` steps (e.g., `run_validation.R`, `run_report.R`, `install_packages.R`, `setup_renv.R`); also includes machine-specific helper scripts like `run_step8.ps1` (PowerShell launcher) that required manual path edits |
 | `R/` | Earlier versions of `report.R` and `validation.R` superseded by `R/report_extended.R` |
 | `etl/` | Earlier ETL scripts superseded by `scripts/etl/run_synthea_full_csv_builder_etl.R`; manual drug era SQL; one-off reset utilities |
 | `sql/` | Draft SQL transforms (FHIR→OMOP, Synthea CSV→OMOP, schema cleanup) that predate the ETLSyntheaBuilder approach |
