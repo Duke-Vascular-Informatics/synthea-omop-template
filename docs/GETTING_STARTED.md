@@ -12,15 +12,15 @@ kept concise and links here for full step-by-step execution.
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
 
 This guide prioritizes a post-clone workflow:
-1. Create `OMOP_Dev/`
-2. Clone the study repo
-3. Check whether shared local setup already exists
-4. Skip machine setup steps when possible
-5. Open in the dev container only after the shared resources are ready
+1. Install VS Code
+2. Install and sign in to your AI coding assistant in VS Code
+3. Create `OMOP_Dev/` and clone the study repo
+4. Use the AI assistant to help install Docker Desktop and Dev Containers
+5. Check shared setup and continue from there
 
 ---
 
-## Step 1: Install Local Prerequisites (15 minutes)
+## Step 1: Install VS Code (5 minutes)
 
 ### 1.1 Download VS Code
 
@@ -28,26 +28,10 @@ This guide prioritizes a post-clone workflow:
 - Download and install for your operating system (Windows, macOS, or Linux)
 - Launch VS Code
 
-### 1.2 Install Docker Desktop
-
-- Go to [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
-- Download and install for your OS
-- Start Docker Desktop and wait for it to be ready (icon shows "running")
-
-> **Apple Silicon (M1/M2/M3):** Docker Desktop runs natively on ARM64. No Rosetta needed.
-
-### 1.3 Install the VS Code Dev Containers Extension
-
-Inside VS Code:
-1. Open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`)
-2. Search for "Dev Containers" (published by Microsoft)
-3. Click **Install**
-
-### 1.4 Verify installations
+### 1.2 Verify VS Code installation
 
 ```bash
 # In your terminal / command prompt
-docker --version        # Should print: Docker version XX.X.X
 code --version          # Should print: X.XX.X
 ```
 
@@ -153,7 +137,7 @@ wait until Docker and the shared host resources exist is opening the repo in the
 ### 4.2 Clone inside OMOP_Dev/
 
 ```bash
-cd OMOP_Dev
+cd ~/OMOP_Dev
 
 # Replace <your-org> and <your-study> with your GitHub paths
 git clone https://github.com/<your-org>/<your-study>.git
@@ -176,6 +160,23 @@ OMOP_Dev/
     config.R
     study_params.yaml
     ...
+```
+
+### 4.3 Install Docker Desktop and Dev Containers (with assistant help)
+
+Now that your AI assistant is active in VS Code, use it to walk through local setup:
+
+1. Install Docker Desktop from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+2. Start Docker Desktop and wait until it shows as running
+3. In VS Code Extensions, install **Dev Containers** (Microsoft)
+
+> **Apple Silicon (M1/M2/M3):** Docker Desktop runs natively on ARM64. No Rosetta needed.
+
+Verify both tools before continuing:
+
+```bash
+docker --version        # Should print: Docker version XX.X.X
+code --version          # Should print: X.XX.X
 ```
 
 ---

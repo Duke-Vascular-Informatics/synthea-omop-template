@@ -8,10 +8,11 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 
 ## Phase 1: Bootstrap And Clone (Per machine + per study, 15-20 minutes)
 
-- [ ] **Step 1:** Install VS Code, Docker Desktop, Dev Containers extension
-- [ ] **Step 2:** Install your coding assistant (Copilot, Claude Code, or other)
+- [ ] **Step 1:** Install VS Code
+- [ ] **Step 2:** Install your coding assistant extension and sign in (Copilot, Claude Code, or other)
 - [ ] **Step 3:** Create `OMOP_Dev/` folder and `.env` file with SQL Server password
 - [ ] **Step 4:** Create study repo from GitHub template, clone into `OMOP_Dev/`
+- [ ] **Step 4.3:** Install Docker Desktop and VS Code Dev Containers extension (with assistant help)
 - [ ] **Step 5:** Check whether this machine already has shared setup:
   ```bash
   cd ~/OMOP_Dev
