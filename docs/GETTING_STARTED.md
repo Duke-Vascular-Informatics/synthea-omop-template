@@ -5,7 +5,15 @@ a transportable analysis code packet. Each step is designed to work with any AI 
 assistant: GitHub Copilot, Claude Code, or any other supported tool.
 
 **Total time:** ~2 hours first time (mostly Docker vocabulary loading)  
+**Repeat-study time:** ~10-20 minutes when your machine is already set up  
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
+
+This guide prioritizes a post-clone workflow:
+1. Create `OMOP_Dev/`
+2. Clone the study repo
+3. Check whether shared local setup already exists
+4. Skip machine setup steps when possible
+5. Open in the dev container only after the shared resources are ready
 
 ---
 
@@ -125,15 +133,125 @@ dir     # Windows Command Prompt
 
 ---
 
-## Step 4: Set Up SQL Server in Docker (20 minutes)
+## Step 4: Create Your Study Repository from Template (5 minutes)
 
-**Note:** You do this BEFORE cloning the repo because this is a one-time per-machine setup
-independent of any study repository.
+This is the recommended next step. Cloning only downloads the files. The thing that must
+wait until Docker and the shared host resources exist is opening the repo in the dev container.
 
-### 4.1 Create the docker-compose.yml file
+### 4.1 Use the GitHub template
 
-Inside your `OMOP_Dev/` folder, create a file named `docker-compose.yml` with the
-following contents. This file is shared across all studies on this machine.
+1. Go to [github.com/ohdsi-studies/OMOP-Study-Template](https://github.com/ohdsi-studies/OMOP-Study-Template)
+   *(or your organization's fork of it)*
+2. Click **Use this template** → **Create a new repository**
+3. Name it something descriptive (e.g., `colectomy-ssi-omop`, `hip-replace-vte`)
+4. Choose **Private** (recommended for studies with PHI definitions)
+5. Click **Create repository from template**
+
+### 4.2 Clone inside OMOP_Dev/
+
+```bash
+cd OMOP_Dev
+
+# Replace <your-org> and <your-study> with your GitHub paths
+git clone https://github.com/<your-org>/<your-study>.git
+
+cd <your-study>
+```
+
+**Important:** The repo MUST be directly inside `OMOP_Dev/`. The relative paths in
+the dev container depend on this structure:
+
+```
+OMOP_Dev/
+  .env
+  docker-compose.yml
+  omop_vocab/
+  <your-study>/          ← your repo is here
+    .devcontainer/
+    setup/
+      setup_docker_and_vocab.sh
+    config.R
+    study_params.yaml
+    ...
+```
+
+---
+
+## Step 5: Check Whether Shared Local Setup Already Exists (2 minutes)
+
+Run these checks from `OMOP_Dev/`. If they all pass, skip Step 6 and go directly to Step 7.
+
+### 5.1 Check host-side files and folders
+
+```bash
+# macOS / Linux
+cd ~/OMOP_Dev
+ls -la .env docker-compose.yml omop_vocab
+ls omop_vocab/CONCEPT.csv
+
+# Windows (PowerShell)
+cd $env:USERPROFILE/OMOP_Dev
+Get-ChildItem .env, docker-compose.yml, omop_vocab
+Get-ChildItem omop_vocab/CONCEPT.csv
+```
+
+You should have:
+- `.env`
+- `docker-compose.yml`
+- `omop_vocab/CONCEPT.csv`
+
+### 5.2 Check Docker SQL Server status
+
+```bash
+cd ~/OMOP_Dev  # or $env:USERPROFILE/OMOP_Dev on Windows
+docker compose ps
+```
+
+You should see `mssql_dev` with status `healthy`.
+
+### 5.3 Decide whether to skip
+
+Skip Step 6 if all of the following are true:
+- `.env` exists
+- `docker-compose.yml` exists
+- `omop_vocab/CONCEPT.csv` exists
+- `docker compose ps` shows `mssql_dev` as `healthy`
+
+If any of those checks fail, continue to Step 6.
+
+---
+
+## Step 6: Complete Machine Setup If Needed (20-60 minutes)
+
+Do this only if Step 5 found missing shared setup. This is one-time per machine, not per study.
+
+### Option A: Use the Automated Setup Script (Recommended)
+
+The cloned repository includes a setup script that automates Docker configuration:
+
+```bash
+# From inside your study repo folder (OMOP_Dev/<your-study>)
+cd ..  # Go to OMOP_Dev/
+
+# macOS / Linux
+bash <your-study>/setup/setup_docker_and_vocab.sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
+```
+
+This script:
+1. Checks Docker is running
+2. Creates `docker-compose.yml` in `OMOP_Dev/`
+3. Starts the SQL Server container
+4. Creates the `omop_synth` database
+5. Guides you through Athena vocabulary download
+
+After the script completes, continue to Step 7.
+
+### Option B: Manual Docker setup
+
+If you prefer not to use the script, create `docker-compose.yml` in `OMOP_Dev/`:
 
 **File: `OMOP_Dev/docker-compose.yml`**
 
@@ -174,45 +292,27 @@ networks:
     name: omop_dev_network
 ```
 
-### 4.2 Start SQL Server
+Then start SQL Server and create the shared database:
 
 ```bash
-# Run from inside OMOP_Dev/
+cd ~/OMOP_Dev  # or $env:USERPROFILE/OMOP_Dev on Windows
+
+# Start SQL Server
 docker compose up -d
 
-# Monitor startup (~30–60 seconds)
-docker compose logs -f mssql
-
-# When you see "SQL Server is now ready for client connections", press Ctrl+C to exit logs
-```
-
-### 4.3 Create the shared omop_synth database
-
-```bash
 # Replace YourStrong@Passw0rd with your actual password from .env
 docker exec mssql_dev \
   /opt/mssql-tools18/bin/sqlcmd \
   -S localhost -U SA -P "YourStrong@Passw0rd" -C \
   -Q "IF DB_ID('omop_synth') IS NULL CREATE DATABASE omop_synth;"
-```
 
-### 4.4 Verify SQL Server is healthy
-
-```bash
+# Verify
 docker compose ps
-
-# Should show:
-# mssql_dev    ...    STATUS: healthy
 ```
 
----
+### 6.1 Download OMOP vocabulary from Athena
 
-## Step 5: Download OMOP Vocabulary from Athena (45 minutes)
-
-The OMOP vocabulary is the shared clinical concept lookup table. Download it once per
-machine and reuse across all studies. This happens BEFORE cloning any study repo.
-
-### 5.1 Create Athena account and download
+The OMOP vocabulary is shared across all studies on this machine.
 
 1. Go to [athena.ohdsi.org](https://athena.ohdsi.org)
 2. Click **Download** → **Create new download**
@@ -232,37 +332,18 @@ machine and reuse across all studies. This happens BEFORE cloning any study repo
 | **Gender** / **Race** / **Ethnicity** | ✅ | Demographics |
 | **UCUM** | ✅ | Units of measure |
 
-4. Accept the license and click **Download** (2–5 GB zip file)
-5. Extract the zip file
-
-### 5.2 Extract vocabulary files to OMOP_Dev/omop_vocab/
+4. Accept the license and click **Download**
+5. Extract it into `OMOP_Dev/omop_vocab/` so `CONCEPT.csv` is directly inside that folder
 
 ```bash
-# Create the vocabulary folder
 mkdir -p OMOP_Dev/omop_vocab
-
-# Extract the Athena download into this folder
-# The folder should contain CONCEPT.csv directly (not in a subfolder)
-
 unzip ~/Downloads/vocabulary_download_v5*.zip -d OMOP_Dev/omop_vocab/
-# or (Windows): Extract-Archive -Path ... -DestinationPath ...
-
-# Verify:
-ls OMOP_Dev/omop_vocab/CONCEPT.csv  # Should exist
+ls OMOP_Dev/omop_vocab/CONCEPT.csv
 ```
 
-### 5.3 Rebuild CPT-4 codes (requires free UMLS API key)
+### 6.2 Optional: Rebuild CPT-4 codes
 
-CPT-4 codes are licensed and fetched from the NLM UMLS. If you did not include CPT-4
-in your download, you can skip this step for now.
-
-**Get a free UMLS API key (same-day approval):**
-1. Go to [uts.nlm.nih.gov](https://uts.nlm.nih.gov)
-2. Click **Sign up** and fill in your details
-3. After approval, log in and go to your profile
-4. Copy your **API Key**
-
-**Run the CPT-4 rebuild:**
+If you did not include CPT-4 in the Athena download, you can skip this step for now.
 
 ```bash
 cd OMOP_Dev/omop_vocab
@@ -274,110 +355,13 @@ bash cpt.sh YOUR_UMLS_API_KEY
 cpt.bat YOUR_UMLS_API_KEY
 ```
 
-Takes 5–15 minutes. Do not close the terminal during this process.
-
 ---
 
-## Step 6: Create Your Study Repository from Template (5 minutes)
-
-### 6.1 Use the GitHub template
-
-1. Go to [github.com/ohdsi-studies/OMOP-Study-Template](https://github.com/ohdsi-studies/OMOP-Study-Template)
-   *(or your organization's fork of it)*
-2. Click **Use this template** → **Create a new repository**
-3. Name it something descriptive (e.g., `colectomy-ssi-omop`, `hip-replace-vte`)
-4. Choose **Private** (recommended for studies with PHI definitions)
-5. Click **Create repository from template**
-
-### 6.2 Clone inside OMOP_Dev/
-
-```bash
-cd OMOP_Dev
-
-# Replace <your-org> and <your-study> with your GitHub paths
-git clone https://github.com/<your-org>/<your-study>.git
-
-cd <your-study>
-```
-
-**Important:** The repo MUST be directly inside `OMOP_Dev/`. The relative paths in
-the dev container depend on this structure:
-
-```
-OMOP_Dev/
-  .env
-  docker-compose.yml
-  omop_vocab/
-  <your-study>/          ← your repo is here
-    .devcontainer/
-    setup/
-      setup_docker_and_vocab.sh
-    config.R
-    study_params.yaml
-    ...
-```
-
----
-
-## Step 7: Verify Docker Setup (or Use Automated Setup Script) — 5 minutes
-
-**You now have the repository cloned!**
-
-If you completed Step 4 manually, your Docker is already running and you can skip to Step 8.
-
-If you **skipped Step 4** or want to **use the automated setup script**, you can run it now:
-
-### Option A: Use the Automated Setup Script (If you skipped Step 4)
-
-The cloned repository includes a setup script that automates Docker configuration:
-
-```bash
-# From inside your study repo folder (OMOP_Dev/<your-study>)
-cd ..  # Go to OMOP_Dev/
-
-# macOS / Linux
-bash <your-study>/setup/setup_docker_and_vocab.sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
-```
-
-This script:
-1. Checks Docker is running
-2. Creates `docker-compose.yml` in `OMOP_Dev/`
-3. Starts the SQL Server container
-4. Creates the `omop_synth` database
-5. Guides you through Athena vocabulary download
-
-**If the script succeeds,** skip directly to Step 8.
-
-### Option B: Verify Manual Setup (If you completed Step 4)
-
-If you already completed Step 4 manually, just verify Docker is still running:
-
-```bash
-cd OMOP_Dev
-
-# Check status
-docker compose ps
-
-# Should show: mssql_dev    ...    STATUS: healthy
-
-# If not healthy, restart:
-docker compose up -d
-```
-
-### Option C: Manual Troubleshooting
-
-If Docker is not running, see Step 4 instructions above for manual docker-compose setup.
-
----
-
-## Step 8: Open in Dev Container (10 minutes)
+## Step 7: Open in Dev Container (10 minutes)
 
 Now that SQL Server is running, you can safely open the dev container in VS Code.
 
-### 8.1 Open in VS Code
+### 7.1 Open in VS Code
 
 1. Inside VS Code: **File** → **Open Folder**
 2. Navigate to `OMOP_Dev/<your-study>/` and click **Open**
@@ -385,7 +369,7 @@ Now that SQL Server is running, you can safely open the dev container in VS Code
 4. Click **Reopen in Container**
    *(Or use `Cmd+Shift+P` → **Dev Containers: Reopen in Container**)*
 
-### 8.2 Wait for container build (5–10 minutes first time)
+### 7.2 Wait for container build (5–10 minutes first time)
 
 The first build:
 - Pulls the R + Java image (~1.5 GB)
@@ -394,7 +378,7 @@ The first build:
 
 VS Code shows a progress indicator. When complete, the status bar shows the container name.
 
-### 8.3 Verify the environment
+### 7.3 Verify the environment
 
 Open a terminal in VS Code (`Ctrl+`` or `Cmd+`` `) and run:
 
@@ -411,9 +395,36 @@ Rscript -e "library(DatabaseConnector); print('OK')"
 
 ---
 
+## Step 8: Check Whether OMOP Vocabulary Is Already Loaded (2 minutes)
+
+The vocabulary CSV files on disk are not enough by themselves. SQL Server also needs the
+`omop_vocab` schema loaded once per machine.
+
+### 8.1 Check whether the database is already populated
+
+Inside the dev container, run:
+
+```bash
+Rscript -e "
+  config <- get_validation_config()
+  conn <- DatabaseConnector::connect(config$connection_details)
+  result <- tryCatch(
+    DatabaseConnector::querySql(conn, 'SELECT COUNT(*) AS n FROM omop_vocab.concept'),
+    error = function(e) NULL
+  )
+  print(result)
+  DatabaseConnector::disconnect(conn)
+"
+```
+
+If this prints a row count for `omop_vocab.concept`, skip Step 9 and go to Step 10.
+If it errors or returns no table, continue to Step 9.
+
+---
+
 ## Step 9: Load OMOP Vocabulary into SQL Server (30–60 minutes)
 
-The vocabulary is shared across all studies on this SQL Server instance. Load it once per machine.
+Do this only if Step 8 showed the vocabulary is not already loaded.
 
 ### 9.1 Inside the dev container, run the vocabulary loader
 

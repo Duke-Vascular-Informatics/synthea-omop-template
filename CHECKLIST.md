@@ -1,90 +1,179 @@
-# Study Setup Checklist
+# OMOP Study Template — Quick Reference Checklist
 
-Work through this list top-to-bottom before running Step 8.
-All study-specific settings live in `study_params.yaml`.
-Run `Rscript scripts/find_todos.R` at any time to see remaining placeholders.
+Use this checklist to track your progress. Detailed instructions are in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
----
-
-## Step 1 — Edit order
-
-> **Complete in this order:**
-> 1. Edit `study_params.yaml` → 2. Run `/concept-lookup` for every concept ID →
-> 3. Fill `covariates/covariates.csv` and `covariates/covariate_concepts.csv` →
-> 4. Run `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` to validate
+See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, [CLAUDE.md](CLAUDE.md) for coding conventions.
 
 ---
 
-## study_params.yaml
+## Phase 1: Bootstrap And Clone (Per machine + per study, 15-20 minutes)
 
-- [ ] `study_name` — short study identifier (lowercase, underscores only)
-- [ ] `study_design` — `cohort_characterization` | `prognostic_model` | `causal_inference` | `descriptive`
-- [ ] `study_start_date` / `study_end_date` — date range for index event inclusion
-- [ ] `cdm_schema` — CDM schema populated by Step 5 ETL
-- [ ] `results_schema` — study-specific results schema (created automatically if absent)
-- [ ] `cohort_table` — study-specific cohort table name
-- [ ] `target.visit_concept_ids` — visit type filter (9201 Inpatient / 9202 Outpatient / 9203 ED); `[]` for all
-- [ ] `target.min_age_at_index` — minimum age in years; `0` for no restriction
-- [ ] `target.index_event.ancestor_concept_ids` — **[REQUIRES vocab query]** index procedure/condition/drug concept IDs
-- [ ] `target.washout.ancestor_concept_ids` — **[REQUIRES vocab query]** washout condition concept IDs; `[]` to disable
-- [ ] `outcome.ancestor_concept_ids` — **[REQUIRES vocab query]** outcome condition concept IDs
-- [ ] `prediction_window_days` — days after index to count outcome
-- [ ] `output_folder` — update to match `study_name`
-- [ ] `cdm_database_id` / `cdm_database_name` / `cdm_database_description` — metadata for reports
-- [ ] `analyses.*` — set flags to `true` for each analysis you want workflow/08 to run
-
-> **Comparator cohort** (causal inference only): set `comparator.cohort_id` to an integer and
-> fill in `comparator.index_event.ancestor_concept_ids` in `study_params.yaml`.
-> `cohorts/comparator_cohort.sql` is already in the repo — no file creation needed.
+- [ ] **Step 1:** Install VS Code, Docker Desktop, Dev Containers extension
+- [ ] **Step 2:** Install your coding assistant (Copilot, Claude Code, or other)
+- [ ] **Step 3:** Create `OMOP_Dev/` folder and `.env` file with SQL Server password
+- [ ] **Step 4:** Create study repo from GitHub template, clone into `OMOP_Dev/`
+- [ ] **Step 5:** Check whether this machine already has shared setup:
+  ```bash
+  cd ~/OMOP_Dev
+  ls -la .env docker-compose.yml omop_vocab
+  docker compose ps
+  ```
+- [ ] **Skip Step 6 if already set up:** `.env`, `docker-compose.yml`, `omop_vocab/CONCEPT.csv`, and healthy `mssql_dev`
 
 ---
 
-## covariates/covariates.csv
+## Phase 2: Machine Setup If Needed (One-time, 1–2 hours)
 
-> Only needed when using the pre-specified CSV covariate pipeline.
-> Skip this and pass a `FeatureExtraction::createCovariateSettings()` object
-> directly in Step 8 if you want automated, broad feature extraction instead.
-
-- [ ] Replace placeholder rows (`covariate_1`, `covariate_2`, etc.) with your study covariates
-- [ ] Set `domain` to one of: `condition`, `drug`, `procedure`, `measurement`, `observation`, `visit`, `demographic`, `bmi`, `operative_time`
-- [ ] Set `lookback_start_day` and `lookback_end_day` relative to index date
-- [ ] *(Integer risk score pipeline only)* Add a `points` column and set point values per covariate
-
----
-
-## covariates/covariate_concepts.csv
-
-- [ ] Replace all `concept_id = 0` rows with verified standard OMOP concept IDs
-- [ ] Run `/concept-lookup` for each covariate before writing any concept ID
-- [ ] Set `include_descendants = TRUE` to use `concept_ancestor` rollup
+- [ ] **Step 6 (AUTOMATED):** Run Docker setup script if Step 5 failed:
+  ```bash
+  # macOS / Linux
+  cd ~/OMOP_Dev
+  bash <your-study>/setup/setup_docker_and_vocab.sh
+  
+  # Windows (PowerShell)
+  powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
+  ```
+- [ ] **Or Step 6 (MANUAL):** Create `docker-compose.yml`, start `mssql_dev`, create `omop_synth`, download Athena vocabulary
+- [ ] **Step 6b (Optional):** Rebuild CPT-4 codes with UMLS API key
 
 ---
 
-## workflow/07_setup_analysis_env.R
+## Phase 3: Open Container And Check Shared Database State (Per study, ~10 minutes)
 
-- [ ] **Run Step 7**: `Rscript workflow/07_setup_analysis_env.R`
-      (No editing needed — checks all HADES packages and utilities at once)
-
----
-
-## workflow/08_run_analysis_and_manuscript_report.R
-
-- [ ] In `study_params.yaml`, set the `analyses:` flags for what you want to run:
-      `cohort_characterization`, `prognostic_model`, `causal_inference`,
-      `integer_risk_score`, `word_report`
-- [ ] *(Optional)* Customise default settings (model algorithm, covariate scope)
-      by editing the relevant `if` block in Section 7 of workflow/08
-- [ ] **Run Step 8 in a fresh R session**: `Rscript workflow/08_run_analysis_and_manuscript_report.R`
+- [ ] **Step 7:** Open in VS Code → Reopen in Container (wait 5–10 min first time)
+- [ ] **Step 8:** Check whether `omop_vocab` is already loaded in SQL Server
+- [ ] **Skip Step 9 if already loaded**
 
 ---
 
-## Final check
+## Phase 4: Load OMOP Vocabulary If Needed (Per machine, ~45 minutes, one-time)
 
-- [ ] `Rscript scripts/find_todos.R` — no remaining placeholders
-- [ ] `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` — passes with no warnings
-- [ ] `Rscript workflow/07_setup_analysis_env.R` — all packages verified
-- [ ] `Rscript workflow/08_run_analysis_and_manuscript_report.R` — runs to completion
-- [ ] Output files in `config$output_folder` — review for correctness
-- [ ] Commit: `git add study_params.yaml covariates/`
-      `git commit -m "Define <study name> cohort, covariates, and analyses"`
-      `git push`
+- [ ] **Step 9:** Inside dev container, run:
+  ```bash
+  Rscript scripts/setup_omop_vocab_schema.R
+  ```
+- [ ] **Verify:** Should load ~2M concept rows (takes 30–60 min)
+
+---
+
+## Phase 5: Define Your Study (Per study, ~30–60 minutes)
+
+- [ ] **Step 10.1:** Check setup status:
+  ```bash
+  Rscript scripts/check_setup.R
+  ```
+
+- [ ] **Step 10.2:** Edit `study_params.yaml`:
+  - [ ] `study_name`, `study_design`
+  - [ ] `cdm_schema`, `results_schema`, `cohort_table`
+  - [ ] `study_start_date`, `study_end_date`
+  - [ ] `output_folder`
+  - [ ] Set `analyses:` flags
+
+- [ ] **Step 10.3:** Look up all concept IDs:
+  ```bash
+  Rscript scripts/concept_lookup.R "hip replacement" Procedure
+  Rscript scripts/concept_lookup.R "surgical site infection" Condition
+  ```
+
+- [ ] **Step 10.4:** Edit cohort SQL files in `cohorts/` — replace `concept_id = 0`
+  - [ ] `target_surgery.sql`
+  - [ ] `outcome_ssi.sql`
+
+- [ ] **Step 10.5:** Edit covariate files:
+  - [ ] `covariates/covariates.csv`
+  - [ ] `covariates/covariate_concepts.csv`
+
+- [ ] **Step 10.6:** Validate:
+  ```bash
+  Rscript scripts/check_setup.R  # Should show [OK], no [FAIL]
+  ```
+
+- [ ] **Commit study definition:**
+  ```bash
+  git add study_params.yaml cohorts/ covariates/
+  git commit -m "feat: Define <study name> cohort, outcome, covariates"
+  git push
+  ```
+
+---
+
+## Phase 6: Generate Synthetic Data & ETL (Per study, ~60 minutes)
+
+*Skip if using real CDM already populated.*
+
+- [ ] **Step 11:** (Optional) Customize Synthea module
+- [ ] **Step 12.1:** Generate synthetic data:
+  ```bash
+  Rscript workflow/01_setup_synthea_etl_qc_env.R
+  Rscript workflow/03_generate_synthea_module_artifacts.R
+  bash workflow/04_generate_synthea_csv.sh  # macOS/Linux
+  ```
+- [ ] **Step 12.2:** Run ETL:
+  ```bash
+  Rscript workflow/05_etl_csv_to_omop.R
+  ```
+- [ ] **Step 12.3:** Quality checks:
+  ```bash
+  Rscript workflow/06_quality_check_defined_phenotypes.R
+  ```
+
+---
+
+## Phase 7: Build Cohorts & Run Analyses (Per study, ~30–60 minutes)
+
+- [ ] **Step 13.1:** Build cohorts:
+  ```bash
+  Rscript workflow/02_define_omop_cohort_outcome_covariates.R
+  ```
+- [ ] **Step 13.2:** Run analyses:
+  ```bash
+  Rscript workflow/07_setup_analysis_env.R
+  Rscript workflow/08_run_analysis_and_manuscript_report.R
+  ```
+- [ ] **Step 13.3:** Review outputs in `output/<your-study>/`
+
+---
+
+## Phase 8: Create Transportable Code Packet (Per study, ~5 minutes)
+
+- [ ] **Step 14:** Generate bundle:
+  ```bash
+  Rscript workflow/09_create_transportable_bundle.R
+  ```
+- [ ] **Share or archive** `portable/transportable_bundle/`
+
+---
+
+## Key Commands
+
+| Task | Command |
+|------|---------|
+| Setup check | `Rscript scripts/check_setup.R` |
+| Concept lookup | `Rscript scripts/concept_lookup.R "term" Domain` |
+| SQL Server status | `docker compose ps` |
+| Restart SQL Server | `docker compose up -d` (from `OMOP_Dev/`) |
+| Run analyses | `Rscript workflow/08_run_analysis_and_manuscript_report.R` |
+| Transportable bundle | `Rscript workflow/09_create_transportable_bundle.R` |
+
+---
+
+## Troubleshooting
+
+**SQL Server not connecting?**
+- Run `docker compose ps` from `OMOP_Dev/` — should show `mssql_dev` as `healthy`
+- If stopped: `docker compose up -d`
+
+**Dev container won't open?**
+- Run `Cmd+Shift+P` → Dev Containers: Rebuild Container
+- Ensure repo is directly in `OMOP_Dev/<study>/`, not nested deeper
+
+**Vocabulary load slow?**
+- Expected (30–60 min, one-time). Monitor with `docker compose logs -f mssql`
+
+**Concept not found?**
+- Try different search terms or check [Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)
+
+---
+
+For complete details, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)

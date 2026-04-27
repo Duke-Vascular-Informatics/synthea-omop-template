@@ -1,9 +1,13 @@
-# OMOP Study Template — Claude Code Instructions
+# OMOP Study Template — AI Coding Assistant Instructions
 
 This is a **GitHub Template Repository** for observational studies on an OMOP CDM v5.4
 SQL Server database. It supports cohort characterization, prognostic modelling, and causal
 inference using the OHDSI HADES R toolstack. The codebase is intentionally self-contained
 and offline-capable.
+
+> **For AI coding assistants:** This file contains project-wide coding conventions and
+> rules. Use it with GitHub Copilot, Claude Code, or any AI-assisted development tool.
+> All instructions apply uniformly across all supported assistants.
 
 ---
 
@@ -74,11 +78,6 @@ WHERE ca.ancestor_concept_id = <your_chosen_concept_id>
 
 Two ways to run a vocabulary lookup:
 
-**Interactive (Claude Code chat):**
-```
-/concept-lookup <clinical term> [domain]
-```
-
 **Standalone R script (terminal / batch):**
 ```bash
 Rscript scripts/concept_lookup.R "<clinical term>" [domain]
@@ -87,9 +86,14 @@ Rscript scripts/concept_lookup.R "total hip replacement" Procedure
 Rscript scripts/concept_lookup.R "venous thromboembolism" Condition
 ```
 
+**Interactive (if using Claude Code):**
+```
+/concept-lookup <clinical term> [domain]
+```
+
 Both perform the same two-step query (name/synonym match, then descendant expansion)
-and label results `[vocab query]`. The R script is preferred for batch lookups or when
-a database connection is not available in the chat environment.
+and label results `[vocab query]`. The R script is the preferred method for all assistants
+and is required when a database connection is not available in the chat environment.
 
 ---
 
@@ -190,21 +194,18 @@ GitHub repositories (e.g., HADES package source code, Book of OHDSI example scri
 
 ### Automated pre-flight check
 
-The fastest way to assess setup status is to run the dedicated check script or skill:
+The fastest way to assess setup status is to run the dedicated check script:
 
 **Terminal:**
 ```bash
 Rscript scripts/check_setup.R
 ```
 
-**Claude Code chat:**
-```
-/check-setup
-```
-
-Both scan `study_params.yaml`, cohort SQL files, and covariate CSVs without a database
-connection and print a sectioned [OK] / [WARN] / [FAIL] checklist. Exit code 0 = ready
+This script scans `study_params.yaml`, cohort SQL files, and covariate CSVs without a database
+connection and prints a sectioned [OK] / [WARN] / [FAIL] checklist. Exit code 0 = ready
 for Step 8; exit code 1 = items require attention.
+
+**Note:** Claude Code users can also use `/check-setup` skill if available.
 
 ### Manual checklist (when assisting interactively)
 

@@ -130,18 +130,20 @@ WHERE ca.ancestor_concept_id = <your_chosen_ancestor_id>
   AND c.invalid_reason IS NULL;
 ```
 
-Use the `/concept-lookup` slash command to run this interactively:
+Use the standalone R script to run vocabulary lookups interactively from terminal:
 
-```
-/concept-lookup <clinical term> [domain]
+```bash
+Rscript scripts/concept_lookup.R "<clinical term>" [domain]
 ```
 
 Examples:
+```bash
+Rscript scripts/concept_lookup.R "peripheral arterial disease" Condition
+Rscript scripts/concept_lookup.R "cefazolin" Drug
+Rscript scripts/concept_lookup.R "ankle brachial index" Measurement
 ```
-/concept-lookup peripheral arterial disease condition
-/concept-lookup cefazolin drug
-/concept-lookup ankle brachial index measurement
-```
+
+**Note:** Claude Code users can also use the `/concept-lookup` slash command for interactive queries.
 
 ### Inline comment convention for concept IDs
 

@@ -5,33 +5,50 @@ The type of analyses supported include **cohort characterization**, **prognostic
 using Synthea-generated synthetic patient data and the OHDSI toolstack (DatabaseConnector, SqlRender, FeatureExtraction,
 PatientLevelPrediction, CohortMethod).
 
-The template is self-contained and optimized to develop analytic code utilizing claude code.  The purpose of this development workflow is to create tranportable offline-capable code: all R packages are pinned in
-`renv.lock`, the JDBC driver is bundled, and OHDSI packages ship as prebuilt binaries
-so the resulting analytic code runs in air-gapped or restricted-network environments.
+The template is self-contained and optimized to develop analytic code with any AI coding assistant
+(GitHub Copilot, Claude Code, or others). The purpose of this development workflow is to create
+transportable offline-capable code: all R packages are pinned in `renv.lock`, the JDBC driver is bundled,
+and OHDSI packages ship as prebuilt binaries so the resulting analytic code runs in air-gapped or
+restricted-network environments.
 
 ---
 
-## Using this Template
+## Recommended Flow
 
-### 0 — Prerequisites (do this once per machine)
+The recommended path is now post-clone:
+1. Create `OMOP_Dev/`
+2. Clone the study repo into it
+3. Check whether Docker + shared OMOP resources already exist on that machine
+4. Run setup only for missing pieces
+5. Open in the dev container
 
-Before cloning the study repo you need:
-1. Docker Desktop running with a SQL Server Developer container
-2. The OMOP vocabulary downloaded from Athena and loaded into that container
+The actual dependency is on the dev container and database-connected scripts, not on `git clone` itself.
 
-**→ Follow [docs/SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
-
-That guide covers the required `OMOP_Dev/` folder layout, the `docker-compose.yml` for
-SQL Server, downloading the correct Athena vocabulary bundles, running the CPT-4 rebuild,
-and loading the vocabulary into SQL Server. It takes about an hour the first time (mostly
-waiting for vocabulary load).
+**→ Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** for complete step-by-step instructions from scratch.
 
 ---
 
-### 1 — Create your study repository
+## Study-Specific Setup (after cloning)
+
+### 1 — Create your study repository first
 
 Click **"Use this template" → "Create a new repository"** at the top of this page.
-Give it a study-specific name (e.g. `colectomy-ssi-omop`, `hip-replace-vte-omop`).
+Give it a study-specific name using this convention:
+
+`<disease_cohort_abbrev>_<treatment_abbrev>_<outcome_abbrev>_<methodology_abbrev>`
+
+Use lowercase abbreviations separated by underscores.
+
+Recommended methodology abbreviations:
+- `char` = cohort characterization
+- `plp` = prognostic model
+- `ci` = causal inference
+- `desc` = descriptive study
+
+Examples:
+- `pad_stent_male_ci`
+- `oa_thr_vte_plp`
+- `crc_colectomy_ssi_char`
 
 Clone the new repo **inside** your `OMOP_Dev/` folder (the relative paths in the dev
 container depend on this):
@@ -42,43 +59,68 @@ git clone https://github.com/<your-org>/<your-study>.git
 cd <your-study>
 ```
 
-Then open in the dev container (VS Code → **Reopen in Container**, or
+Then check whether the local machine already has the shared setup (`.env`, `docker-compose.yml`,
+`omop_vocab/`, and a healthy `mssql_dev` container). Only complete the missing pieces.
+
+---
+
+### 2 — Complete local machine setup if needed
+
+If the machine is not already set up, run the automated setup script from the parent `OMOP_Dev/` folder:
+
+```bash
+# macOS / Linux
+cd ~/OMOP_Dev
+bash <your-study>/setup/setup_docker_and_vocab.sh
+
+# Windows (PowerShell)
+cd $env:USERPROFILE/OMOP_Dev
+powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
+```
+
+These scripts automate:
+- Creating the required `OMOP_Dev` folder structure
+- Generating `.env` with SQL Server password
+- Starting the SQL Server container
+- Creating the `omop_synth` database
+- Guiding you through Athena vocabulary download
+
+If your machine already has `.env`, `docker-compose.yml`, `OMOP_Dev/omop_vocab/CONCEPT.csv`, and a healthy `mssql_dev` container, skip this step.
+
+Only after that should you open in the dev container (VS Code → **Reopen in Container**, or
 `Cmd+Shift+P` → `Dev Containers: Reopen in Container`).
 
 ---
 
-### 2 — Complete the study setup checklist
+### 3 — Complete the study setup checklist
 
 Run the pre-flight check to see everything that still needs your input:
 
 ```bash
 Rscript scripts/check_setup.R
-# or in Claude Code chat: /check-setup
 ```
 
-Then work through `CHECKLIST.md` top-to-bottom. All study-specific settings live in
-`study_params.yaml`:
+Then work through your study configuration in `study_params.yaml`:
 
 | Setting | What to fill in |
 |---------|----------------|
-| `study_name` | Short identifier, lowercase with underscores |
+| `study_name` | Match the repo naming convention: `<disease_cohort_abbrev>_<treatment_abbrev>_<outcome_abbrev>_<methodology_abbrev>` |
 | `study_design` | `cohort_characterization` \| `prognostic_model` \| `causal_inference` \| `descriptive` |
 | `cdm_schema` | CDM schema populated by Step 5 ETL |
 | `results_schema` | Schema for cohort table and analysis outputs |
 | `cohort_table` | Cohort table name |
-| `target.index_event.ancestor_concept_ids` | Index event concept IDs — run `/concept-lookup` first |
-| `outcome.ancestor_concept_ids` | Outcome concept IDs — run `/concept-lookup` first |
+| `target.index_event.ancestor_concept_ids` | Index event concept IDs — look these up first! |
+| `outcome.ancestor_concept_ids` | Outcome concept IDs — look these up first! |
 | `prediction_window_days` | Follow-up window for outcome (days) |
 | `study_start_date` / `study_end_date` | Date range for index event inclusion |
 | `output_folder` | Where outputs are written (e.g. `output/my_study`) |
-| `analyses.*` | Set `true` for each analysis to run in Step 8 |
+| `analyses.*` | Set `true` for each analysis to run |
 
 For every concept ID, look it up before writing it:
 
 ```bash
 Rscript scripts/concept_lookup.R "<clinical term>" [domain]
 # Example: Rscript scripts/concept_lookup.R "total hip replacement" Procedure
-# or in Claude Code chat: /concept-lookup total hip replacement Procedure
 ```
 
 #### Cohort SQL files
@@ -89,9 +131,8 @@ Edit the template SQL files in `cohorts/` to match your study phenotype:
 - `cohorts/outcome_ssi.sql` — outcome cohort
 - `cohorts/comparator_cohort.sql` — comparator cohort (causal inference only)
 
-Replace every `concept_id = 0` placeholder with a verified concept ID from
-`/concept-lookup`. Rename the files to match your study and update the `sql_file:`
-paths in `study_params.yaml`.
+Replace every `concept_id = 0` placeholder with a verified concept ID.
+Rename the files to match your study and update the `sql_file:` paths in `study_params.yaml`.
 
 #### Covariate files
 
@@ -274,34 +315,70 @@ source("scripts/bundle/prebuild_github_binaries.R")
 
 ---
 
-## Claude Code Integration
+## AI Assistant Integration
 
-This repo ships a `CLAUDE.md` file at the project root that Claude Code reads automatically
-on every session. It encodes three hard rules for AI-assisted coding:
+This repo ships coding convention files that work with any AI coding assistant
+(GitHub Copilot, Claude Code, or others):
 
 1. **Concept ID transparency** — every concept ID recommendation must be tagged `[vocab query]`
-   (confirmed against the live vocabulary) or `[pretraining]` (unverified, with explicit warning).
+   (confirmed against live vocabulary) or `[pretraining]` (unverified, with explicit warning).
 2. **HADES-first package selection** — use OHDSI HADES packages for all OHDSI methodology;
    fall back to tidyverse; all packages must be on the project CRAN mirror.
 3. **Verbose comments** — all code follows OHDSI GitHub repository commenting conventions.
 
 | File | Scope | Purpose |
 |------|-------|---------|
-| `CLAUDE.md` | Every session | Primary Claude Code instructions (three hard rules + project context) |
+| `CLAUDE.md` | Every session | Core coding conventions (concept IDs, packages, comments, architecture) |
+| `.github/copilot-instructions.md` | GitHub Copilot | Points all assistants to `CLAUDE.md` |
 | `.github/instructions/r-packages.instructions.md` | `*.R` files | HADES priority, CRAN mirror, renv workflow |
 | `.github/instructions/omop-ohdsi.instructions.md` | `*.R` and `*.sql` | DatabaseConnector/SqlRender patterns, concept ID lookup, OMOP CDM conventions |
 
-**`/concept-lookup` slash command:**
+**Concept Lookup (terminal):**
 
-```
-/concept-lookup peripheral arterial disease condition
-/concept-lookup cefazolin drug
-/concept-lookup ankle brachial index measurement
+```bash
+Rscript scripts/concept_lookup.R "peripheral arterial disease" Condition
+Rscript scripts/concept_lookup.R "cefazolin" Drug
+Rscript scripts/concept_lookup.R "ankle brachial index" Measurement
 ```
 
-Queries the live OMOP vocabulary in the connected database and returns a ranked
-table of candidate concepts with a single recommended `concept_id`. Use this
-before writing any concept ID into code or CSV files.
+Queries the live OMOP vocabulary in the connected SQL Server and returns ranked
+candidate concepts with recommendation. Use this before writing any concept ID into
+code or CSV files.
+
+---
+
+## Documentation
+
+| Resource | Purpose | Audience |
+|----------|---------|----------|
+| **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | 13-step end-to-end workflow from VS Code download to transportable code packet | New users, first time setup |
+| **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
+| **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
+| **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |
+| **[setup/setup_docker_and_vocab.sh](setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux) | Automation-first users |
+| **[setup/setup_docker_and_vocab.ps1](setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell) | Windows users |
+| **[Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)** | OHDSI methodology reference (cohorts, phenotypes, causal inference) | OHDSI methods questions |
+| **[OHDSI Forums](https://forums.ohdsi.org)** | Community Q&A and discussion | Troubleshooting, best practices |
+
+---
+
+## Quick Links
+
+**New to this template?**
+→ Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
+
+**Docker/environment setup help?**
+→ From `OMOP_Dev/`, run `bash <your-study>/setup/setup_docker_and_vocab.sh` (or the PowerShell equivalent on Windows)
+→ Or see [docs/SETUP.md](docs/SETUP.md) for manual steps
+
+**Need a quick reference?**
+→ See [CHECKLIST.md](CHECKLIST.md)
+
+**Coding conventions?**
+→ Read [CLAUDE.md](CLAUDE.md)
+
+**OHDSI methodology questions?**
+→ Check [Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/) or [OHDSI Forums](https://forums.ohdsi.org)
 
 ---
 
