@@ -4,6 +4,9 @@ This guide walks you through the complete workflow from downloading VS Code to c
 a transportable analysis code packet. Each step is designed to work with any AI coding
 assistant: GitHub Copilot, Claude Code, or any other supported tool.
 
+This is the canonical procedural guide for this template. The root README is intentionally
+kept concise and links here for full step-by-step execution.
+
 **Total time:** ~2 hours first time (mostly Docker vocabulary loading)  
 **Repeat-study time:** ~10-20 minutes when your machine is already set up  
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
