@@ -13,10 +13,11 @@ kept concise and links here for full step-by-step execution.
 
 This guide prioritizes a post-clone workflow:
 1. Install VS Code
-2. Install and sign in to your AI coding assistant in VS Code
-3. Create `OMOP_Dev/` and clone the study repo
-4. Use the AI assistant to help install Docker Desktop and Dev Containers
-5. Check shared setup and continue from there
+2. Set up Git and understand version control basics
+3. Install and sign in to your AI coding assistant in VS Code
+4. Create `OMOP_Dev/` and clone the study repo
+5. Use the AI assistant to help install Docker Desktop and Dev Containers
+6. Check shared setup and continue from there
 
 ---
 
@@ -37,7 +38,51 @@ code --version          # Should print: X.XX.X
 
 ---
 
-## Step 2: Install Your AI Coding Assistant (10 minutes)
+## Step 2: Set Up Git and Version Control (10 minutes)
+
+### 2.1 What version control is (and why you need it)
+
+Version control (Git) tracks every meaningful change to your study code.
+
+Use it to:
+- Keep a complete history of cohort/covariate/analysis changes
+- Collaborate safely across analysts
+- Reproduce exactly what code produced reported results
+- Roll back mistakes without losing work
+
+In this workflow, treat Git commits as study milestones (setup, phenotype definition,
+analysis runs, and bundle generation).
+
+### 2.2 Install Git
+
+- Go to [git-scm.com/downloads](https://git-scm.com/downloads)
+- Install for your operating system
+- On Windows, keep default options unless your organization requires specific settings
+
+### 2.3 Configure your Git identity (one-time)
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your.email@org.edu"
+```
+
+Optional but recommended default branch preference:
+
+```bash
+git config --global init.defaultBranch main
+```
+
+### 2.4 Verify Git setup
+
+```bash
+git --version
+git config --global --get user.name
+git config --global --get user.email
+```
+
+---
+
+## Step 3: Install Your AI Coding Assistant (10 minutes)
 
 ### Option A: GitHub Copilot (Free Education Plan)
 
@@ -63,16 +108,16 @@ code --version          # Should print: X.XX.X
 ### Option C: Other Coding Assistants
 
 Follow the standard setup for your chosen tool and verify it works in VS Code before
-proceeding to Step 3.
+proceeding to Step 4.
 
 ---
 
-## Step 3: Create Your Parent Development Folder (5 minutes)
+## Step 4: Create Your Parent Development Folder (5 minutes)
 
 All pieces (SQL Server, OMOP vocabulary, study repositories) live in a single parent folder
 so the relative paths work correctly. Create this **once** and reuse it for every study.
 
-### 3.1 Create the folder
+### 4.1 Create the folder
 
 ```bash
 # macOS / Linux
@@ -84,7 +129,7 @@ New-Item -ItemType Directory -Path $env:USERPROFILE/OMOP_Dev -Force
 cd $env:USERPROFILE/OMOP_Dev
 ```
 
-### 3.2 Create the .env file with SQL Server password
+### 4.2 Create the .env file with SQL Server password
 
 The `.env` file stores the SQL Server SA password. Keep it outside the study repo so
 it's never committed to version control.
@@ -107,7 +152,7 @@ echo 'MSSQL_SA_PASSWORD=YourStrong@Passw0rd' > .env
 - `Dev#OMOP$Vocab1`
 - `MyStudy123%Pass`
 
-### 3.3 Verify the folder structure
+### 4.3 Verify the folder structure
 
 ```bash
 # Should see:
@@ -120,12 +165,12 @@ dir     # Windows Command Prompt
 
 ---
 
-## Step 4: Create Your Study Repository from Template (5 minutes)
+## Step 5: Create Your Study Repository from Template (5 minutes)
 
 This is the recommended next step. Cloning only downloads the files. The thing that must
 wait until Docker and the shared host resources exist is opening the repo in the dev container.
 
-### 4.1 Use the GitHub template
+### 5.1 Use the GitHub template
 
 1. Go to [github.com/ohdsi-studies/OMOP-Study-Template](https://github.com/ohdsi-studies/OMOP-Study-Template)
    *(or your organization's fork of it)*
@@ -134,7 +179,7 @@ wait until Docker and the shared host resources exist is opening the repo in the
 4. Choose **Private** (recommended for studies with PHI definitions)
 5. Click **Create repository from template**
 
-### 4.2 Clone inside OMOP_Dev/
+### 5.2 Clone inside OMOP_Dev/
 
 ```bash
 cd ~/OMOP_Dev
@@ -162,7 +207,7 @@ OMOP_Dev/
     ...
 ```
 
-### 4.3 Install Docker Desktop and Dev Containers (with assistant help)
+### 5.3 Install Docker Desktop and Dev Containers (with assistant help)
 
 Now that your AI assistant is active in VS Code, use it to walk through local setup:
 
@@ -181,11 +226,11 @@ code --version          # Should print: X.XX.X
 
 ---
 
-## Step 5: Check Whether Shared Local Setup Already Exists (2 minutes)
+## Step 6: Check Whether Shared Local Setup Already Exists (2 minutes)
 
-Run these checks from `OMOP_Dev/`. If they all pass, skip Step 6 and go directly to Step 7.
+Run these checks from `OMOP_Dev/`. If they all pass, skip Step 7 and go directly to Step 8.
 
-### 5.1 Check host-side files and folders
+### 6.1 Check host-side files and folders
 
 ```bash
 # macOS / Linux
@@ -204,7 +249,7 @@ You should have:
 - `docker-compose.yml`
 - `omop_vocab/CONCEPT.csv`
 
-### 5.2 Check Docker SQL Server status
+### 6.2 Check Docker SQL Server status
 
 ```bash
 cd ~/OMOP_Dev  # or $env:USERPROFILE/OMOP_Dev on Windows
@@ -213,21 +258,21 @@ docker compose ps
 
 You should see `mssql_dev` with status `healthy`.
 
-### 5.3 Decide whether to skip
+### 6.3 Decide whether to skip
 
-Skip Step 6 if all of the following are true:
+Skip Step 7 if all of the following are true:
 - `.env` exists
 - `docker-compose.yml` exists
 - `omop_vocab/CONCEPT.csv` exists
 - `docker compose ps` shows `mssql_dev` as `healthy`
 
-If any of those checks fail, continue to Step 6.
+If any of those checks fail, continue to Step 7.
 
 ---
 
-## Step 6: Complete Machine Setup If Needed (20-60 minutes)
+## Step 7: Complete Machine Setup If Needed (20-60 minutes)
 
-Do this only if Step 5 found missing shared setup. This is one-time per machine, not per study.
+Do this only if Step 6 found missing shared setup. This is one-time per machine, not per study.
 
 ### Option A: Use the Automated Setup Script (Recommended)
 
@@ -251,7 +296,7 @@ This script:
 4. Creates the `omop_synth` database
 5. Guides you through Athena vocabulary download
 
-After the script completes, continue to Step 7.
+After the script completes, continue to Step 8.
 
 ### Option B: Manual Docker setup
 
@@ -314,7 +359,7 @@ docker exec mssql_dev \
 docker compose ps
 ```
 
-### 6.1 Download OMOP vocabulary from Athena
+### 7.1 Download OMOP vocabulary from Athena
 
 The OMOP vocabulary is shared across all studies on this machine.
 
@@ -345,7 +390,7 @@ unzip ~/Downloads/vocabulary_download_v5*.zip -d OMOP_Dev/omop_vocab/
 ls OMOP_Dev/omop_vocab/CONCEPT.csv
 ```
 
-### 6.2 Optional: Rebuild CPT-4 codes
+### 7.2 Optional: Rebuild CPT-4 codes
 
 If you did not include CPT-4 in the Athena download, you can skip this step for now.
 
@@ -361,11 +406,11 @@ cpt.bat YOUR_UMLS_API_KEY
 
 ---
 
-## Step 7: Open in Dev Container (10 minutes)
+## Step 8: Open in Dev Container (10 minutes)
 
 Now that SQL Server is running, you can safely open the dev container in VS Code.
 
-### 7.1 Open in VS Code
+### 8.1 Open in VS Code
 
 1. Inside VS Code: **File** → **Open Folder**
 2. Navigate to `OMOP_Dev/<your-study>/` and click **Open**
@@ -373,7 +418,7 @@ Now that SQL Server is running, you can safely open the dev container in VS Code
 4. Click **Reopen in Container**
    *(Or use `Cmd+Shift+P` → **Dev Containers: Reopen in Container**)*
 
-### 7.2 Wait for container build (5–10 minutes first time)
+### 8.2 Wait for container build (5–10 minutes first time)
 
 The first build:
 - Pulls the R + Java image (~1.5 GB)
@@ -382,7 +427,7 @@ The first build:
 
 VS Code shows a progress indicator. When complete, the status bar shows the container name.
 
-### 7.3 Verify the environment
+### 8.3 Verify the environment
 
 Open a terminal in VS Code (`Ctrl+`` or `Cmd+`` `) and run:
 
@@ -399,12 +444,12 @@ Rscript -e "library(DatabaseConnector); print('OK')"
 
 ---
 
-## Step 8: Check Whether OMOP Vocabulary Is Already Loaded (2 minutes)
+## Step 9: Check Whether OMOP Vocabulary Is Already Loaded (2 minutes)
 
 The vocabulary CSV files on disk are not enough by themselves. SQL Server also needs the
 `omop_vocab` schema loaded once per machine.
 
-### 8.1 Check whether the database is already populated
+### 9.1 Check whether the database is already populated
 
 Inside the dev container, run:
 
@@ -421,16 +466,16 @@ Rscript -e "
 "
 ```
 
-If this prints a row count for `omop_vocab.concept`, skip Step 9 and go to Step 10.
-If it errors or returns no table, continue to Step 9.
+If this prints a row count for `omop_vocab.concept`, skip Step 10 and go to Step 11.
+If it errors or returns no table, continue to Step 10.
 
 ---
 
-## Step 9: Load OMOP Vocabulary into SQL Server (30–60 minutes)
+## Step 10: Load OMOP Vocabulary into SQL Server (30–60 minutes)
 
-Do this only if Step 8 showed the vocabulary is not already loaded.
+Do this only if Step 9 showed the vocabulary is not already loaded.
 
-### 9.1 Inside the dev container, run the vocabulary loader
+### 10.1 Inside the dev container, run the vocabulary loader
 
 ```bash
 # Run from the study root (inside the container)
@@ -456,7 +501,7 @@ If you see errors, check:
 - `.env` password is correct
 - Files exist: `ls -la /omop_vocab/`
 
-### 9.2 Verify vocabulary was loaded
+### 10.2 Verify vocabulary was loaded
 
 ```bash
 # Still inside the container
@@ -473,11 +518,11 @@ Rscript -e "
 
 ---
 
-## Step 10: Define Your Cohort, Outcome, and Covariates (30–60 minutes)
+## Step 11: Define Your Cohort, Outcome, and Covariates (30–60 minutes)
 
 This is where you customize the template for your specific study.
 
-### 10.1 Review the setup checklist
+### 11.1 Review the setup checklist
 
 ```bash
 # Inside the dev container
@@ -489,7 +534,7 @@ Rscript scripts/check_setup.R
 
 This shows what still needs your input.
 
-### 10.2 Edit study_params.yaml
+### 11.2 Edit study_params.yaml
 
 Open `study_params.yaml` and fill in study-specific values:
 
@@ -524,7 +569,7 @@ analyses:
   ...
 ```
 
-### 10.3 Look up concept IDs
+### 11.3 Look up concept IDs
 
 For every `[0]` placeholder, use your coding assistant to look up the correct concept ID:
 
@@ -542,14 +587,14 @@ Rscript scripts/concept_lookup.R "surgical site infection" Condition
 2. Show you the results
 3. Help you document where each ID came from
 
-### 10.4 Edit cohort SQL files
+### 11.4 Edit cohort SQL files
 
 Open the files in `cohorts/`:
 - `target_surgery.sql` — index event cohort definition
 - `outcome_ssi.sql` — outcome cohort definition
 - `comparator_cohort.sql` — (if doing causal inference)
 
-Replace every `concept_id = 0` placeholder with verified concept IDs from Step 10.3.
+Replace every `concept_id = 0` placeholder with verified concept IDs from Step 11.3.
 
 Example:
 
@@ -561,7 +606,7 @@ WHERE c.procedure_concept_id IN (0, 0, 0)  -- TODO: insert procedure concept IDs
 WHERE c.procedure_concept_id IN (4301351, 4306895)  -- [vocab query] Total hip replacement and variants
 ```
 
-### 10.5 Edit covariate files
+### 11.5 Edit covariate files
 
 Update the covariates your study needs:
 
@@ -582,7 +627,7 @@ covariate_id,concept_id
 3,201820  # Type 2 diabetes mellitus
 ```
 
-### 10.6 Validate your setup
+### 11.6 Validate your setup
 
 ```bash
 Rscript scripts/check_setup.R
@@ -592,12 +637,12 @@ Rscript scripts/check_setup.R
 
 ---
 
-## Step 11: Design Analysis-Specific Synthea Module (Optional, 30 minutes)
+## Step 12: Design Analysis-Specific Synthea Module (Optional, 30 minutes)
 
 If you're using synthetic data (not a real CDM), customize the Synthea module to match
 your study population.
 
-### 11.1 Review the default module
+### 12.1 Review the default module
 
 Synthea generates synthetic patient data. The module controls which conditions, procedures,
 and medications are simulated.
@@ -607,7 +652,7 @@ and medications are simulated.
 cat synthea/modules/surgical_site_infection_study.json
 ```
 
-### 11.2 Customize if needed
+### 12.2 Customize if needed
 
 For your study population, edit the Synthea module JSON to adjust:
 - Disease prevalence (comorbidities)
@@ -618,9 +663,9 @@ This is optional; the default module is often sufficient for testing.
 
 ---
 
-## Step 12: Generate Synthetic Data and Run ETL (60 minutes)
+## Step 13: Generate Synthetic Data and Run ETL (60 minutes)
 
-### 12.1 Generate Synthea synthetic patient records
+### 13.1 Generate Synthea synthetic patient records
 
 ```bash
 # Inside the container
@@ -633,7 +678,7 @@ powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
 
 This creates synthetic EHR data in CSV format.
 
-### 12.2 Run ETL (Extract, Transform, Load)
+### 13.2 Run ETL (Extract, Transform, Load)
 
 ```bash
 # Load the CSV files into the CDM schema
@@ -645,7 +690,7 @@ This:
 2. Transforms to OMOP v5.4 format
 3. Loads into `config$cdm_schema` in SQL Server
 
-### 12.3 Run data quality checks
+### 13.3 Run data quality checks
 
 ```bash
 Rscript workflow/06_quality_check_defined_phenotypes.R
@@ -653,9 +698,9 @@ Rscript workflow/06_quality_check_defined_phenotypes.R
 
 ---
 
-## Step 13: Create and Test Analysis Code (30–60 minutes)
+## Step 14: Create and Test Analysis Code (30–60 minutes)
 
-### 13.1 Build cohorts
+### 14.1 Build cohorts
 
 ```bash
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
@@ -666,7 +711,7 @@ This:
 2. Instantiates target, outcome, and comparator cohorts in SQL Server
 3. Checks that the cohorts are non-empty and reasonable
 
-### 13.2 Run analyses
+### 14.2 Run analyses
 
 ```bash
 Rscript workflow/07_setup_analysis_env.R       # Install analysis packages
@@ -676,7 +721,7 @@ Rscript workflow/08_run_analysis_and_manuscript_report.R
 All analysis parameters are controlled by the `analyses:` flags in `study_params.yaml`.
 No code editing needed — just set flags to `true` / `false`.
 
-### 13.3 Review outputs
+### 14.3 Review outputs
 
 Outputs are written to `config$output_folder` (e.g., `output/my_study/`):
 
@@ -690,11 +735,11 @@ ls -la output/my_study/
 
 ---
 
-## Step 14: Create Transportable Code Packet (5 minutes)
+## Step 15: Create Transportable Code Packet (5 minutes)
 
 Your analysis code is now ready to run in any environment (with SQL Server access).
 
-### 14.1 Generate the transportable bundle
+### 15.1 Generate the transportable bundle
 
 ```bash
 # Inside the container
@@ -710,7 +755,7 @@ This creates a self-contained folder `portable/transportable_bundle/` containing
 - OHDSI packages (prebuilt binaries)
 - Configuration templates
 
-### 14.2 Share the packet
+### 15.2 Share the packet
 
 The `transportable_bundle/` can be:
 1. **Shipped to a data partner** — they extract it, update config with their schema names, and run `Rscript run_analysis.R` locally
