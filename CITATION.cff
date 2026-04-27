@@ -8,9 +8,18 @@ title: >
   using OHDSI HADES and Synthea Synthetic Data
 
 authors:
-  - name: "Adam P. Johnson, MD, MPH"
-  - name: "Sasank Kalipatnapu, MD"
-  - name: "Ayman Ali, MD"
+  - given-names: "Adam P."
+    family-names: "Johnson"
+    name-suffix: "MD, MPH"
+    affiliation: "Duke University School of Medicine, Department of Surgery"
+  - given-names: "Sasank"
+    family-names: "Kalipatnapu"
+    name-suffix: "MD"
+    affiliation: "University of Massachusetts School of Medicine"
+  - given-names: "Ayman"
+    family-names: "Ali"
+    name-suffix: "MD"
+    affiliation: "Duke University School of Medicine, Department of Surgery"
 
 version: "1.0.0"
 date-released: "2026-04-27"
