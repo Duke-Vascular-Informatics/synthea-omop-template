@@ -172,6 +172,32 @@ code or CSV files.
 
 ---
 
+## License, Copyleft, and Publication Expectations
+
+This repository is licensed under **GNU GPL v3.0** (see [LICENSE](LICENSE)).
+
+What that means in practice for studies built from this template:
+
+1. If you modify this code and **convey/distribute** it to others (including collaborators,
+  clients, or partner sites), you must provide the corresponding source code under GPL v3.0.
+2. Modified versions must keep license/copyright notices, include a copy of GPL v3.0, and
+  clearly indicate that changes were made.
+3. You may run and modify code privately without distribution obligations until you convey it.
+4. You may not apply additional restrictions that remove recipients' GPL rights.
+
+Template project expectation for analyst workflows:
+
+1. Maintain a GitHub repository for each study derived from this template.
+2. Publish study code and workflow artifacts for reproducibility whenever institutionally and
+  contractually permitted.
+3. If public release is not allowed (for governance, legal, or contractual reasons), keep a
+  private repository but still satisfy GPL v3.0 obligations when sharing code with recipients.
+
+> This section is a practical summary for analysts and developers, not legal advice.
+> For legal interpretation, consult your organization's counsel.
+
+---
+
 ## Notes
 
 - `drivers/mssql-jdbc-13.2.1.zip` is tracked so JDBC setup is reproducible offline.
