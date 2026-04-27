@@ -15,6 +15,9 @@ Supplementary project documentation that does not belong in the root README.
 |------|-------------|
 | `GETTING_STARTED.md` | **Start here for new users.** Complete end-to-end workflow from VS Code setup through analysis. Includes post-clone workflow with skip gates for repeat users. |
 | `COMMANDS.md` | **Canonical command index.** Single source of truth for executable command snippets used across docs. |
+| `CITATION_TEMPLATE_METHODS.md` | **Template citation guidance.** Methods-ready citation text and contributor listing for this template repository. |
+| `CITATION_ANALYSIS_EXAMPLE.md` | **Study citation guidance.** How to create analysis-specific citation metadata for derived study repositories. |
+| `CITATION_ANALYSIS_EXAMPLE.cff` | **Study citation starter file.** Copy-and-edit CFF template for study-specific analysis repositories. |
 | `ANALYST_PLAYBOOK.md` | **Quick triage guide.** Decision-tree style routing for analysts: first-run vs repeat-study, concept lookup, setup checks, hook install, and support bundle escalation. |
 | `MAINTAINER_PLAYBOOK.md` | **Maintainer runbook.** Governance checks, strict release docs freeze commands, and canonical source ownership rules. |
 | `GIT_GITHUB_AUTH.md` | **Git auth deep dive.** SSH and HTTPS/token-backed GitHub authentication setup details used by Step 2. |

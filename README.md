@@ -163,6 +163,8 @@ code or CSV files.
 |----------|---------|----------|
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
 | **[docs/COMMANDS.md](docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
+| **[docs/CITATION_TEMPLATE_METHODS.md](docs/CITATION_TEMPLATE_METHODS.md)** | Template-repo citation language and contributor list for methods sections | Manuscript authors |
+| **[docs/CITATION_ANALYSIS_EXAMPLE.md](docs/CITATION_ANALYSIS_EXAMPLE.md)** | Copy-ready study-level citation example for analysis-specific code repositories | Study teams |
 | **[docs/ANALYST_PLAYBOOK.md](docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
 | **[docs/MAINTAINER_PLAYBOOK.md](docs/MAINTAINER_PLAYBOOK.md)** | Governance and release-freeze checks for documentation consistency | Maintainers |
 | **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |

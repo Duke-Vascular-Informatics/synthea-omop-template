@@ -1,24 +1,20 @@
 cff-version: 1.2.0
 message: >
-  If you use this software in your research, please cite it using the
-  metadata below. Update this file with your study-specific details before
-  publishing.
+  If you use this template repository in your research, please cite it using
+  the metadata below.
 
 title: >
-  OMOP Study Template: An End-to-End Observational Study Pipeline for OMOP CDM
+  Synthea-OMOP Study Development Template: An End-to-End Observational Study Pipeline for OMOP CDM
   using OHDSI HADES and Synthea Synthetic Data
 
 authors:
-  - given-names: "[TODO]"
-    family-names: "[TODO]"
-    email: "[TODO]"
-    affiliation: "[TODO]"
+  - name: "OMOP Study Template Contributors"
 
 version: "1.0.0"
-date-released: "2026-04-05"
+date-released: "2026-04-27"
 
-repository-code: "https://github.com/[TODO]/[TODO]"
-url: "https://github.com/[TODO]/[TODO]"
+repository-code: "https://github.com/adam-mdmph/synthea-omop-dev"
+url: "https://github.com/adam-mdmph/synthea-omop-dev"
 
 license: GPL-3.0
 
