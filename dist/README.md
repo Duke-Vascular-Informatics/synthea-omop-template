@@ -12,10 +12,7 @@ without access to this repository.
 ## Building a bundle
 
 ```powershell
-# Step 1 (once): pre-build R package binaries for offline installation
-Rscript scripts/bundle/prebuild_github_binaries.R
-
-# Step 2: build and zip the bundle
+# Build and zip the bundle
 powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
 ```
 

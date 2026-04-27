@@ -119,12 +119,8 @@ renv::install("package_name")
 renv::snapshot()
 ```
 
-To rebuild OHDSI prebuilt binaries after updating a pinned version:
-
-```r
-source("renv/activate.R")
-source("scripts/bundle/prebuild_github_binaries.R")
-```
+Prebuilt bundle artifacts are maintained by the bundle packaging workflow in
+`workflow/09_build_portable_analysis_bundle.sh` / `.ps1`.
 
 ---
 
@@ -165,6 +161,7 @@ code or CSV files.
 | Resource | Purpose | Audience |
 |----------|---------|----------|
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
+| **[docs/ANALYST_PLAYBOOK.md](docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
 | **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
 | **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |

@@ -2,7 +2,7 @@
 description: "Pre-flight check for study setup — scans study_params.yaml, cohort SQL files, and covariate CSVs for incomplete placeholders and prints a checklist report. Run before Step 8 to confirm everything is ready."
 name: "Check Study Setup"
 agent: "agent"
-tools: []
+tools: ["read_file", "grep_search", "file_search"]
 ---
 
 You are performing a pre-flight setup check for this OMOP study template.

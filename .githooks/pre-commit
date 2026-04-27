@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${SKIP_ANALYST_HOOKS:-}" == "1" ]]; then
+  echo "[pre-commit] SKIP_ANALYST_HOOKS=1 set; skipping analyst hooks."
+  exit 0
+fi
+
+if ! command -v Rscript >/dev/null 2>&1; then
+  echo "[pre-commit] Rscript not found; skipping analyst checks."
+  exit 0
+fi
+
+staged_files="$(git diff --cached --name-only)"
+
+if echo "$staged_files" | grep -Eq '^(study_params\.yaml|cohorts/.*\.sql|covariates/.*\.csv)$'; then
+  echo "[pre-commit] Running setup pre-flight check (scripts/check_setup.R)..."
+  Rscript scripts/check_setup.R
+fi
+
+echo "[pre-commit] Scanning TODO placeholders (non-blocking)..."
+Rscript scripts/find_todos.R || true
+
+echo "[pre-commit] Complete."

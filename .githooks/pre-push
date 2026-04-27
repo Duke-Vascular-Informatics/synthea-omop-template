@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${SKIP_ANALYST_HOOKS:-}" == "1" ]]; then
+  echo "[pre-push] SKIP_ANALYST_HOOKS=1 set; skipping analyst hooks."
+  exit 0
+fi
+
+if ! command -v Rscript >/dev/null 2>&1; then
+  echo "[pre-push] Rscript not found; skipping analyst checks."
+  exit 0
+fi
+
+echo "[pre-push] Validating documentation command references..."
+Rscript scripts/validate_docs_commands.R
+
+echo "[pre-push] Running unit tests (skips if testthat is missing)..."
+Rscript -e "if (!requireNamespace('testthat', quietly = TRUE)) { message('testthat not installed; skipping local tests.'); quit(status = 0L) }; testthat::test_dir('tests/testthat', reporter = 'summary', stop_on_failure = TRUE)"
+
+echo "[pre-push] Complete."
