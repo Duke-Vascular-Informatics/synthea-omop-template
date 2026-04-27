@@ -7,14 +7,27 @@
 #
 # Usage (from project root):
 #   Rscript scripts/find_todos.R
+#   Rscript scripts/find_todos.R --files path1 path2 ...
 # =============================================================================
 
-targets <- c(
-  "study_params.yaml",
-  list.files("covariates", pattern = "\\.csv$", full.names = TRUE, recursive = TRUE),
-  list.files("workflow",  pattern = "^07|^08", full.names = TRUE)
-)
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) > 0 && identical(args[1], "--files")) {
+  targets <- unique(args[-1])
+} else {
+  targets <- c(
+    "study_params.yaml",
+    list.files("covariates", pattern = "\\.csv$", full.names = TRUE, recursive = TRUE),
+    list.files("workflow", pattern = "^07|^08", full.names = TRUE)
+  )
+}
+
 targets <- targets[file.exists(targets)]
+
+if (length(targets) == 0L) {
+  message("No matching files to scan for TODO placeholders.")
+  quit(status = 0)
+}
 
 found <- 0L
 for (path in targets) {

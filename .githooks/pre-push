@@ -49,6 +49,9 @@ fi
 echo "[pre-push] Validating documentation command references..."
 run_rscript_filtered scripts/validate_docs_commands.R
 
+echo "[pre-push] Verifying CHECKLIST step index sync..."
+run_rscript_filtered scripts/generate_checklist_step_index.R --check
+
 echo "[pre-push] Running unit tests (skips if testthat is missing)..."
 run_rscript_filtered -e "if (!requireNamespace('testthat', quietly = TRUE)) { message('testthat not installed; skipping local tests.'); quit(status = 0L) }; testthat::test_dir('tests/testthat', reporter = 'summary', stop_on_failure = TRUE)"
 

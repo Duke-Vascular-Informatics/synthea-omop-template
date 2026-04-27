@@ -28,6 +28,36 @@ jobs:
         run: |
           Rscript scripts/validate_docs_commands.R
 
+      - name: Verify generated checklist step index
+        run: |
+          Rscript scripts/generate_checklist_step_index.R --check
+
+  # ---------------------------------------------------------------------------
+  # Job 0b: Strict docs freeze checks for release-quality merges/tags.
+  # Escalates warnings to failures and enforces stricter governance checks.
+  # ---------------------------------------------------------------------------
+  docs-freeze:
+    name: Strict docs freeze checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Run strict documentation validation
+        env:
+          DOCS_STRICT: '1'
+        run: |
+          Rscript scripts/validate_docs_commands.R
+
+      - name: Verify generated checklist step index (strict)
+        run: |
+          Rscript scripts/generate_checklist_step_index.R --check
+
   # ---------------------------------------------------------------------------
   # Job 1: Lint all R source files with lintr.
   # Fails if any lint is found so style and safety issues are caught on every

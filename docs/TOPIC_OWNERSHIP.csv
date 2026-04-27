@@ -1,0 +1,6 @@
+topic,owner_file,heading_regex,severity
+canonical_workflow_steps,docs/GETTING_STARTED.md,^## Step [0-9]+:,warning
+canonical_commands,docs/COMMANDS.md,^## Core Commands$|^## Guardrails$,warning
+git_github_auth,docs/GIT_GITHUB_AUTH.md,^## SSH Authentication|^## HTTPS \+ Token-Backed Authentication,warning
+vocab_load_troubleshooting,docs/TROUBLESHOOTING_VOCAB_LOAD.md,^# Troubleshooting: OMOP Vocabulary Load$,warning
+etl_troubleshooting,docs/TROUBLESHOOTING_ETL.md,^# Troubleshooting: Synthetic Data Generation and ETL$,warning

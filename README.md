@@ -164,9 +164,11 @@ code or CSV files.
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
 | **[docs/COMMANDS.md](docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
 | **[docs/ANALYST_PLAYBOOK.md](docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
+| **[docs/MAINTAINER_PLAYBOOK.md](docs/MAINTAINER_PLAYBOOK.md)** | Governance and release-freeze checks for documentation consistency | Maintainers |
 | **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
 | **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |
+| **[docs/CHANGELOG.md](docs/CHANGELOG.md)** | Categorized docs-governance change history for high-signal review | Maintainers, reviewers |
 | **[setup/setup_docker_and_vocab.sh](setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux) | Automation-first users |
 | **[setup/setup_docker_and_vocab.ps1](setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell) | Windows users |
 | **[Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)** | OHDSI methodology reference (cohorts, phenotypes, causal inference) | OHDSI methods questions |

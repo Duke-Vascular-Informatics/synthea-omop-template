@@ -54,6 +54,15 @@ if echo "$staged_files" | grep -Eq '^(study_params\.yaml|cohorts/.*\.sql|covaria
 fi
 
 echo "[pre-commit] Scanning TODO placeholders (non-blocking)..."
-run_rscript_filtered scripts/find_todos.R || true
+if [[ -n "$staged_files" ]]; then
+  mapfile -t staged_array < <(printf "%s\n" "$staged_files" | sed '/^$/d')
+  if [[ ${#staged_array[@]} -gt 0 ]]; then
+    run_rscript_filtered scripts/find_todos.R --files "${staged_array[@]}" || true
+  else
+    echo "[pre-commit] No staged files found for TODO scan."
+  fi
+else
+  echo "[pre-commit] No staged files found for TODO scan."
+fi
 
 echo "[pre-commit] Complete."
