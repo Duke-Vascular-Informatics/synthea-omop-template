@@ -141,7 +141,7 @@ Rename the files to match your study and update the `sql_file:` paths in `study_
 
 ---
 
-### 3 — Run Step 2 to validate your artifacts
+### 4 — Run Step 2 to validate your artifacts
 
 ```bash
 Rscript workflow/02_define_omop_cohort_outcome_covariates.R
@@ -153,7 +153,7 @@ proceeding.
 
 ---
 
-### 4 — Run the full workflow
+### 5 — Run the full workflow
 
 ```bash
 Rscript workflow/01_setup_synthea_etl_qc_env.R   # install packages, verify DB
@@ -169,7 +169,7 @@ controlled by the `analyses:` flags in `study_params.yaml`.
 
 ---
 
-### 5 — Commit your study definition
+### 6 — Commit your study definition
 
 ```bash
 git add study_params.yaml cohorts/ covariates/
