@@ -2,6 +2,14 @@
 
 Use this checklist to track your progress. Detailed instructions are in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
+## Scope
+
+- Owns: concise progress tracking mapped to canonical workflow steps.
+- Does not own: full procedural instructions or canonical command snippets.
+- Canonical procedure source: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+- Canonical commands source: [docs/COMMANDS.md](docs/COMMANDS.md).
+- Step labels are synchronized against [docs/workflow_steps.yaml](docs/workflow_steps.yaml).
+
 See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, [CLAUDE.md](CLAUDE.md) for coding conventions.
 
 This checklist is intentionally concise. For full command examples and platform-specific variants,
@@ -105,14 +113,7 @@ follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
 ## Key Commands
 
-| Task | Command |
-|------|---------|
-| Setup check | `Rscript scripts/check_setup.R` |
-| Concept lookup | `Rscript scripts/concept_lookup.R "term" Domain` |
-| SQL Server status | `docker compose ps` |
-| Restart SQL Server | `docker compose up -d` (from `OMOP_Dev/`) |
-| Run analyses | `Rscript workflow/08_run_analysis_and_manuscript_report.R` |
-| Transportable bundle | `bash workflow/09_build_portable_analysis_bundle.sh` or `powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1` |
+Use [docs/COMMANDS.md](docs/COMMANDS.md) for the canonical command list.
 
 ---
 

@@ -7,6 +7,12 @@ assistant: GitHub Copilot, Claude Code, or any other supported tool.
 This is the canonical procedural guide for this template. The root README is intentionally
 kept concise and links here for full step-by-step execution.
 
+Detailed command snippets are canonicalized in [COMMANDS.md](COMMANDS.md).
+Focused deep dives are split into dedicated docs:
+- GitHub auth details: [GIT_GITHUB_AUTH.md](GIT_GITHUB_AUTH.md)
+- Vocabulary load troubleshooting: [TROUBLESHOOTING_VOCAB_LOAD.md](TROUBLESHOOTING_VOCAB_LOAD.md)
+- ETL troubleshooting: [TROUBLESHOOTING_ETL.md](TROUBLESHOOTING_ETL.md)
+
 **Total time:** ~2 hours first time (mostly Docker vocabulary loading)  
 **Repeat-study time:** ~10-20 minutes when your machine is already set up  
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
@@ -84,35 +90,11 @@ git config --global --get user.email
 
 Choose one authentication method for `git clone`, `git push`, and `git pull`.
 
-**Option A (recommended): SSH key authentication**
+- Option A (recommended): SSH keys
+- Option B: HTTPS + token-backed auth (`gh auth login` or your credential manager)
 
-```bash
-# Generate a key (press Enter for defaults)
-ssh-keygen -t ed25519 -C "your.email@org.edu"
-
-# Start ssh-agent and add key
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
-
-# Copy public key and add it in GitHub:
-# GitHub -> Settings -> SSH and GPG keys -> New SSH key
-cat ~/.ssh/id_ed25519.pub
-
-# Test connection
-ssh -T git@github.com
-```
-
-**Option B: HTTPS + GitHub login (token-backed)**
-
-If you use GitHub CLI, run:
-
-```bash
-gh auth login
-gh auth status
-```
-
-If you do not use GitHub CLI, sign in through your Git client/credential manager
-the first time you push.
+For complete setup and remote switching commands, use:
+[GIT_GITHUB_AUTH.md](GIT_GITHUB_AUTH.md)
 
 ---
 
@@ -539,6 +521,9 @@ If you see errors, check:
 - `.env` password is correct
 - Files exist: `ls -la /omop_vocab/`
 
+If Step 10 fails or stalls, use the focused runbook:
+[TROUBLESHOOTING_VOCAB_LOAD.md](TROUBLESHOOTING_VOCAB_LOAD.md)
+
 ### 10.2 Verify vocabulary was loaded
 
 ```bash
@@ -734,6 +719,9 @@ This:
 Rscript workflow/06_quality_check_defined_phenotypes.R
 ```
 
+If Step 13 fails, use the focused runbook:
+[TROUBLESHOOTING_ETL.md](TROUBLESHOOTING_ETL.md)
+
 ---
 
 ## Step 14: Create and Test Analysis Code (30–60 minutes)
@@ -804,38 +792,12 @@ The `transportable_bundle/` can be:
 
 ## Troubleshooting
 
-### Docker/SQL Server issues
+Use focused troubleshooting docs to reduce duplicated guidance and merge conflicts:
 
-**"Cannot connect to SQL Server"**
-```bash
-docker compose ps              # Check if mssql_dev is running
-docker compose logs mssql      # View SQL Server logs
-docker compose up -d           # Restart if needed
-```
-
-**"OMOP vocabulary load is slow"**
-- Vocabulary load is expected to take 30–60 minutes (one-time cost)
-- Check `docker compose logs -f mssql` for progress
-
-### Dev Container issues
-
-**"Cannot find omop_vocab"**
-- Ensure `OMOP_Dev/omop_vocab/` contains `CONCEPT.csv` directly
-- Rebuild container: `Cmd+Shift+P` → **Dev Containers: Rebuild Container**
-
-**"R packages not found"**
-- Inside container: `renv::restore()`
-- Then retry the script
-
-### Concept ID issues
-
-**"Concept not found"**
-- Re-run `Rscript scripts/concept_lookup.R` with different search terms
-- Check the OMOP documentation: https://ohdsi.github.io/TheBookOfOhdsi/
-
-**"Concept ID seems wrong"**
-- Your vocabulary version may differ from the development version
-- Always verify concept IDs against your live vocabulary
+- Infrastructure and container setup: [SETUP.md](SETUP.md)
+- Vocabulary loading failures: [TROUBLESHOOTING_VOCAB_LOAD.md](TROUBLESHOOTING_VOCAB_LOAD.md)
+- Synthetic generation and ETL failures: [TROUBLESHOOTING_ETL.md](TROUBLESHOOTING_ETL.md)
+- Concept lookup workflow and verification: [../CLAUDE.md](../CLAUDE.md)
 
 ---
 

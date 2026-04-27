@@ -17,6 +17,13 @@ restricted-network environments.
 
 To avoid duplicated or conflicting instructions, this README is intentionally high-level.
 
+## Scope
+
+- Owns: repository orientation, architecture map, and links to canonical docs.
+- Does not own: step-by-step execution details or command snippets that may drift.
+- Canonical procedural source: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+- Canonical commands source: [docs/COMMANDS.md](docs/COMMANDS.md).
+
 - Use [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) as the **single source of truth** for end-to-end setup and execution.
 - Use [docs/SETUP.md](docs/SETUP.md) for Docker, SQL Server, Athena vocabulary, and troubleshooting details.
 
@@ -28,13 +35,7 @@ To avoid duplicated or conflicting instructions, this README is intentionally hi
 3. If shared machine resources are missing, run `setup/setup_docker_and_vocab.sh` (or `.ps1` on Windows).
 4. Reopen in the dev container.
 5. Fill in `study_params.yaml`, `cohorts/*.sql`, and `covariates/*.csv`.
-6. Validate and run:
-
-```bash
-Rscript scripts/check_setup.R
-Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-Rscript workflow/08_run_analysis_and_manuscript_report.R
-```
+6. Validate and run using canonical commands in [docs/COMMANDS.md](docs/COMMANDS.md).
 
 For full step-by-step commands and skip logic, follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
@@ -161,6 +162,7 @@ code or CSV files.
 | Resource | Purpose | Audience |
 |----------|---------|----------|
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
+| **[docs/COMMANDS.md](docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
 | **[docs/ANALYST_PLAYBOOK.md](docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
 | **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |

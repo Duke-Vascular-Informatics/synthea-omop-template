@@ -3,6 +3,7 @@
 Fast operational guide for analysts using this template.
 
 Use this page for quick routing. Use `docs/GETTING_STARTED.md` for full procedural detail.
+Use `docs/COMMANDS.md` for canonical command snippets.
 
 ---
 
