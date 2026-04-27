@@ -12,7 +12,7 @@ follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 ## Phase 1: Bootstrap And Clone (Per machine + per study, 15-20 minutes)
 
 - [ ] **Step 1:** Install VS Code
-- [ ] **Step 2:** Set up Git and version control basics (`git config --global user.name`, `git config --global user.email`)
+- [ ] **Step 2:** Set up Git + link your GitHub account (configure identity, then SSH or HTTPS auth)
 - [ ] **Step 3:** Install your coding assistant extension and sign in (Copilot, Claude Code, or other)
 - [ ] **Step 4:** Create `OMOP_Dev/` folder and `.env` file with SQL Server password
 - [ ] **Step 5:** Create study repo from GitHub template, clone into `OMOP_Dev/`

@@ -80,6 +80,40 @@ git config --global --get user.name
 git config --global --get user.email
 ```
 
+### 2.5 Link Git to your GitHub account
+
+Choose one authentication method for `git clone`, `git push`, and `git pull`.
+
+**Option A (recommended): SSH key authentication**
+
+```bash
+# Generate a key (press Enter for defaults)
+ssh-keygen -t ed25519 -C "your.email@org.edu"
+
+# Start ssh-agent and add key
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+
+# Copy public key and add it in GitHub:
+# GitHub -> Settings -> SSH and GPG keys -> New SSH key
+cat ~/.ssh/id_ed25519.pub
+
+# Test connection
+ssh -T git@github.com
+```
+
+**Option B: HTTPS + GitHub login (token-backed)**
+
+If you use GitHub CLI, run:
+
+```bash
+gh auth login
+gh auth status
+```
+
+If you do not use GitHub CLI, sign in through your Git client/credential manager
+the first time you push.
+
 ---
 
 ## Step 3: Install Your AI Coding Assistant (10 minutes)
@@ -185,7 +219,11 @@ wait until Docker and the shared host resources exist is opening the repo in the
 cd ~/OMOP_Dev
 
 # Replace <your-org> and <your-study> with your GitHub paths
+# HTTPS
 git clone https://github.com/<your-org>/<your-study>.git
+
+# OR SSH (if you configured SSH keys in Step 2.5)
+# git clone git@github.com:<your-org>/<your-study>.git
 
 cd <your-study>
 ```
