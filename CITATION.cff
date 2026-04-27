@@ -8,7 +8,9 @@ title: >
   using OHDSI HADES and Synthea Synthetic Data
 
 authors:
-  - name: "OMOP Study Template Contributors"
+  - name: "Adam P. Johnson, MD, MPH"
+  - name: "Sasank Kalipatnapu, MD"
+  - name: "Ayman Ali, MD"
 
 version: "1.0.0"
 date-released: "2026-04-27"
