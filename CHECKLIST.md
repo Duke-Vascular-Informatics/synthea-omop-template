@@ -4,6 +4,9 @@ Use this checklist to track your progress. Detailed instructions are in [docs/GE
 
 See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, [CLAUDE.md](CLAUDE.md) for coding conventions.
 
+This checklist is intentionally concise. For full command examples and platform-specific variants,
+follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
 ---
 
 ## Phase 1: Bootstrap And Clone (Per machine + per study, 15-20 minutes)
@@ -13,27 +16,14 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 - [ ] **Step 3:** Create `OMOP_Dev/` folder and `.env` file with SQL Server password
 - [ ] **Step 4:** Create study repo from GitHub template, clone into `OMOP_Dev/`
 - [ ] **Step 4.3:** Install Docker Desktop and VS Code Dev Containers extension (with assistant help)
-- [ ] **Step 5:** Check whether this machine already has shared setup:
-  ```bash
-  cd ~/OMOP_Dev
-  ls -la .env docker-compose.yml omop_vocab
-  docker compose ps
-  ```
+- [ ] **Step 5:** Check whether this machine already has shared setup (see Step 5 in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md))
 - [ ] **Skip Step 6 if already set up:** `.env`, `docker-compose.yml`, `omop_vocab/CONCEPT.csv`, and healthy `mssql_dev`
 
 ---
 
 ## Phase 2: Machine Setup If Needed (One-time, 1–2 hours)
 
-- [ ] **Step 6 (AUTOMATED):** Run Docker setup script if Step 5 failed:
-  ```bash
-  # macOS / Linux
-  cd ~/OMOP_Dev
-  bash <your-study>/setup/setup_docker_and_vocab.sh
-  
-  # Windows (PowerShell)
-  powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
-  ```
+- [ ] **Step 6 (AUTOMATED):** Run Docker setup script if Step 5 failed (see Step 6 in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md))
 - [ ] **Or Step 6 (MANUAL):** Create `docker-compose.yml`, start `mssql_dev`, create `omop_synth`, download Athena vocabulary
 - [ ] **Step 6b (Optional):** Rebuild CPT-4 codes with UMLS API key
 
@@ -49,20 +39,14 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 
 ## Phase 4: Load OMOP Vocabulary If Needed (Per machine, ~45 minutes, one-time)
 
-- [ ] **Step 9:** Inside dev container, run:
-  ```bash
-  Rscript scripts/setup_omop_vocab_schema.R
-  ```
+- [ ] **Step 9:** Run vocabulary loader (see Step 9 in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md))
 - [ ] **Verify:** Should load ~2M concept rows (takes 30–60 min)
 
 ---
 
 ## Phase 5: Define Your Study (Per study, ~30–60 minutes)
 
-- [ ] **Step 10.1:** Check setup status:
-  ```bash
-  Rscript scripts/check_setup.R
-  ```
+- [ ] **Step 10.1:** Check setup status (`Rscript scripts/check_setup.R`)
 
 - [ ] **Step 10.2:** Edit `study_params.yaml`:
   - [ ] `study_name`, `study_design`
@@ -71,11 +55,7 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
   - [ ] `output_folder`
   - [ ] Set `analyses:` flags
 
-- [ ] **Step 10.3:** Look up all concept IDs:
-  ```bash
-  Rscript scripts/concept_lookup.R "hip replacement" Procedure
-  Rscript scripts/concept_lookup.R "surgical site infection" Condition
-  ```
+- [ ] **Step 10.3:** Look up all concept IDs (`Rscript scripts/concept_lookup.R "<term>" <Domain>`)
 
 - [ ] **Step 10.4:** Edit cohort SQL files in `cohorts/` — replace `concept_id = 0`
   - [ ] `target_surgery.sql`
@@ -85,17 +65,9 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
   - [ ] `covariates/covariates.csv`
   - [ ] `covariates/covariate_concepts.csv`
 
-- [ ] **Step 10.6:** Validate:
-  ```bash
-  Rscript scripts/check_setup.R  # Should show [OK], no [FAIL]
-  ```
+- [ ] **Step 10.6:** Validate (`Rscript scripts/check_setup.R` should show no `[FAIL]`)
 
-- [ ] **Commit study definition:**
-  ```bash
-  git add study_params.yaml cohorts/ covariates/
-  git commit -m "feat: Define <study name> cohort, outcome, covariates"
-  git push
-  ```
+- [ ] **Commit study definition:** stage study files, commit, and push
 
 ---
 
@@ -104,34 +76,16 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 *Skip if using real CDM already populated.*
 
 - [ ] **Step 11:** (Optional) Customize Synthea module
-- [ ] **Step 12.1:** Generate synthetic data:
-  ```bash
-  Rscript workflow/01_setup_synthea_etl_qc_env.R
-  Rscript workflow/03_generate_synthea_module_artifacts.R
-  bash workflow/04_generate_synthea_csv.sh  # macOS/Linux
-  ```
-- [ ] **Step 12.2:** Run ETL:
-  ```bash
-  Rscript workflow/05_etl_csv_to_omop.R
-  ```
-- [ ] **Step 12.3:** Quality checks:
-  ```bash
-  Rscript workflow/06_quality_check_defined_phenotypes.R
-  ```
+- [ ] **Step 12.1:** Generate synthetic data (see Step 12 in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md))
+- [ ] **Step 12.2:** Run ETL (`Rscript workflow/05_etl_csv_to_omop.R`)
+- [ ] **Step 12.3:** Quality checks (`Rscript workflow/06_quality_check_defined_phenotypes.R`)
 
 ---
 
 ## Phase 7: Build Cohorts & Run Analyses (Per study, ~30–60 minutes)
 
-- [ ] **Step 13.1:** Build cohorts:
-  ```bash
-  Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-  ```
-- [ ] **Step 13.2:** Run analyses:
-  ```bash
-  Rscript workflow/07_setup_analysis_env.R
-  Rscript workflow/08_run_analysis_and_manuscript_report.R
-  ```
+- [ ] **Step 13.1:** Build cohorts (`Rscript workflow/02_define_omop_cohort_outcome_covariates.R`)
+- [ ] **Step 13.2:** Run analyses (`Rscript workflow/07_setup_analysis_env.R`, then `Rscript workflow/08_run_analysis_and_manuscript_report.R`)
 - [ ] **Step 13.3:** Review outputs in `output/<your-study>/`
 
 ---
@@ -140,7 +94,9 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 
 - [ ] **Step 14:** Generate bundle:
   ```bash
-  Rscript workflow/09_create_transportable_bundle.R
+  bash workflow/09_build_portable_analysis_bundle.sh
+  # OR (Windows PowerShell):
+  powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
   ```
 - [ ] **Share or archive** `portable/transportable_bundle/`
 
@@ -155,7 +111,7 @@ See also: [docs/SETUP.md](docs/SETUP.md) for Docker & vocabulary setup details, 
 | SQL Server status | `docker compose ps` |
 | Restart SQL Server | `docker compose up -d` (from `OMOP_Dev/`) |
 | Run analyses | `Rscript workflow/08_run_analysis_and_manuscript_report.R` |
-| Transportable bundle | `Rscript workflow/09_create_transportable_bundle.R` |
+| Transportable bundle | `bash workflow/09_build_portable_analysis_bundle.sh` or `powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1` |
 
 ---
 

@@ -597,7 +597,7 @@ Rscript scripts/check_setup.R
 If you're using synthetic data (not a real CDM), customize the Synthea module to match
 your study population.
 
-### 10.1 Review the default module
+### 11.1 Review the default module
 
 Synthea generates synthetic patient data. The module controls which conditions, procedures,
 and medications are simulated.
@@ -607,7 +607,7 @@ and medications are simulated.
 cat synthea/modules/surgical_site_infection_study.json
 ```
 
-### 10.2 Customize if needed
+### 11.2 Customize if needed
 
 For your study population, edit the Synthea module JSON to adjust:
 - Disease prevalence (comorbidities)
@@ -626,9 +626,9 @@ This is optional; the default module is often sufficient for testing.
 # Inside the container
 Rscript workflow/01_setup_synthea_etl_qc_env.R    # Install packages, verify DB
 Rscript workflow/03_generate_synthea_module_artifacts.R
-Rscript workflow/04_generate_synthea_csv.sh       # (Linux/macOS)
-# OR:
-Rscript workflow/04_generate_synthea_csv.ps1      # (Windows)
+bash workflow/04_generate_synthea_csv.sh          # (Linux/macOS)
+# OR (Windows PowerShell):
+powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1
 ```
 
 This creates synthetic EHR data in CSV format.
@@ -698,7 +698,9 @@ Your analysis code is now ready to run in any environment (with SQL Server acces
 
 ```bash
 # Inside the container
-Rscript workflow/09_create_transportable_bundle.R
+bash workflow/09_build_portable_analysis_bundle.sh
+# OR (Windows PowerShell):
+powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
 ```
 
 This creates a self-contained folder `portable/transportable_bundle/` containing:
@@ -711,7 +713,7 @@ This creates a self-contained folder `portable/transportable_bundle/` containing
 ### 14.2 Share the packet
 
 The `transportable_bundle/` can be:
-1. **Shipped to a data partner** — they extract it, update config with their schema names, and run `Rscript 08_run_analysis.R` locally
+1. **Shipped to a data partner** — they extract it, update config with their schema names, and run `Rscript run_analysis.R` locally
 2. **Pushed to GitHub** — other researchers can clone and use it
 3. **Archived** — long-term preservation of exact analysis code and package versions
 
