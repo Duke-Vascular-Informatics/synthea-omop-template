@@ -29,10 +29,16 @@ To avoid duplicated or conflicting instructions, this README is intentionally hi
 
 ## Quick Start (Condensed)
 
+> **Using `omop-dev-workspace`?**  
+> If you are working inside the [omop-dev-workspace](https://github.com/adam-mdmph/omop-dev-workspace),
+> the SQL Server container, OMOP vocabulary, and dev container are already provided by the workspace.
+> Skip steps 2–3 below. Clone this repo directly into the workspace folder and open the workspace
+> in VS Code Dev Containers — the shared infrastructure connects automatically.
+
 1. Create a repo from this template and name it using:
   `<disease_cohort_abbrev>_<treatment_abbrev>_<outcome_abbrev>_<methodology_abbrev>`
-2. Clone into `OMOP_Dev/<your-study>/`.
-3. If shared machine resources are missing, run `setup/setup_docker_and_vocab.sh` (or `.ps1` on Windows).
+2. Clone into `OMOP_Dev/<your-study>/` (standalone) **or** into the `omop-dev-workspace/` folder.
+3. If shared machine resources are missing (standalone only), run `setup/setup_docker_and_vocab.sh` (or `.ps1` on Windows).
 4. Reopen in the dev container.
 5. Fill in `study_params.yaml`, `cohorts/*.sql`, and `covariates/*.csv`.
 6. Validate and run using canonical commands in [docs/COMMANDS.md](docs/COMMANDS.md).
