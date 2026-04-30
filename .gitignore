@@ -51,8 +51,8 @@ errorReportR.txt
 jaas.conf
 portable/transportable_bundle/drivers/jaas.conf
 
-# External repos auto-cloned by Step 1 (synthea-pad) — not ours to commit
-external/
+# external/synthea is tracked as a git submodule via .gitmodules — not ignored here
+# (new_study.R registers the submodule during study initialization)
 
 # Generated portable bundle archives
 dist/*.zip

@@ -64,33 +64,26 @@ source("R/drivers.R")
 source("R/connection.R")
 
 # -----------------------------------------------------------------------------
-# Chunk 2b: Clone synthea-pad repo into external/synthea if not already present.
-# Purpose:
-# - Ensure the Synthea checkout required by Steps 3 and 4 is available locally.
-# - Safe to run repeatedly: skips clone if external/synthea already exists and
-#   is a valid git repository.
+# Chunk 2b: Initialize the synthea-pad submodule (external/synthea).
+#
+# The submodule branch is set to the study name (kebab-case) by new_study.R
+# during study initialization, and the pinned commit is recorded in the repo's
+# index. After a fresh clone, run: git submodule update --init external/synthea
+# Safe to run repeatedly: no-op when already at the recorded commit.
 # Outcome:
-# - external/synthea contains the synthea-pad repo.
+# - external/synthea contains the synthea-pad checkout at the pinned commit.
 # -----------------------------------------------------------------------------
 
-synthea_dir <- file.path(getwd(), "external", "synthea")
-synthea_git <- file.path(synthea_dir, ".git")
-synthea_repo_url <- "https://github.com/adam-mdmph/synthea-pad.git"
-
-if (dir.exists(synthea_git)) {
-  message("Synthea repo already present at: ", synthea_dir, " — skipping clone.")
-} else {
-  if (dir.exists(synthea_dir)) {
-    message("external/synthea exists but is not a git repo — removing and re-cloning ...")
-    unlink(synthea_dir, recursive = TRUE)
-  }
-  message("Cloning synthea-pad into external/synthea ...")
-  ret <- system2("git", c("clone", synthea_repo_url, synthea_dir), stdout = TRUE, stderr = TRUE)
-  if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
-    stop("git clone failed:\n", paste(ret, collapse = "\n"))
-  }
-  message("Synthea repo cloned to: ", synthea_dir)
+message("Initializing synthea submodule (external/synthea) ...")
+ret <- system2(
+  "git",
+  c("submodule", "update", "--init", "--recursive", "external/synthea"),
+  stdout = TRUE, stderr = TRUE
+)
+if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
+  stop("git submodule update failed:\n", paste(ret, collapse = "\n"))
 }
+message("Synthea submodule ready at: ", file.path(getwd(), "external", "synthea"))
 
 # -----------------------------------------------------------------------------
 # Chunk 3: Ensure DatabaseConnector is available.
