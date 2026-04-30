@@ -436,7 +436,7 @@ ssi_person_sql <- SqlRender::translate(SqlRender::render(
     "     AND co.person_id IN (SELECT p2.person_id FROM @cdm_schema.person p2 WHERE ", person_filter, ")\n",
     "  ) AS people_with_pad,\n",
     "  -- SSI: concept_ancestor rollup under 4334801 (Surgical site infection,\n",
-    "  --      SNOMED-CT 433202001) — matches outcome_ssi.sql and pad_ssi.json module\n",
+    "  --      SNOMED-CT 433202001) — matches outcome_ssi.sql and study module\n",
     "  (SELECT COUNT(DISTINCT co.person_id)\n",
     "   FROM @cdm_schema.condition_occurrence co\n",
     "   INNER JOIN @cdm_schema.concept_ancestor ca\n",

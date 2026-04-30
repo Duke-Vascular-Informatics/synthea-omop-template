@@ -6,28 +6,37 @@ param(
   [int]$Population = 1000,
 
   [Parameter(Mandatory = $false)]
-  [string]$ModuleFile = "c:\Users\rapiduser\pad-oler-ssi-val\synthea\modules\pad_ssi.json",
+  [string]$ModuleFile = "",
 
   [Parameter(Mandatory = $false)]
-  [string]$ModuleName = "pad_ssi",
+  [string]$ModuleName = "study_template",
 
   [Parameter(Mandatory = $false)]
-  [string]$State = "Massachusetts"
-,
+  [string]$State = "North Carolina",
 
   [Parameter(Mandatory = $false)]
-  [string]$AgeRange = "40-100"
-,
+  [string]$AgeRange = "18-100",
 
   [Parameter(Mandatory = $false)]
   [bool]$RequireModuleOnly = $true
 )
+
+# RESEARCHER_ADJUSTS:
+# - ModuleName: set to the basename (without .json) of your study module file.
+# - AgeRange: set to match your study's eligible age range (e.g., "60-100").
+# - State: set to any US state string recognised by Synthea.
 
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($SyntheaHome)) {
   $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
   $SyntheaHome = Join-Path $repoRoot "external/synthea"
+}
+
+# Derive ModuleFile from repo root + module name if not explicitly provided.
+if ([string]::IsNullOrWhiteSpace($ModuleFile)) {
+  $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+  $ModuleFile = Join-Path $repoRoot "synthea\modules\$ModuleName.json"
 }
 
 $syntheaBat = Join-Path $SyntheaHome "run_synthea.bat"
@@ -40,7 +49,7 @@ Current SyntheaHome appears to be a standalone jar distribution:
 
 The standalone jar CLI supports -d (extra module directory) but does not expose
 a module whitelist flag, so it cannot guarantee generation only through
-pad_ssi.json.
+$ModuleName.json.
 "@
   }
   throw "Could not find run_synthea.bat at: $syntheaBat"
@@ -67,9 +76,6 @@ try {
   # This Synthea checkout supports -m for module filtering.
   # Do not use --modules here: App.java treats unknown --args as config keys,
   # which silently disables module restriction.
-  # When $RequireModuleOnly is $false we run ALL bundled modules (including the
-  # custom pad_ssi.json already copied above) so that medications, full
-  # procedures, and the complete clinical picture are generated alongside PAD.
   if ($RequireModuleOnly) {
     $attempts = ,(@("-p", "$Population", "-a", "$AgeRange", "-m", "$ModuleName", "$State") + $exporterArgs)
   } else {
@@ -77,7 +83,7 @@ try {
   }
 
   # Start-Process can split multi-word arguments unless they are explicitly
-  # quoted as a single command-line token. This helper keeps states such as
+  # quoted as a single command-line token. This helper keeps state names such as
   # "North Carolina" intact when passed to run_synthea.bat.
   $quoteArg = {
     param([string]$value)
@@ -88,14 +94,10 @@ try {
   }
 
   $success = $false
-  $usedModuleRestriction = $false
 
   foreach ($args in $attempts) {
-    # Build Groovy-style params array: each token single-quoted, comma-separated.
-    # run_synthea.bat passes this directly to gradlew as -Params=[...], so tokens
-    # must be valid Groovy string literals (single quotes survive cmd.exe expansion).
     $groovyTokens = $args | ForEach-Object {
-      $tok = $_ -replace "'", "''"   # escape any embedded single quotes
+      $tok = $_ -replace "'", "''"
       "'$tok'"
     }
     $groovyParams = "[" + ($groovyTokens -join ",") + ",]"
@@ -108,17 +110,12 @@ try {
 
     if ($exitCode -eq 0) {
       $success = $true
-      $usedModuleRestriction = $true
       break
     }
   }
 
   if (-not $success) {
     throw "Synthea failed for all module-restricted command variants. Check console logs above."
-  }
-
-  if ($RequireModuleOnly -and -not $usedModuleRestriction) {
-    throw "Module-only execution was required, but no module-restricted invocation succeeded."
   }
 
   $csvOutputDir = Join-Path $SyntheaHome "output\csv"

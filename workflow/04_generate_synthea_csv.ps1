@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Step 4: Generate Synthea CSV data for the PAD/SSI validation workflow.
+# Step 4: Generate Synthea CSV data for the study template workflow.
 #
 # High-level behavior:
 # 1) Resolve runtime parameters (Synthea path, population size, age range, state).
@@ -54,15 +54,15 @@ Push-Location $repoRoot
 # -----------------------------------------------------------------------------
 # Chunk 4 - Invoke Synthea module generation script
 # Purpose:
-# Execute the canonical Synthea runner for PAD/SSI synthetic data generation.
+# Execute the canonical Synthea runner for study template data generation.
 # Code path notes:
 # - Pre-flight guard verifies Step 3 module sync output exists in
-#   <SyntheaHome>/src/main/resources/modules/pad_ssi.json.
+#   <SyntheaHome>/src/main/resources/modules/study_template.json.
 # - -RequireModuleOnly $true ensures module artifacts are required and validated.
 # - Any error bubbles up due to $ErrorActionPreference = "Stop".
 # -----------------------------------------------------------------------------
 try {
-  $moduleFileName = "pad_ssi.json"
+  $moduleFileName = "study_template.json"
   $modulesDir = Join-Path $SyntheaHome "src/main/resources/modules"
   $syncedModulePath = Join-Path $modulesDir $moduleFileName
 
@@ -82,7 +82,7 @@ Run Step 3 first to sync the module JSON into your Synthea checkout:
 
   Write-Host "Verified Step 3 module sync: $syncedModulePath" -ForegroundColor Cyan
 
-  & "scripts/synthea/run_synthea_pad_ssi.ps1" `
+  & "scripts/synthea/run_synthea.ps1" `
     -SyntheaHome $SyntheaHome `
     -Population $Population `
     -AgeRange $AgeRange `

@@ -1,77 +1,74 @@
 #!/usr/bin/env Rscript
-# Step 3: Generate disease-specific Synthea module artifacts (diagram and validation checks).
+# Step 3: Validate and regenerate Synthea module artifacts (diagram and readiness checks).
 #
 # PURPOSE
 # -------
-# Validates the Synthea GMF module (synthea/modules/pad_ssi.json) and regenerates the
-# HTML state-diagram viewer. The HTML file is the primary artefact for SME review —
-# open it in any browser to inspect every state, its type, and its clinical codes.
+# Validates the study Synthea GMF module (synthea/modules/study_template.json) and
+# regenerates the HTML state-diagram viewer. The HTML file is the primary artefact
+# for SME review — open it in any browser to inspect every state, its type, and its
+# clinical codes before data generation is finalised.
 #
 # CLINICAL SME REVIEW WORKFLOW
 # -----------------------------
 # The JSON module encodes both the simulation logic and all clinical code assignments.
-# Reviewers should work through the following questions with a vascular surgery /
-# infectious disease SME before data generation is finalised:
+# Reviewers should work through the following questions with a clinical SME before
+# data generation is finalised:
 #
 #   1. STATE FLOW
-#      - Does the pathway order (PAD onset → comorbidities → workup → index surgery →
-#        post-op delay → SSI risk check → SSI management) reflect real clinical practice?
-#      - Are the branching probabilities (claudication 70%, smoking 35%, diabetes 30%,
-#        obesity 40%, SSI high/moderate/baseline 12/10/6%) defensible from the
-#        literature or institutional data?
-#      - Should the urgent-case branch (25%) influence SSI risk probability?
+#      - Does the clinical pathway (eligibility → exposure condition → comorbidities
+#        → treatment strategy → index procedure → observation window → outcome) reflect
+#        real clinical practice for this study?
+#      - Are the branching probabilities for each Covariate_N_Check state (default 30%)
+#        replaced with literature-derived or institutional prevalence estimates?
+#      - Is the Treatment_Strategy oversampling proportion (default 90% exposed) justified
+#        by the study's outcome enrichment requirements? Document the real-world proportion.
+#      - Does the Outcome_Assessment probability (default 20%) reflect the expected
+#        incidence of the outcome in the target population?
 #
 #   2. CONDITION / PROCEDURE CODES
-#      - PAD          : SNOMED 399957001  "Peripheral arterial occlusive disease"
-#      - Claudication : SNOMED 63491006   "Intermittent claudication"
-#      - Diabetes T2  : SNOMED 44054006   "Diabetes mellitus type 2"
-#      - Hypertension : SNOMED 38341003   "Hypertensive disorder, systemic arterial"
-#      - COPD         : SNOMED 13645005   "Chronic obstructive lung disease"
-#      - CHF          : SNOMED 84114007   "Heart failure"
-#      - Impaired mob.: SNOMED 82971005   "Impaired mobility"
-#      - Index proc.  : SNOMED 232723009  "Bypass of femoral artery to popliteal artery"
-#      - SSI          : SNOMED 76844004   "Infection of surgical wound"
-#      - Debridement  : SNOMED 118294005  "Debridement"
-#      Are these the correct OMOP standard concept codes for your institution's CDM?
-#      If additional procedure variants (aortofemoral bypass SNOMED 174814006,
-#      femoral endarterectomy SNOMED 85356008) should be included, add them to
-#      the module and re-run this step.
+#      - Exposure_Condition_Onset  : SNOMED-CT REPLACE_ME  — qualifying condition
+#      - Covariate_1_Onset        : SNOMED-CT REPLACE_ME  — covariate_1 (condition domain)
+#      - Covariate_2_Onset        : SNOMED-CT REPLACE_ME  — covariate_2 (procedure domain)
+#      - Covariate_3_Onset        : SNOMED-CT REPLACE_ME  — covariate_3 (drug domain)
+#      - Covariate_4_Onset        : SNOMED-CT REPLACE_ME  — covariate_4
+#      - Index_Procedure          : SNOMED-CT REPLACE_ME  — index procedure
+#      - Outcome_Onset            : SNOMED-CT REPLACE_ME  — study outcome
+#      - Outcome_Management       : SNOMED-CT REPLACE_ME  — outcome treatment
+#      All REPLACE_ME tokens must be replaced with verified concept codes from a
+#      live [vocab query] before this step passes the readiness check (see Chunk 6).
+#      Run: Rscript scripts/concept_lookup.R "<term>" <Domain>
 #
-#   3. OBSERVATION / MEASUREMENT CODES
-#      - ABI           : LOINC  77194-9   "Ankle-brachial index" (range 0.30–0.85)
-#      - Smoking status: LOINC  72166-2   "Tobacco smoking status"
-#        - Current smoker value : SNOMED 449868002
-#        - Never smoked value   : SNOMED 266919005
-#      - BMI           : LOINC  39156-5   "Body Mass Index"
-#      - Height        : LOINC  8302-2    "Body height"
-#      - Weight        : LOINC  29463-7   "Body weight"
-#      - Wound culture : LOINC  6463-4    "Bacteria identified in Wound by Culture"
-#        - Organism value       : SNOMED 112283007 "Escherichia coli"
-#      - Urgency flag  : SNOMED 73994005  "Emergency operation"
-#      Confirm value ranges and vocabulary mappings are consistent with your CDM.
+#   3. ENCOUNTER CODES
+#      - Index_Diagnosis_Encounter : SNOMED-CT REPLACE_ME  — outpatient evaluation
+#      - Index_Admission_Encounter : SNOMED-CT REPLACE_ME  — inpatient admission
+#      - Outcome_Encounter         : SNOMED-CT REPLACE_ME  — outcome encounter
+#      Confirm encounter codes map to the visit_concept_ids used in target_surgery.sql
+#      and study_params.yaml > target > visit_concept_ids.
 #
-#   4. MEDICATION CODES
-#      - Prophylactic cefazolin : RxNorm 20496  "cefazolin"
-#      - SSI treatment cephalexin: RxNorm 2673  "cephalexin"
-#        (pre-index non-prophylaxis antibiotic uses the same RxNorm code)
-#      Confirm these map to your institution's drug concepts.
+#   4. COVARIATE ALIGNMENT
+#      - Confirm each Covariate_N_Onset concept code matches concept_id in
+#        covariates/covariate_concepts.csv for the corresponding covariate_N row.
+#      - Confirm Covariate_2_Onset type is 'Procedure' if domain = 'procedure'.
+#      - Confirm Covariate_3_Onset type is 'MedicationOrder' if domain = 'drug'.
+#      - Confirm covariate_4 has a row in covariates/covariates.csv.
 #
 #   5. TIMING PARAMETERS
-#      - Pre-surgical workup delay and prior-revasc recovery are currently 0 days
-#        (same-encounter modelling). Adjust range in the JSON if your CDM requires
-#        distinct encounter dates for workup vs. index surgery.
-#      - SSI onset window: 5–25 days post-discharge (8–32 days post-surgery).
-#        Verify this is compatible with the 30-day outcome window in the cohort definition.
+#      - Pre_Index_Workup_Delay: does the range match the typical time from
+#        diagnosis to procedure in your study population?
+#      - Post_Discharge_Observation_Delay: does the range align with
+#        prediction_window_days in study_params.yaml?
+#      - Post_Index_Inpatient_Delay: is the inpatient stay duration realistic?
 #
 # HOW TO REVISE
 # -------------
-#   1. Edit synthea/modules/pad_ssi.json directly (state types, codes, probabilities,
+#   1. Edit synthea/modules/study_template.json (state types, codes, probabilities,
 #      timing ranges) based on SME feedback.
 #   2. Re-run this step to regenerate the diagram:
 #        Rscript workflow/03_generate_synthea_module_artifacts.R
-#   3. Open synthea/modules/pad_ssi.diagram.html in a browser to review the updated flow.
+#   3. Open synthea/modules/study_template.diagram.html in a browser to review.
 #   4. Repeat until the SME signs off on the module.
-#   5. Proceed to Step 4 (generate Synthea CSV) only after sign-off.
+#   5. Proceed to Step 4 (generate Synthea CSV) only after sign-off and after the
+#      REPLACE_ME readiness check below reports 0 remaining placeholders.
 
 # -----------------------------------------------------------------------------
 # Chunk 1 - Workflow bootstrap
@@ -119,7 +116,7 @@ if (!requireNamespace("jsonlite", quietly = TRUE)) {
 # - Empty / malformed states collection: stop (cannot run coverage checks).
 # - Valid structure: proceed to concept coverage evaluation.
 # -----------------------------------------------------------------------------
-module_path <- "synthea/modules/pad_ssi.json"
+module_path <- "synthea/modules/study_template.json"
 if (!file.exists(module_path)) {
   stop("Missing module file: ", module_path)
 }
@@ -198,127 +195,55 @@ if (!identical(src_size, dst_size)) {
 cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
 
 # ---------------------------------------------------------------------------
-# COHORT / COVARIATE COVERAGE CHECK
+# REPLACE_ME READINESS CHECK
 # ---------------------------------------------------------------------------
-# Verify that every concept required by the cohort definitions and risk-score
-# covariate spec is represented by at least one state in the module JSON.
-# Failures are printed as warnings so the script still completes (allowing the
-# HTML to be generated for SME review), but a summary count of missing concepts
-# is reported so nothing is silently skipped.
+# Scan all concept codes in the module JSON for remaining REPLACE_ME placeholder
+# tokens. Every REPLACE_ME must be replaced with a verified concept code from a
+# live [vocab query] before synthetic data generation (Step 4) is run.
 #
-# Required concepts come from three sources:
-#   1. cohorts/target_surgery.sql  — index procedure (SNOMED 232723009)
-#   2. cohorts/outcome_ssi.sql     — SSI condition  (SNOMED 76844004)
-#   3. risk_score/covariate_concepts.csv — score covariates mapped back to
-#      the source vocabularies used in pad_ssi.json (SNOMED-CT / LOINC / RxNorm)
-#      Note: covariate_concepts.csv stores OMOP standard concept_ids; the table
-#      below translates each back to the source code actually written in the JSON.
+# Failures are printed as warnings so the script still completes (allowing the
+# HTML to be generated for SME review), but a count of remaining placeholders is
+# reported so nothing is silently skipped.
 
 # -----------------------------------------------------------------------------
-# Chunk 4 - Required concept manifest
+# Chunk 4 - Helper: collect all coded entries from Synthea states
 # Purpose:
-# Define the expected concept coverage list for target cohort, outcome cohort,
-# and risk-score covariates. Each row is a required concept-system-code triple.
-# Code path notes:
-# - This table is the contract checked against module JSON contents.
-# - Update this manifest when phenotype definitions change.
-# -----------------------------------------------------------------------------
-required_concepts <- data.frame(
-  stringsAsFactors = FALSE,
-  description = c(
-    # --- Target cohort ---
-    "Index procedure: femoro-popliteal bypass",
-    "Index procedure: femoral endarterectomy",
-    "Index procedure: aortobifemoral bypass",
-    "Index procedure: femoro-tibial bypass",
-    "Index procedure: extra-anatomic bypass",
-    # --- Outcome cohort (three NHSN SSI sub-types) ---
-    "Outcome: SSI superficial incisional",
-    "Outcome: SSI deep incisional",
-    "Outcome: SSI organ-space",
-    # --- Covariates: BMI / anthropometrics ---
-    "BMI observation (obese / overweight covariate)",
-    "Height observation (BMI calculation)",
-    "Weight observation (BMI calculation)",
-    # --- Covariates: urgency ---
-    "Urgent/emergency case flag",
-    # --- Covariates: ABI ---
-    "Ankle-brachial index measurement",
-    # --- Covariates: prior revascularization ---
-    "Prior revascularization procedure",
-    # --- Covariates: prolonged antibiotic exposure ---
-    "Pre-index antibiotic (prolonged exposure covariate)",
-    # --- Covariates: mFI components ---
-    "mFI: diabetes mellitus type 2",
-    "mFI: COPD",
-    "mFI: CHF / heart failure",
-    "mFI: hypertension",
-    "mFI: functional impairment / impaired mobility",
-    "mFI: Barthel transferring observation",
-    "mFI: Barthel ambulation observation",
-    # --- Covariates: claudication indication ---
-    "Indication: intermittent claudication",
-    # --- Covariates: smoking (risk factor) ---
-    "Tobacco smoking status observation"
-  ),
-  system = c(
-    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
-    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
-    "LOINC", "LOINC", "LOINC",
-    "SNOMED-CT",
-    "LOINC",
-    "SNOMED-CT",
-    "RxNorm",
-    "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT", "SNOMED-CT",
-    "LOINC", "LOINC",
-    "SNOMED-CT",
-    "LOINC"
-  ),
-  code = c(
-    "112828007", "16589005", "405482000", "47575002", "73985009",
-    "609339001", "609340004", "609341000",
-    "39156-5", "8302-2", "29463-7",
-    "73994005",
-    "77194-9",
-    "112828007", "2673",
-    "44054006", "13645005", "84114007", "38341003", "82971005",
-    "83185-9", "83186-7",
-    "63491006",
-    "72166-2"
-  )
-)
-
-# -----------------------------------------------------------------------------
-# Chunk 5 - Helper: collect all coded entries from Synthea states
-# Purpose:
-# Traverse every state and gather all (system, code) pairs from both:
-# - state-level codes[]
+# Traverse every state and gather all (system, code, display) triples from:
+# - state-level codes[] arrays
 # - Observation value_code payloads
 # Code path notes:
-# - Duplicates are collapsed with unique() before matching checks.
-# - Missing code fields are skipped safely.
+# - Duplicates are collapsed with unique() before placeholder checks.
+# - Missing code or system fields are skipped safely.
 # -----------------------------------------------------------------------------
-# Collect every (system, code) pair that appears anywhere in the module states,
-# including value_code fields on Observation states.
 collect_module_codes <- function(states) {
-  found <- data.frame(system = character(), code = character(),
+  found <- data.frame(state = character(), system = character(),
+                      code = character(), display = character(),
                       stringsAsFactors = FALSE)
-  for (st in states) {
+  for (state_name in names(states)) {
+    st <- states[[state_name]]
     if (!is.null(st$codes)) {
       for (cd in st$codes) {
         if (!is.null(cd$system) && !is.null(cd$code)) {
-          found <- rbind(found, data.frame(system = cd$system,
-                                           code   = as.character(cd$code),
-                                           stringsAsFactors = FALSE))
+          found <- rbind(found, data.frame(
+            state   = state_name,
+            system  = cd$system,
+            code    = as.character(cd$code),
+            display = if (!is.null(cd$display)) cd$display else "",
+            stringsAsFactors = FALSE
+          ))
         }
       }
     }
     if (!is.null(st$value_code)) {
       vc <- st$value_code
       if (!is.null(vc$system) && !is.null(vc$code)) {
-        found <- rbind(found, data.frame(system = vc$system,
-                                         code   = as.character(vc$code),
-                                         stringsAsFactors = FALSE))
+        found <- rbind(found, data.frame(
+          state   = state_name,
+          system  = vc$system,
+          code    = as.character(vc$code),
+          display = if (!is.null(vc$display)) vc$display else "",
+          stringsAsFactors = FALSE
+        ))
       }
     }
   }
@@ -328,50 +253,48 @@ collect_module_codes <- function(states) {
 module_codes <- collect_module_codes(module$states)
 
 # -----------------------------------------------------------------------------
-# Chunk 6 - Coverage evaluation and warning path
+# Chunk 5 - REPLACE_ME placeholder scan
 # Purpose:
-# Compare required concept manifest to collected module concepts and emit
-# warnings for any missing entries.
+# Identify any concept codes still set to the REPLACE_ME sentinel value.
+# Each hit is a state whose clinical concept has not yet been verified against
+# the live omop_vocab schema. See CLAUDE.md Rule 1 for the vocabulary workflow.
 # Code path notes:
-# - Match found: continue silently for that concept.
-# - Match missing: emit warning and increment missing count.
-# - Warnings are non-fatal so the HTML diagram still gets generated for review.
+# - REPLACE_ME in code field: primary placeholder indicator.
+# - Warnings are non-fatal so HTML diagram still generates for SME review.
 # -----------------------------------------------------------------------------
-n_missing <- 0L
-for (i in seq_len(nrow(required_concepts))) {
-  req_sys  <- required_concepts$system[i]
-  req_code <- required_concepts$code[i]
-  req_desc <- required_concepts$description[i]
+placeholder_rows <- module_codes[module_codes$code == "REPLACE_ME", ]
+n_placeholders <- nrow(placeholder_rows)
 
-  hit <- any(module_codes$system == req_sys & module_codes$code == req_code)
-  if (!hit) {
+if (n_placeholders > 0L) {
+  for (i in seq_len(n_placeholders)) {
     warning(sprintf(
-      "[coverage] MISSING: %s  (%s %s)",
-      req_desc, req_sys, req_code
+      "[REPLACE_ME] State '%s': code is still REPLACE_ME. Display: '%s'.\n  Resolve with: Rscript scripts/concept_lookup.R \"<term>\" <Domain>",
+      placeholder_rows$state[i],
+      placeholder_rows$display[i]
     ), call. = FALSE)
-    n_missing <- n_missing + 1L
   }
 }
 
 # -----------------------------------------------------------------------------
-# Chunk 7 - Coverage summary branch
+# Chunk 6 - Readiness summary
 # Purpose:
-# Provide a concise pass/fail summary after all concept checks complete.
+# Provide a concise pass/fail summary after placeholder scan completes.
 # Code path notes:
-# - n_missing == 0: print PASS summary.
-# - n_missing > 0: print NOT FOUND summary and remediation hint.
+# - n_placeholders == 0: all concepts resolved; safe to proceed to Step 4.
+# - n_placeholders > 0: remaining placeholders must be resolved first.
 # -----------------------------------------------------------------------------
-if (n_missing == 0L) {
+if (n_placeholders == 0L) {
   cat(sprintf(
-    "Coverage check PASSED: all %d required concepts found in module JSON.\n",
-    nrow(required_concepts)
+    "Readiness check PASSED: no REPLACE_ME placeholders found in %d coded states.\n",
+    nrow(module_codes)
   ))
 } else {
   cat(sprintf(
-    "Coverage check: %d of %d required concept(s) NOT FOUND in module JSON.\n",
-    n_missing, nrow(required_concepts)
+    "Readiness check: %d REPLACE_ME placeholder(s) remain in module JSON.\n",
+    n_placeholders
   ))
-  cat("Review the warnings above and update synthea/modules/pad_ssi.json accordingly.\n")
+  cat("Resolve all placeholders before running Step 4 (Synthea data generation).\n")
+  cat("See synthea/README.md Customisation checklist and CLAUDE.md Rule 1.\n")
 }
 
 # -----------------------------------------------------------------------------
@@ -383,7 +306,7 @@ if (n_missing == 0L) {
 # - status != 0: hard stop because downstream SME review artifact is missing.
 # -----------------------------------------------------------------------------
 # Regenerate the HTML diagram viewer from the module JSON.
-args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, "synthea/modules/pad_ssi.diagram.html")
+args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, "synthea/modules/study_template.diagram.html")
 rscript_bin <- if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript"
 status <- system2(file.path(R.home("bin"), rscript_bin), args = args)
 if (!identical(status, 0L)) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Step 4 (Linux/macOS): Generate Synthea CSV data for the PAD/SSI workflow.
+# Step 4 (Linux/macOS): Generate Synthea CSV data for the study template workflow.
 # Replaces 04_generate_synthea_csv.ps1 for non-Windows environments.
 #
 # Usage:
@@ -8,26 +8,29 @@
 #
 # Defaults:
 #   population = 1000
-#   age_range  = 60-100
+#   age_range  = 18-100
 #   state      = "North Carolina"
+#
+# RESEARCHER_ADJUSTS: Set age_range to match your study's eligible age range
+# (e.g., 60-100 for older surgical cohorts, 18-65 for working-age studies).
 # =============================================================================
 
 set -euo pipefail
 
 POPULATION=${1:-1000}
-AGE_RANGE=${2:-60-100}
+AGE_RANGE=${2:-18-100}
 STATE=${3:-"North Carolina"}
 
 # Resolve repo root relative to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SYNTHEA_HOME="${SYNTHEA_HOME:-$REPO_ROOT/external/synthea}"
-MODULE_NAME="pad_ssi"
+MODULE_NAME="study_template"
 MODULE_FILE="$REPO_ROOT/synthea/modules/${MODULE_NAME}.json"
 MODULES_DIR="$SYNTHEA_HOME/src/main/resources/modules"
 SYNCED_MODULE="$MODULES_DIR/${MODULE_NAME}.json"
 
-echo "=== Step 4: Generate Synthea CSV ==="
+echo "=== Step 4: Generate Synthea CSV (module: $MODULE_NAME) ==="
 echo "  Synthea home : $SYNTHEA_HOME"
 echo "  Population   : $POPULATION"
 echo "  Age range    : $AGE_RANGE"
