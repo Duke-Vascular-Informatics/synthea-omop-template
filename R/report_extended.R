@@ -1278,7 +1278,8 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
                                        score_output_dir   = "output/risk_score_eval",
                                        cleanup_old_outputs = FALSE,
                                        connection_details = NULL,
-                                       config             = NULL) {
+                                       config             = NULL,
+                                       citations          = NULL) {
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
   temp_figure_dir <- tempfile("report_figures_")
@@ -3720,7 +3721,50 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     })
   }
 
+  doc <- .append_references_section(doc, citations)
+
   print(doc, target = report_file)
   message("Manuscript report written to: ", normalizePath(report_file))
   invisible(report_file)
+}
+
+# =============================================================================
+# .append_references_section()
+#
+# Appends a numbered Vancouver/NLM reference list to an officer Word document.
+#
+# Arguments:
+#   doc       — an officer rdocx object (modified in place via return value)
+#   citations — named list of citation objects, or NULL (no-op).
+#               Each element must have: authors, title, journal, year,
+#               volume, issue, pages, doi.
+#               Names are used only for human readability; order determines
+#               the citation numbers printed in the document.
+#
+# Returns: the updated rdocx object.
+# =============================================================================
+.append_references_section <- function(doc, citations) {
+  if (is.null(citations) || length(citations) == 0L) return(doc)
+
+  doc <- body_add_par(doc, "", style = "Normal")
+  doc <- body_add_par(doc, "References", style = "heading 1")
+
+  for (i in seq_along(citations)) {
+    ref  <- citations[[i]]
+    # Vancouver format: Authors. Title. Journal. Year;Vol(Issue):Pages. doi:DOI
+    line <- sprintf(
+      "%d. %s. %s. %s. %s;%s(%s):%s. doi:%s",
+      i,
+      ref$authors,
+      ref$title,
+      ref$journal,
+      ref$year,
+      ref$volume,
+      ref$issue,
+      ref$pages,
+      ref$doi
+    )
+    doc <- body_add_par(doc, line, style = "Normal")
+  }
+  doc
 }
