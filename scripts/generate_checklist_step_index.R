@@ -3,7 +3,7 @@
 # scripts/generate_checklist_step_index.R
 #
 # Generates the Canonical Step Index block in CHECKLIST.md from
-# docs/workflow_steps.yaml.
+# ../docs/workflow_steps.yaml (workspace mode) or docs/workflow_steps.yaml (standalone mode).
 #
 # Usage:
 #   Rscript scripts/generate_checklist_step_index.R
@@ -60,9 +60,10 @@ build_block <- function(steps) {
     lines <- c(
       lines,
       sprintf(
-        "- Step %d: [%s](docs/GETTING_STARTED.md#%s)",
+        "- Step %d: [%s](%s/GETTING_STARTED.md#%s)",
         steps$step[i],
         steps$title[i],
+        docs_link_prefix,
         steps$anchor[i]
       )
     )
@@ -85,7 +86,10 @@ replace_block <- function(content, block) {
   c(pre, block, post)
 }
 
-step_map_path <- "docs/workflow_steps.yaml"
+docs_path <- if (file.exists("../docs/workflow_steps.yaml")) "../docs" else "docs"
+docs_link_prefix <- if (docs_path == "../docs") "../docs" else "docs"
+
+step_map_path <- file.path(docs_path, "workflow_steps.yaml")
 checklist_path <- "CHECKLIST.md"
 
 steps <- parse_step_map(step_map_path)
@@ -109,4 +113,4 @@ if (check_only) {
 }
 
 writeLines(updated, checklist_path)
-message("Updated CHECKLIST step index from docs/workflow_steps.yaml")
+message("Updated CHECKLIST step index from ", step_map_path)

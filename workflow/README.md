@@ -34,6 +34,10 @@ Steps 1, 3–6, and 9 are infrastructure and do not normally need changes.
 Use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) for complete execution commands,
 skip logic, and platform-specific instructions.
 
+Run `workflow/01_setup_synthea_etl_qc_env.R` first after opening this study repo in the
+dev container. Treat Step 1 as per-repo bootstrap (packages + DB preflight), not as shared
+workspace infrastructure setup.
+
 Minimal direct invocation example:
 
 ```bash

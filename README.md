@@ -21,29 +21,26 @@ To avoid duplicated or conflicting instructions, this README is intentionally hi
 
 - Owns: repository orientation, architecture map, and links to canonical docs.
 - Does not own: step-by-step execution details or command snippets that may drift.
-- Canonical procedural source: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
-- Canonical commands source: [docs/COMMANDS.md](docs/COMMANDS.md).
+- Canonical procedural source: [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
+- Canonical commands source: [../docs/COMMANDS.md](../docs/COMMANDS.md).
 
-- Use [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) as the **single source of truth** for end-to-end setup and execution.
-- Use [docs/SETUP.md](docs/SETUP.md) for Docker, SQL Server, Athena vocabulary, and troubleshooting details.
+- Use [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) as the **single source of truth** for end-to-end setup and execution.
+- Use the root `omop-dev-workspace` README for shared Docker, SQL Server, dev container, and vocabulary setup.
 
 ## Quick Start (Condensed)
 
-> **Using `omop-dev-workspace`?**  
-> If you are working inside the [omop-dev-workspace](https://github.com/adam-mdmph/omop-dev-workspace),
-> the SQL Server container, OMOP vocabulary, and dev container are already provided by the workspace.
-> Skip steps 2–3 below. Clone this repo directly into the workspace folder and open the workspace
-> in VS Code Dev Containers — the shared infrastructure connects automatically.
-
 1. Create a repo from this template and name it using:
   `<disease_cohort_abbrev>_<treatment_abbrev>_<outcome_abbrev>_<methodology_abbrev>`
-2. Clone into `OMOP_Dev/<your-study>/` (standalone) **or** into the `omop-dev-workspace/` folder.
-3. If shared machine resources are missing (standalone only), run `setup/setup_docker_and_vocab.sh` (or `.ps1` on Windows).
-4. Reopen in the dev container.
+2. Clone the new study repo into your local `omop-dev-workspace/` as a subfolder.
+3. Open the workspace in VS Code Dev Containers (from the workspace root).
+4. From inside the study repo container, run the required bootstrap step:
+   `Rscript workflow/01_setup_synthea_etl_qc_env.R`
 5. Fill in `study_params.yaml`, `cohorts/*.sql`, and `covariates/*.csv`.
-6. Validate and run using canonical commands in [docs/COMMANDS.md](docs/COMMANDS.md).
+6. Validate and run using canonical commands in [../docs/COMMANDS.md](../docs/COMMANDS.md).
 
-For full step-by-step commands and skip logic, follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+For full step-by-step commands and skip logic, follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
+For workspace-level setup (Docker, SQL Server, OMOP vocabulary, and dev container),
+use the root workspace README in `omop-dev-workspace/`.
 
 ---
 
@@ -59,14 +56,22 @@ For full step-by-step commands and skip logic, follow [docs/GETTING_STARTED.md](
 
 ---
 
-## Dev Container Setup
+## Dev Container Scope
 
-The repo ships a `.devcontainer/` folder that provides Linux + R + Java 17 in Docker via VS Code.
-Full host-side setup details are maintained in [docs/SETUP.md](docs/SETUP.md).
+This template ships a `.devcontainer/` for compatibility, but in the standard workflow it runs
+inside the shared `omop-dev-workspace` infrastructure. Keep machine-level setup instructions in
+the workspace README and keep this README focused on template usage.
+
+Workspace-first note: use the single shared container definition at
+`../.devcontainer/devcontainer.json` by opening `omop-dev-workspace/` in VS Code.
 
 ---
 
 ## Workflow Reference
+
+Run Step 1 once immediately after opening this study repo in the dev container. This is
+the per-repo bootstrap checkpoint (renv/packages, JDBC checks, and DB preflight), distinct
+from one-time workspace infrastructure setup.
 
 | Step | Script | Purpose |
 |------|--------|---------|
@@ -167,16 +172,16 @@ code or CSV files.
 
 | Resource | Purpose | Audience |
 |----------|---------|----------|
-| **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
-| **[docs/COMMANDS.md](docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
+| **[../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to analysis and packaging | New users, first time setup |
+| **[../docs/COMMANDS.md](../docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
 | **[docs/CITATION_TEMPLATE_METHODS.md](docs/CITATION_TEMPLATE_METHODS.md)** | Template-repo citation language and contributor list for methods sections | Manuscript authors |
 | **[docs/CITATION_ANALYSIS_EXAMPLE.md](docs/CITATION_ANALYSIS_EXAMPLE.md)** | Copy-ready study-level citation example for analysis-specific code repositories | Study teams |
-| **[docs/ANALYST_PLAYBOOK.md](docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
-| **[docs/MAINTAINER_PLAYBOOK.md](docs/MAINTAINER_PLAYBOOK.md)** | Governance and release-freeze checks for documentation consistency | Maintainers |
-| **[docs/SETUP.md](docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
+| **[../docs/ANALYST_PLAYBOOK.md](../docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
+| **[../docs/MAINTAINER_PLAYBOOK.md](../docs/MAINTAINER_PLAYBOOK.md)** | Governance and release-freeze checks for documentation consistency | Maintainers |
+| **[../docs/SETUP.md](../docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
 | **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |
-| **[docs/CHANGELOG.md](docs/CHANGELOG.md)** | Categorized docs-governance change history for high-signal review | Maintainers, reviewers |
+| **[../docs/CHANGELOG.md](../docs/CHANGELOG.md)** | Categorized docs-governance change history for high-signal review | Maintainers, reviewers |
 | **[setup/setup_docker_and_vocab.sh](setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux) | Automation-first users |
 | **[setup/setup_docker_and_vocab.ps1](setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell) | Windows users |
 | **[Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)** | OHDSI methodology reference (cohorts, phenotypes, causal inference) | OHDSI methods questions |

@@ -25,9 +25,12 @@ if (length(file_arg) > 0) {
 setwd(proj_root)
 
 strict_mode <- tolower(Sys.getenv("DOCS_STRICT", unset = "0")) %in% c("1", "true", "yes")
+docs_path <- if (dir.exists("../docs")) "../docs" else "docs"
+docs_link_prefix <- if (docs_path == "../docs") "../docs" else "docs"
+docs_readme_path <- file.path(docs_path, "README.md")
 
 collect_docs <- function() {
-	docs <- c(
+		docs <- c(
 		"README.md",
 		"CHECKLIST.md",
 		".github/pull_request_template.md",
@@ -39,7 +42,7 @@ collect_docs <- function() {
 		"drivers/README.md",
 		"tests/README.md",
 		"dist/README.md",
-		list.files("docs", pattern = "\\.md$", full.names = TRUE),
+			list.files(docs_path, pattern = "\\.md$", full.names = TRUE),
 		list.files("scripts", pattern = "README\\.md$", full.names = TRUE, recursive = TRUE)
 	)
 	unique(docs[file.exists(docs)])
@@ -85,9 +88,10 @@ build_step_index_block <- function(steps) {
 		block <- c(
 			block,
 			sprintf(
-				"- Step %d: [%s](docs/GETTING_STARTED.md#%s)",
+				"- Step %d: [%s](%s/GETTING_STARTED.md#%s)",
 				steps$step[i],
 				steps$title[i],
+				docs_link_prefix,
 				steps$anchor[i]
 			)
 		)
@@ -234,11 +238,11 @@ known_bad_patterns <- list(
 )
 
 required_refs <- list(
-	list(path = "README.md", pattern = "docs/COMMANDS\\.md", message = "Link to docs/COMMANDS.md as canonical command index."),
-	list(path = "CHECKLIST.md", pattern = "docs/COMMANDS\\.md", message = "Link to docs/COMMANDS.md instead of duplicating command tables."),
-	list(path = "docs/README.md", pattern = "COMMANDS\\.md", message = "Include docs/COMMANDS.md in docs index."),
-	list(path = "docs/README.md", pattern = "MAINTAINER_PLAYBOOK\\.md", message = "Include docs/MAINTAINER_PLAYBOOK.md in docs index."),
-	list(path = "docs/README.md", pattern = "TOPIC_OWNERSHIP\\.csv", message = "Include docs/TOPIC_OWNERSHIP.csv in docs index.")
+		list(path = "README.md", pattern = paste0(escape_regex(docs_link_prefix), "/COMMANDS\\.md"), message = "Link to canonical COMMANDS.md index."),
+		list(path = "CHECKLIST.md", pattern = paste0(escape_regex(docs_link_prefix), "/COMMANDS\\.md"), message = "Link to canonical COMMANDS.md instead of duplicating command tables."),
+		list(path = docs_readme_path, pattern = "COMMANDS\\.md", message = "Include COMMANDS.md in docs index."),
+		list(path = docs_readme_path, pattern = "MAINTAINER_PLAYBOOK\\.md", message = "Include MAINTAINER_PLAYBOOK.md in docs index."),
+		list(path = docs_readme_path, pattern = "TOPIC_OWNERSHIP\\.csv", message = "Include TOPIC_OWNERSHIP.csv in docs index.")
 )
 
 path_pattern <- "(workflow/[A-Za-z0-9_./-]+\\.(R|sh|ps1)|scripts/[A-Za-z0-9_./-]+\\.R)"
@@ -347,7 +351,7 @@ for (req in required_refs) {
 	}
 }
 
-top_docs <- intersect(c("README.md", "docs/README.md", "CHECKLIST.md"), names(heading_map))
+top_docs <- intersect(c("README.md", docs_readme_path, "CHECKLIST.md"), names(heading_map))
 if (length(top_docs) > 1) {
 	all_top <- do.call(rbind, lapply(top_docs, function(path) {
 		data.frame(path = path, heading = heading_map[[path]]$heading, line = heading_map[[path]]$line, stringsAsFactors = FALSE)
@@ -367,7 +371,7 @@ if (length(top_docs) > 1) {
 	}
 }
 
-step_map_path <- "docs/workflow_steps.yaml"
+step_map_path <- file.path(docs_path, "workflow_steps.yaml")
 steps <- parse_step_map(step_map_path)
 
 if (nrow(steps) == 0) {
@@ -379,7 +383,7 @@ if (nrow(steps) == 0) {
 		issues <- add_entry(issues, step_map_path, 1, "Step numbers must be sequential starting at 1.")
 	}
 
-	gs_path <- "docs/GETTING_STARTED.md"
+	gs_path <- file.path(docs_path, "GETTING_STARTED.md")
 	if (file.exists(gs_path)) {
 		gs_lines <- readLines(gs_path, warn = FALSE)
 		gs_idx <- grep("^## Step [0-9]+:", gs_lines)
@@ -432,27 +436,31 @@ if (nrow(steps) == 0) {
 	}
 }
 
-if (file.exists("docs/TOPIC_OWNERSHIP.csv")) {
+ownership_path <- file.path(docs_path, "TOPIC_OWNERSHIP.csv")
+if (file.exists(ownership_path)) {
 	ownership <- tryCatch(
-		read.csv("docs/TOPIC_OWNERSHIP.csv", stringsAsFactors = FALSE),
+		read.csv(ownership_path, stringsAsFactors = FALSE),
 		error = function(e) NULL
 	)
 
 	if (is.null(ownership) || nrow(ownership) == 0) {
-		issues <- add_entry(issues, "docs/TOPIC_OWNERSHIP.csv", 1, "Topic ownership matrix is unreadable or empty.")
+		issues <- add_entry(issues, ownership_path, 1, "Topic ownership matrix is unreadable or empty.")
 	} else {
 		required_cols <- c("topic", "owner_file", "heading_regex", "severity")
 		if (!all(required_cols %in% names(ownership))) {
-			issues <- add_entry(issues, "docs/TOPIC_OWNERSHIP.csv", 1, "Topic ownership matrix is missing required columns.")
+			issues <- add_entry(issues, ownership_path, 1, "Topic ownership matrix is missing required columns.")
 		} else {
 			md_files <- doc_files
 			for (i in seq_len(nrow(ownership))) {
 				owner <- ownership$owner_file[i]
+				if (!file.exists(owner) && docs_path == "../docs" && startsWith(owner, "docs/")) {
+					owner <- sub("^docs/", "../docs/", owner)
+				}
 				regex <- ownership$heading_regex[i]
 				severity <- tolower(ownership$severity[i])
 
 				if (!file.exists(owner)) {
-					issues <- add_entry(issues, "docs/TOPIC_OWNERSHIP.csv", i + 1, paste0("Owner file does not exist: ", owner))
+					issues <- add_entry(issues, ownership_path, i + 1, paste0("Owner file does not exist: ", owner))
 					next
 				}
 
