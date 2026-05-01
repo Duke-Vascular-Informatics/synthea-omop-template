@@ -1,12 +1,11 @@
 # =============================================================================
 # install_packages.R
-# Install PatientLevelPrediction and all OHDSI / CRAN dependencies needed for
-# the SSI external-validation pipeline.  Also provisions the Microsoft JDBC
-# driver bundle into the project-local drivers/ folder so this project is
-# fully self-contained and does not require any companion projects.
+# Install all OHDSI HADES packages and CRAN dependencies required by this
+# study template.  Also provisions the Microsoft JDBC driver bundle into the
+# project-local drivers/ folder so the project is fully self-contained.
 #
-# Run ONCE in a fresh R session BEFORE running run_validation.R.
-# Usage: source("setup/install_packages.R")
+# Run ONCE in a fresh R session BEFORE running workflow/07_setup_analysis_env.R.
+# Usage: Rscript setup/install_packages.R
 # =============================================================================
 
 # --- Java configuration (must be set before rJava / DatabaseConnector load) ---
@@ -64,22 +63,34 @@ cran_packages <- c(
   "ParallelLogger",      # Logging framework used across OHDSI tools
   "CirceR",              # Cohort expression evaluation
   "FeatureExtraction",   # Feature engineering package used by PLP
-  "CohortGenerator",     # Cohort generation helpers
-  "PatientLevelPrediction", # External validation framework
+  "CohortGenerator",          # Cohort generation helpers
+  "PatientLevelPrediction",   # Supervised learning pipeline (PLP)
+  "CohortMethod",             # Active comparator new-user / PS matching design
+  "EvidenceSynthesis",        # Meta-analysis across databases / sites
+  "EmpiricalCalibration",     # P-value and CI calibration using negative controls
+  "SelfControlledCaseSeries", # SCCS design
   # ML backend packages (used by various PLP model types)
   "glmnet",              # Regularised regression (LASSO / Ridge / EN)
   "xgboost",             # Gradient boosted trees
   "randomForest",        # Random forest (optional)
-  "pROC",                # AUC / ROC metrics
-  "ggplot2",             # Plotting
-  "dplyr",               # Data manipulation
+  # Discrimination and calibration metrics
+  "pROC",                # AUROC with confidence intervals
+  "PRROC",               # Area under precision-recall curve (AUPRC)
+  # Tidyverse data wrangling
+  "ggplot2",             # Plots: calibration, ROC, feature importance
+  "dplyr",               # filter, mutate, join, summarise
   "tibble",
-  "tidyr",
-  "readr",
+  "tidyr",               # pivot_longer, pivot_wider, unnest
+  "readr",               # Fast CSV reading / writing
+  # Reporting and output
+  "officer",             # Word (.docx) report generation
+  "flextable",           # Formatted tables for Word / HTML output
+  "openxlsx",            # Excel (.xlsx) output
+  "knitr",               # R Markdown report rendering
   # Dev / housekeeping
   "remotes",
   "languageserver",
-  "devtools"       # IDE language server support
+  "devtools"
 )
 
 installed <- rownames(installed.packages())
@@ -96,7 +107,8 @@ for (pkg in cran_packages) {
 github_packages <- list(
   list(package = "ETLSyntheaBuilder",      repo = "OHDSI/ETL-Synthea",            ref = "v2.1.0"),
   list(package = "Achilles",               repo = "OHDSI/Achilles",               ref = "main"),
-  list(package = "DataQualityDashboard",   repo = "OHDSI/DataQualityDashboard",   ref = "main")
+  list(package = "DataQualityDashboard",   repo = "OHDSI/DataQualityDashboard",   ref = "main"),
+  list(package = "CohortDiagnostics",      repo = "OHDSI/CohortDiagnostics",      ref = "main")
 )
 
 available_cran <- tryCatch(rownames(available.packages()), error = function(e) character(0))
@@ -128,4 +140,4 @@ ensure_jdbc_bundle(get_validation_config())
 message("JDBC driver provisioned.")
 
 message("\nAll packages installed and JDBC driver ready.")
-message("Next step: source('run_validation.R') to run the pipeline.")
+message("Next step: Rscript workflow/07_setup_analysis_env.R to verify the environment.")
