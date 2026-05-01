@@ -233,7 +233,7 @@ known_bad_patterns <- list(
 	),
 	list(
 		pattern = "setup/setup_omop_vocab_schema\\.R",
-		message = "Use scripts/setup_omop_vocab_schema.R."
+		message = "Use ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir ."
 	)
 )
 

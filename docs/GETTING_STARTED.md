@@ -233,10 +233,12 @@ OMOP_Dev/
   .env
   docker-compose.yml
   omop_vocab/
-  <your-study>/          ← your repo is here
-    .devcontainer/
+  infrastructure/
     setup/
       setup_docker_and_vocab.sh
+      setup_docker_and_vocab.ps1
+  <your-study>/          ← your repo is here
+    .devcontainer/
     config.R
     study_params.yaml
     ...
@@ -338,10 +340,10 @@ The cloned repository includes a setup script that automates Docker configuratio
 cd ..  # Go to OMOP_Dev/
 
 # macOS / Linux
-bash <your-study>/setup/setup_docker_and_vocab.sh
+bash infrastructure/setup/setup_docker_and_vocab.sh
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File <your-study>\setup\setup_docker_and_vocab.ps1
+powershell -ExecutionPolicy Bypass -File infrastructure\setup\setup_docker_and_vocab.ps1
 ```
 
 This script:
@@ -534,7 +536,7 @@ Do this only if Step 9 showed the vocabulary is not already loaded.
 
 ```bash
 # Run from the study root (inside the container)
-Rscript scripts/setup_omop_vocab_schema.R
+Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
 ```
 
 This script:

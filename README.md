@@ -182,8 +182,8 @@ code or CSV files.
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
 | **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |
 | **[../docs/CHANGELOG.md](../docs/CHANGELOG.md)** | Categorized docs-governance change history for high-signal review | Maintainers, reviewers |
-| **[setup/setup_docker_and_vocab.sh](setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux) | Automation-first users |
-| **[setup/setup_docker_and_vocab.ps1](setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell) | Windows users |
+| **[../infrastructure/setup/setup_docker_and_vocab.sh](../infrastructure/setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux, workspace-level) | Automation-first users |
+| **[../infrastructure/setup/setup_docker_and_vocab.ps1](../infrastructure/setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell, workspace-level) | Windows users |
 | **[Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)** | OHDSI methodology reference (cohorts, phenotypes, causal inference) | OHDSI methods questions |
 | **[OHDSI Forums](https://forums.ohdsi.org)** | Community Q&A and discussion | Troubleshooting, best practices |
 

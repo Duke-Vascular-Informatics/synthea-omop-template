@@ -83,7 +83,8 @@ get_validation_config <- function() {
     database         = "omop_synth",
     sql_server_port  = 1433L,
 
-    # Shared vocabulary schema — loaded once via scripts/setup_omop_vocab_schema.R.
+    # Shared vocabulary schema — loaded once via
+    # ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
     vocab_schema     = "omop_vocab",
 
     # -------------------------------------------------------------------------

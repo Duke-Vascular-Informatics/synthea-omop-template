@@ -23,6 +23,6 @@ run_etl(config, connection_details, csv_input_dir, run_name)
 ## Prerequisites
 
 - OMOP vocabulary must be loaded into the shared `omop_vocab` schema before running.
-  Run `scripts/setup_omop_vocab_schema.R` once per SQL Server instance.
+  Run `../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .` once per SQL Server instance.
 - Transaction log and tempdb should be pre-grown for bulk loads.
   `R/db_maintenance.R` handles this automatically when called by the ETL.

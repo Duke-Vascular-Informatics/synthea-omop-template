@@ -338,7 +338,7 @@ create_vocab_synonyms <- function(cfg, target_schema, shared_vocab_schema = "omo
   if (as.integer(schema_check$n[[1]]) == 0L) {
     stop(
       "[vocab] Shared vocabulary schema '", shared_vocab_schema, "' does not exist. ",
-      "Run scripts/setup_omop_vocab_schema.R first to load vocabulary.",
+      "Run Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . first to load vocabulary.",
       call. = FALSE
     )
   }
@@ -360,7 +360,7 @@ create_vocab_synonyms <- function(cfg, target_schema, shared_vocab_schema = "omo
     stop(
       "[vocab] Shared vocabulary schema '", shared_vocab_schema,
       "' exists but concept table is empty. ",
-      "Run scripts/setup_omop_vocab_schema.R to load vocabulary.",
+      "Run Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . to load vocabulary.",
       call. = FALSE
     )
   }

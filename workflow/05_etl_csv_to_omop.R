@@ -60,7 +60,8 @@ if (!dir.exists(csv_input_dir)) {
 }
 
 # ETL run identifier that appears in logs/output metadata.
-run_name <- paste0("padssi-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
+# Derived from cfg$study_name after config loads; placeholder set here.
+run_name <- NULL  # resolved after cfg loads below
 
 # TRUE  = drop/recreate staging/event artifacts before load.
 # FALSE = incremental/reuse behavior where possible.
@@ -78,11 +79,11 @@ verbose <- TRUE
 # use_shared_vocab_schema = TRUE  (recommended after first-time setup)
 #   Wires SQL Server synonyms pointing to the shared omop_vocab schema.
 #   No data is copied; setup takes ~1 second.
-#   Prerequisite: run scripts/setup_omop_vocab_schema.R once on this instance.
+#   Prerequisite: run ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . once on this instance.
 #
 # use_shared_vocab_schema = FALSE + reload_vocab_from_csv = TRUE
 #   Loads vocabulary fresh from CSV on every run (~30-60 min, ~25 GB log).
-#   Use only on a new instance before scripts/setup_omop_vocab_schema.R has been run.
+#   Use only on a new instance before ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . has been run.
 #
 # use_shared_vocab_schema = FALSE + reload_vocab_from_csv = FALSE
 #   Bootstraps vocab via INSERT...SELECT from vocabulary_source_schema.
@@ -101,16 +102,10 @@ vocab_file_loc <- Sys.getenv("OHDSI_VOCAB_CSV_DIR", unset = "C:/Users/rapiduser/
 vocab_delimiter <- "\t"
 
 # Fresh CDM schema used only for ETLSyntheaBuilder-driven table lifecycle.
-# Auto-increment mode picks the next available suffix each run:
-#   omop_synth_pad_oler_ssi_02, _03, _04, ...
-target_cdm_schema_base <- "omop_synth_pad_oler_ssi"
-target_cdm_schema_auto_increment <- TRUE
-target_cdm_schema_start_suffix <- 2L
-target_cdm_schema <- paste0(
-  target_cdm_schema_base,
-  "_",
-  sprintf("%02d", target_cdm_schema_start_suffix)
-)
+# Derived from cfg$study_name after config loads: omop_synth_<study_name>.
+# Set to a non-NULL string here only to override the derived value.
+target_cdm_schema_base <- NULL  # NULL = derive from cfg$study_name (recommended)
+target_cdm_schema <- NA_character_  # resolved after cfg loads below
 
 # Fallback vocabulary source schema if CSV reload is disabled.
 vocabulary_source_schema <- "cdm_synthea"
@@ -148,6 +143,18 @@ if (requireNamespace("renv", quietly = TRUE)) {
 # Load central configuration and initialize Java for rJava/DatabaseConnector.
 source("config.R")
 cfg <- get_validation_config()
+
+# Derive target CDM schema from study name unless overridden above.
+# Produces e.g. "omop_synth_pad_oler_macce_val" for study_name = "pad_oler_macce_val".
+if (is.null(target_cdm_schema_base)) {
+  target_cdm_schema_base <- paste0("omop_synth_", cfg$study_name)
+}
+target_cdm_schema <- target_cdm_schema_base
+
+# Derive run name from study name for consistent log/output labelling.
+if (is.null(run_name)) {
+  run_name <- paste0(cfg$study_name, "-csv-", format(Sys.time(), "%Y%m%d-%H%M%S"))
+}
 if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home)) {
   java_bin <- file.path(cfg$java_home, "bin")
   Sys.setenv(JAVA_HOME = cfg$java_home)
@@ -193,71 +200,6 @@ if (length(missing_pkgs_after_install) > 0) {
   stop(
     "Step 5 cannot continue; missing packages after install attempt: ",
     paste(missing_pkgs_after_install, collapse = ", ")
-  )
-}
-
-# Resolve target CDM schema name automatically by scanning existing schemas and
-# picking the next numeric suffix. This avoids reusing a failed-attempt schema
-# and triggering huge logged DELETE operations on retry.
-if (isTRUE(target_cdm_schema_auto_increment)) {
-  resolve_next_cdm_schema <- function(cfg, base_schema, start_suffix = 2L) {
-    connection_details <- DatabaseConnector::createConnectionDetails(
-      dbms = cfg$dbms,
-      server = cfg$server,
-      user = cfg$user,
-      password = cfg$password,
-      pathToDriver = cfg$jdbc_runtime_dir,
-      extraSettings = paste0(
-        "database=", cfg$database,
-        ";trustServerCertificate=true",
-        ";portNumber=", cfg$sql_server_port
-      )
-    )
-
-    conn <- DatabaseConnector::connect(connection_details)
-    on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
-
-    safe_base <- gsub("'", "''", base_schema, fixed = TRUE)
-    sql <- paste0(
-      "SELECT name FROM sys.schemas ",
-      "WHERE name = '", safe_base, "' ",
-      "   OR name LIKE '", safe_base, "[_]%';"
-    )
-    schema_rows <- DatabaseConnector::querySql(conn, sql)
-    schema_names <- if (nrow(schema_rows) > 0L) {
-      as.character(schema_rows$name)
-    } else {
-      character(0)
-    }
-
-    pat <- paste0("^", gsub("([][{}()+*^$|\\?.])", "\\\\\\1", base_schema), "_(\\\\d+)$")
-    suffixes <- suppressWarnings(as.integer(sub(pat, "\\1", schema_names, perl = TRUE)))
-    valid_suffixes <- suffixes[!is.na(suffixes)]
-
-    next_suffix <- if (length(valid_suffixes) == 0L) {
-      as.integer(start_suffix)
-    } else {
-      max(valid_suffixes) + 1L
-    }
-
-    paste0(base_schema, "_", sprintf("%02d", next_suffix))
-  }
-
-  target_cdm_schema <- tryCatch(
-    resolve_next_cdm_schema(cfg, target_cdm_schema_base, target_cdm_schema_start_suffix),
-    error = function(e) {
-      fallback_schema <- paste0(
-        target_cdm_schema_base,
-        "_",
-        sprintf("%02d", as.integer(target_cdm_schema_start_suffix))
-      )
-      warning(
-        "Could not auto-resolve next target schema; using fallback schema '",
-        fallback_schema,
-        "'. Error: ", conditionMessage(e)
-      )
-      fallback_schema
-    }
   )
 }
 

@@ -14,14 +14,14 @@ they are not workflow entry points themselves.
 | `find_todos.R` | Scans the project for `# TODO` tags and prints a summary of remaining placeholders. | Manual |
 | `new_study.R` | Scaffolds a new `study_params.yaml` from the example template. | Manual: `Rscript scripts/new_study.R <study_name>` |
 | `quality_check_etl.R` | Post-ETL quality check implementation: validates cohort row counts, concept mapping rates, and optionally runs ACHILLES CDM profiling and OHDSI Data Quality Dashboard. Accepts CLI flags for threshold gates. | `workflow/06_quality_check_defined_phenotypes.R` |
-| `setup_omop_vocab_schema.R` | One-time setup: loads the full OMOP vocabulary from Athena CSVs into the shared `omop_vocab` schema (~30–60 min). Run once per SQL Server instance. See `docs/SETUP.md` for prerequisites. | Manual: `Rscript scripts/setup_omop_vocab_schema.R` |
+| `../infrastructure/scripts/setup_omop_vocab_schema.R` | One-time setup: loads the full OMOP vocabulary from Athena CSVs into the shared `omop_vocab` schema (~30–60 min). Run once per SQL Server instance. See `docs/SETUP.md` for prerequisites. | Manual: `Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .` |
 | `validate_docs_commands.R` | Validates command/path references across documentation files and fails on known-bad patterns or missing script paths. | CI + manual: `Rscript scripts/validate_docs_commands.R` |
 
 ## Emergency / Repair Tools
 
 | File | Description |
 |------|-------------|
-| `load_missing_vocab_tables.R` | Recovers from incomplete vocabulary setup: loads any missing tables into `omop_vocab` without re-downloading the full vocabulary. Use only if `setup_omop_vocab_schema.R` failed partway through. | Manual: `Rscript scripts/load_missing_vocab_tables.R` |
+| `load_missing_vocab_tables.R` | Recovers from incomplete vocabulary setup: loads any missing tables into `omop_vocab` without re-downloading the full vocabulary. Use only if `../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .` failed partway through. | Manual: `Rscript scripts/load_missing_vocab_tables.R` |
 
 ## Subdirectories
 

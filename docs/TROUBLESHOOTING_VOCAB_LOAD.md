@@ -23,7 +23,7 @@ ls -la /omop_vocab/
 ## Retry Loader
 
 ```bash
-Rscript scripts/setup_omop_vocab_schema.R
+Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
 ```
 
 ## Verify Load

@@ -17,9 +17,9 @@ For Docker, SQL Server, and vocabulary infrastructure details, use
 
 | File | Description | When to run |
 |------|-------------|-------------|
-| `scripts/setup_omop_vocab_schema.R` | Loads the OMOP standard vocabulary into the shared `omop_vocab` schema on SQL Server. Creates and populates vocabulary tables from Athena CSV files. | Once per SQL Server instance |
+| `../infrastructure/scripts/setup_omop_vocab_schema.R` | Loads the OMOP standard vocabulary into the shared `omop_vocab` schema on SQL Server. Creates and populates vocabulary tables from Athena CSV files. | Once per SQL Server instance |
 
-## Prerequisites for scripts/setup_omop_vocab_schema.R
+## Prerequisites for ../infrastructure/scripts/setup_omop_vocab_schema.R
 
 - OMOP vocabulary CSV files downloaded from [Athena](https://athena.ohdsi.org)
 - Sufficient disk space (~25 GB for full vocabulary load)
