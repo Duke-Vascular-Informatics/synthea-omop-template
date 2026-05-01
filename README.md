@@ -50,7 +50,7 @@ use the root workspace README in `omop-dev-workspace/`.
 |------------------------|-------------|
 | `study_params.yaml` | `config.R` (infrastructure only — no study edits needed) |
 | `cohorts/*.sql` | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
-| `covariates/*.csv` | `setup/`, `.devcontainer/` |
+| `covariates/*.csv` | `setup/` |
 | `analyses:` flags in `study_params.yaml` | `workflow/07`, `workflow/08` (no code editing) |
 | `output_folder` in `study_params.yaml` | `renv.lock` (update only to add a new package) |
 
@@ -58,12 +58,12 @@ use the root workspace README in `omop-dev-workspace/`.
 
 ## Dev Container Scope
 
-This template ships a `.devcontainer/` for compatibility, but in the standard workflow it runs
-inside the shared `omop-dev-workspace` infrastructure. Keep machine-level setup instructions in
-the workspace README and keep this README focused on template usage.
+This study template is designed to run inside the shared root workspace container.
+Keep machine-level setup instructions in the workspace README and keep this README
+focused on template usage.
 
-Workspace-first note: use the single shared container definition at
-`../.devcontainer/devcontainer.json` by opening `omop-dev-workspace/` in VS Code.
+Workspace-first note: open `omop-dev-workspace/` in VS Code and use the single
+shared root-level container definition for the workspace.
 
 ---
 
@@ -111,7 +111,6 @@ Step 8 must be run in a **fresh R session** (the Java/JDBC guard will stop it ot
   portable/                   ← self-contained bundle for external sites
   internal_repo/              ← prebuilt OHDSI package binaries
   drivers/                    ← JDBC driver archive
-  .devcontainer/              ← Docker R + Java 17 dev environment
   .github/                    ← Claude Code / AI assistant instructions
   output/                     ← analysis outputs (gitignored)
 ```

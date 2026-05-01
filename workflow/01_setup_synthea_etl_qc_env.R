@@ -30,7 +30,7 @@ set_workflow_root()
 # Chunk 1b: Dev-container guard.
 # Purpose:
 # - Step 1 installs Java-dependent packages (rJava, DatabaseConnector) and
-#   connects to the SQL Server service defined in docker-compose.extend.yml.
+#   connects to the SQL Server service defined by the root workspace compose files.
 #   Both requirements are only satisfied inside the dev container.
 # - Running outside the container produces cryptic Java/JDBC errors; this
 #   guard surfaces the real problem immediately.

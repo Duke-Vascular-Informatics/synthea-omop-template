@@ -47,16 +47,13 @@ OMOP_Dev/                        ← parent folder (create this once, reuse for 
     cpt.sh / cpt.bat             ← CPT-4 rebuild scripts (included in the Athena download)
     cpt4.jar                     ← CPT-4 rebuild utility (included in the Athena download)
   <your-study>/                  ← study repository (one per study)
-    .devcontainer/
-      devcontainer.json          ← references docker-compose.extend.yml
-      docker-compose.extend.yml  ← mounts ../../omop_vocab and ../../.env via relative paths
     config.R
     study_params.yaml
     ...
 ```
 
 **Why the parent folder matters:**
-The dev container's `docker-compose.extend.yml` declares:
+The root workspace dev container compose declares:
 
 ```yaml
 volumes:
@@ -66,9 +63,7 @@ env_file:
   - ../../.env                    # reads OMOP_Dev/.env for the SA password
 ```
 
-These relative paths — `../../omop_vocab` and `../../.env` — are resolved relative to
-the `.devcontainer/` folder, so the layout above is required exactly as shown. Placing
-the study repo anywhere other than directly inside `OMOP_Dev/` will break the mounts.
+These mounts are provided by the root workspace container configuration, so keep your study repository inside the workspace root as documented.
 
 ---
 
@@ -274,8 +269,7 @@ git clone https://github.com/<your-org>/<your-study>.git
 cd <your-study>
 ```
 
-The resulting path `OMOP_Dev/<your-study>/` gives the `.devcontainer/` files their
-correct relative path to `OMOP_Dev/omop_vocab/` and `OMOP_Dev/.env`.
+The resulting path `OMOP_Dev/<your-study>/` keeps the study in the expected location for the shared workspace infrastructure.
 
 ---
 
@@ -283,8 +277,7 @@ correct relative path to `OMOP_Dev/omop_vocab/` and `OMOP_Dev/.env`.
 
 1. Open VS Code.
 2. **File → Open Folder** → select `OMOP_Dev/<your-study>/`.
-3. VS Code will detect `.devcontainer/devcontainer.json` and show a notification:
-   **"Folder contains a Dev Container configuration file. Reopen in Container?"**
+3. Open the workspace root in VS Code and use the shared root-level dev container.
    Click **Reopen in Container**.
    *(If the notification does not appear: `Cmd+Shift+P` → **Dev Containers: Reopen in Container**)*
 4. The first build compiles the Docker image (Java 17 + R 4.5 + system libraries).

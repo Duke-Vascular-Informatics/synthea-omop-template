@@ -238,7 +238,6 @@ OMOP_Dev/
       setup_docker_and_vocab.sh
       setup_docker_and_vocab.ps1
   <your-study>/          ← your repo is here
-    .devcontainer/
     config.R
     study_params.yaml
     ...
@@ -253,7 +252,6 @@ omop-dev-workspace/
   docker-compose.yml
   omop_vocab/
   <your-study>/          ← clone here
-    .devcontainer/
     config.R
     study_params.yaml
     ...
@@ -471,8 +469,8 @@ Now that SQL Server is running, you can safely open the dev container in VS Code
 
 1. Inside VS Code: **File** → **Open Folder**
 2. Navigate to `OMOP_Dev/<your-study>/` and click **Open**
-3. A notification appears: **"Folder contains a Dev Container. Reopen in Container?"**
-4. Click **Reopen in Container**
+3. Open the workspace root folder and run the shared root-level dev container.
+4. Continue once the container is running
    *(Or use `Cmd+Shift+P` → **Dev Containers: Reopen in Container**)*
 
 ### 8.2 Wait for container build (5–10 minutes first time)
@@ -870,7 +868,7 @@ Use focused troubleshooting docs to reduce duplicated guidance and merge conflic
 | `cohorts/*.sql` | Cohort definitions (edit these) |
 | `covariates/*.csv` | Covariate definitions (edit these) |
 | `workflow/01–09` | Analysis pipeline (do not edit) |
-| `.devcontainer/` | Dev environment (do not edit) |
+| Workspace root container config | Shared development environment (do not edit from this study repo) |
 | `output/` | Analysis results (gitignored) |
 | `portable/` | Transportable bundle (for sharing) |
 
