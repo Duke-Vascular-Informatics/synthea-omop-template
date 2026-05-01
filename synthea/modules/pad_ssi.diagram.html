@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAD/SSI Synthea Module Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 2em; max-width: 1400px; background: #f5f5f5; color: #222; }
+    h1 { color: #1a1a2e; }
+    .diagram-box { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 1.5em; overflow-x: auto; margin-top: 1em; }
+    footer { margin-top: 3em; font-size: 0.8em; color: #aaa; border-top: 1px solid #eee; padding-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>PAD/SSI Synthea Module &mdash; State Diagram</h1>
+  <p>Generated from <code>pad_ssi.json</code>. Each node shows state name, type, and codes. Open in any modern browser.</p>
+  <div class="diagram-box">
+    <div class="mermaid">
+%%{init: {'theme': 'default', 'flowchart': {'useMaxWidth': true, 'htmlLabels': true}} }%%
+flowchart TD
+  n001["&lt;b&gt;Initial&lt;/b&gt;&lt;br/&gt;[Initial]"]
+  n002["&lt;b&gt;Age Guard&lt;/b&gt;&lt;br/&gt;[Guard]"]
+  n003["&lt;b&gt;PAD Onset Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n004["&lt;b&gt;Age 90 Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n005["&lt;b&gt;PAD Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 399957001: Peripheral arterial occlusive disease"]
+  n006["&lt;b&gt;PAD Diagnosis Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 185349003: Encounter for check up"]
+  n007["&lt;b&gt;Presenting Symptom&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n008["&lt;b&gt;Symptom Asymptomatic&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;SNOMED-CT 84387000: Asymptomatic"]
+  n009["&lt;b&gt;Symptom Claudication&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 63491006: Intermittent claudication"]
+  n010["&lt;b&gt;Symptom Rest Pain&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 428171009: Peripheral vascular disease with rest pain"]
+  n011["&lt;b&gt;Symptom Wound&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 238794007: Ischemic foot ulcer"]
+  n012["&lt;b&gt;Smoking Status Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n013["&lt;b&gt;Current Smoker Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 72166-2: Tobacco smoking status&lt;br/&gt;val: SNOMED-CT 881661000124108: Smokes cigarette daily"]
+  n014["&lt;b&gt;Non Smoker Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 72166-2: Tobacco smoking status&lt;br/&gt;val: SNOMED-CT 221000119102: Never smoked any substance"]
+  n015["&lt;b&gt;Diabetes Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n016["&lt;b&gt;Diabetes Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 44054006: Diabetes mellitus type 2"]
+  n017["&lt;b&gt;Hypertension Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n018["&lt;b&gt;Hypertension Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 38341003: Hypertensive disorder, systemic arterial"]
+  n019["&lt;b&gt;COPD Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n020["&lt;b&gt;COPD Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 13645005: Chronic obstructive lung disease"]
+  n021["&lt;b&gt;CHF Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n022["&lt;b&gt;CHF Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 84114007: Heart failure"]
+  n023["&lt;b&gt;Functional Impairment Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n024["&lt;b&gt;Barthel Independent Transferring&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83185-9: Transferring - functional ability&lt;br/&gt;val: LOINC LA12302-8: Independent"]
+  n025["&lt;b&gt;Barthel Independent Ambulation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83186-7: Ambulation - functional ability&lt;br/&gt;val: LOINC LA12302-8: Independent"]
+  n026["&lt;b&gt;Barthel One Person Help Transferring&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83185-9: Transferring - functional ability&lt;br/&gt;val: LOINC LA12302-8: Independent"]
+  n027["&lt;b&gt;Barthel One Person Help Ambulation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83186-7: Ambulation - functional ability&lt;br/&gt;val: LOINC LA31641-6: Walks with help of one person (verbal or physical) &gt;50 yards"]
+  n028["&lt;b&gt;Barthel Wheelchair Transferring&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83185-9: Transferring - functional ability&lt;br/&gt;val: LOINC LA31634-1: Major help (one or two people, physical), can sit"]
+  n029["&lt;b&gt;Barthel Wheelchair Ambulation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 83186-7: Ambulation - functional ability&lt;br/&gt;val: LOINC LA31640-8: Wheelchair independent, including corners, &gt;50 yards"]
+  n030["&lt;b&gt;Functional Impairment Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 82971005: Impaired mobility"]
+  n031["&lt;b&gt;BMI Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n032["&lt;b&gt;BMI Obese Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 39156-5: Body Mass Index"]
+  n033["&lt;b&gt;Height Obese Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 8302-2: Body height"]
+  n034["&lt;b&gt;Weight Obese Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 29463-7: Body weight"]
+  n035["&lt;b&gt;BMI Overweight Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 39156-5: Body Mass Index"]
+  n036["&lt;b&gt;BMI Normal Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 39156-5: Body Mass Index"]
+  n037["&lt;b&gt;Height NonObese Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 8302-2: Body height"]
+  n038["&lt;b&gt;Weight NonObese Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 29463-7: Body weight"]
+  n039["&lt;b&gt;ABI Observation&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 77194-9: Ankle-brachial index"]
+  n040["&lt;b&gt;Prior Revascularization Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n041["&lt;b&gt;Prior Revascularization Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 112828007: Femoral-popliteal artery bypass graft"]
+  n042["&lt;b&gt;End PAD Diagnosis Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n043["&lt;b&gt;Treatment Strategy&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n044["&lt;b&gt;Medical Management&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n045["&lt;b&gt;Endovascular Procedure Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 11429006: Consultation"]
+  n046["&lt;b&gt;Endovascular Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 8990000: Fluoroscopy guided percutaneous transluminal angioplasty of peripheral artery with contrast"]
+  n047["&lt;b&gt;End Endovascular Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n048["&lt;b&gt;Urgent Case Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n049["&lt;b&gt;Pre Surgical Workup Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n050["&lt;b&gt;Surgical Admission Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n051["&lt;b&gt;Urgent Case Procedure&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 73994005: Emergency operation"]
+  n052["&lt;b&gt;Admission Antibiotic Chance&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n053["&lt;b&gt;Admission Cephalexin Order&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2231: cephalexin"]
+  n054["&lt;b&gt;Admission Cephalexin Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n055["&lt;b&gt;Admission Cephalexin End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n056["&lt;b&gt;Pre Op Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n057["&lt;b&gt;Pre Op Antibiotic&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2180: cefazolin"]
+  n058["&lt;b&gt;Revascularization Procedure&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n059["&lt;b&gt;Femoro Popliteal Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 112828007: Femoral-popliteal artery bypass graft"]
+  n060["&lt;b&gt;Femoral Endarterectomy&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 16589005: Femoral endarterectomy"]
+  n061["&lt;b&gt;Aorto Bifemoral Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 405482000: Aorto-femoral arterial bypass"]
+  n062["&lt;b&gt;Femoro Tibial Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 47575002: Femorotibial vascular bypass, anterior or posterior"]
+  n063["&lt;b&gt;Extra Anatomic Bypass&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 73985009: Extra-anatomic bypass of artery"]
+  n064["&lt;b&gt;Pre Op Antibiotic End&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n065["&lt;b&gt;Post Op Inpatient Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n066["&lt;b&gt;End Surgical Admission&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n067["&lt;b&gt;Post Discharge Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n068["&lt;b&gt;Past 10 Years Check&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n069["&lt;b&gt;SSI Fixed Risk&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n070["&lt;b&gt;SSI Type Branch&lt;/b&gt;&lt;br/&gt;[Simple]"]
+  n071["&lt;b&gt;SSI Superficial Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609339001: Superficial incisional surgical site infection"]
+  n072["&lt;b&gt;SSI Superficial Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n073["&lt;b&gt;Wound Culture Superficial&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n074["&lt;b&gt;SSI Abx Superficial&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n075["&lt;b&gt;End SSI Superficial Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n076["&lt;b&gt;SSI Superficial Tx Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n077["&lt;b&gt;SSI Superficial Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n078["&lt;b&gt;SSI Abx End Superficial&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n079["&lt;b&gt;SSI Deep Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609340004: Deep incisional surgical site infection"]
+  n080["&lt;b&gt;SSI Deep Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n081["&lt;b&gt;Wound Culture Deep&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n082["&lt;b&gt;SSI Abx Deep&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n083["&lt;b&gt;End SSI Deep Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n084["&lt;b&gt;SSI Deep Admit Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n085["&lt;b&gt;SSI Deep Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n086["&lt;b&gt;Reoperation Deep&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 225148005: Surgical debridement of wound"]
+  n087["&lt;b&gt;SSI Deep Post Op Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n088["&lt;b&gt;End Deep Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n089["&lt;b&gt;SSI Deep Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n090["&lt;b&gt;SSI Abx End Deep&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n091["&lt;b&gt;SSI Organ Onset&lt;/b&gt;&lt;br/&gt;[ConditionOnset]&lt;br/&gt;SNOMED-CT 609341000: Organ-space surgical site infection"]
+  n092["&lt;b&gt;SSI Organ Encounter&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 390906007: Follow-up encounter"]
+  n093["&lt;b&gt;Wound Culture Organ&lt;/b&gt;&lt;br/&gt;[Observation]&lt;br/&gt;LOINC 6463-4: Bacteria identified in Wound by Culture&lt;br/&gt;val: SNOMED-CT 112283007: Escherichia coli"]
+  n094["&lt;b&gt;SSI Abx Organ&lt;/b&gt;&lt;br/&gt;[MedicationOrder]&lt;br/&gt;RxNorm 2673: cephalexin"]
+  n095["&lt;b&gt;End SSI Organ Encounter&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n096["&lt;b&gt;SSI Organ Admit Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n097["&lt;b&gt;SSI Organ Rehospitalization&lt;/b&gt;&lt;br/&gt;[Encounter]&lt;br/&gt;SNOMED-CT 32485007: Hospital admission"]
+  n098["&lt;b&gt;Reoperation Organ&lt;/b&gt;&lt;br/&gt;[Procedure]&lt;br/&gt;SNOMED-CT 225148005: Surgical debridement of wound"]
+  n099["&lt;b&gt;SSI Organ Post Op Delay&lt;/b&gt;&lt;br/&gt;[Delay]"]
+  n100["&lt;b&gt;End Organ Rehospitalization&lt;/b&gt;&lt;br/&gt;[EncounterEnd]"]
+  n101["&lt;b&gt;SSI Organ Resolution&lt;/b&gt;&lt;br/&gt;[ConditionEnd]"]
+  n102["&lt;b&gt;SSI Abx End Organ&lt;/b&gt;&lt;br/&gt;[MedicationEnd]"]
+  n103["&lt;b&gt;Terminal&lt;/b&gt;&lt;br/&gt;[Terminal]"]
+
+  n001 --&gt; n002
+  n002 --&gt; n003
+  n003 --&gt; n004
+  n004 -- Age --&gt; n005
+  n004 -- else --&gt; n103
+  n005 --&gt; n006
+  n006 --&gt; n007
+  n007 -- 10% --&gt; n008
+  n007 -- 50% --&gt; n009
+  n007 -- 25% --&gt; n010
+  n007 -- 15% --&gt; n011
+  n008 --&gt; n012
+  n009 --&gt; n012
+  n010 --&gt; n012
+  n011 --&gt; n012
+  n012 -- 35% --&gt; n013
+  n012 -- 65% --&gt; n014
+  n013 --&gt; n015
+  n014 --&gt; n015
+  n015 -- 30% --&gt; n016
+  n015 -- 70% --&gt; n017
+  n016 --&gt; n017
+  n017 -- 60% --&gt; n018
+  n017 -- 40% --&gt; n019
+  n018 --&gt; n019
+  n019 -- 20% --&gt; n020
+  n019 -- 80% --&gt; n021
+  n020 --&gt; n021
+  n021 -- 15% --&gt; n022
+  n021 -- 85% --&gt; n023
+  n022 --&gt; n023
+  n023 -- 75% --&gt; n024
+  n023 -- 15% --&gt; n026
+  n023 -- 10% --&gt; n028
+  n024 --&gt; n025
+  n025 --&gt; n031
+  n026 --&gt; n027
+  n027 --&gt; n030
+  n028 --&gt; n029
+  n029 --&gt; n030
+  n030 --&gt; n031
+  n031 -- 40% --&gt; n032
+  n031 -- 30% --&gt; n035
+  n031 -- 30% --&gt; n036
+  n032 --&gt; n033
+  n033 --&gt; n034
+  n034 --&gt; n040
+  n035 --&gt; n037
+  n036 --&gt; n037
+  n037 --&gt; n038
+  n038 --&gt; n040
+  n039 --&gt; n042
+  n040 -- 25% --&gt; n041
+  n040 -- 75% --&gt; n039
+  n041 --&gt; n039
+  n042 --&gt; n043
+  n043 -- 10% --&gt; n044
+  n043 -- 10% --&gt; n045
+  n043 -- 80% --&gt; n048
+  n044 --&gt; n103
+  n045 --&gt; n046
+  n046 --&gt; n047
+  n047 --&gt; n103
+  n048 -- 25% --&gt; n051
+  n048 -- 75% --&gt; n049
+  n049 --&gt; n050
+  n050 --&gt; n052
+  n051 --&gt; n050
+  n052 -- 20% --&gt; n053
+  n052 -- 80% --&gt; n056
+  n053 --&gt; n054
+  n054 --&gt; n055
+  n055 --&gt; n056
+  n056 --&gt; n057
+  n057 --&gt; n058
+  n058 -- 20% --&gt; n059
+  n058 -- 20% --&gt; n060
+  n058 -- 20% --&gt; n061
+  n058 -- 20% --&gt; n062
+  n058 -- 20% --&gt; n063
+  n059 --&gt; n064
+  n060 --&gt; n064
+  n061 --&gt; n064
+  n062 --&gt; n064
+  n063 --&gt; n064
+  n064 --&gt; n065
+  n065 --&gt; n066
+  n066 --&gt; n067
+  n067 --&gt; n068
+  n068 --&gt; n069
+  n069 -- 20% --&gt; n070
+  n069 -- 80% --&gt; n103
+  n070 -- 30% --&gt; n071
+  n070 -- 30% --&gt; n079
+  n070 -- 40% --&gt; n091
+  n071 --&gt; n072
+  n072 --&gt; n073
+  n073 --&gt; n074
+  n074 --&gt; n075
+  n075 --&gt; n076
+  n076 --&gt; n077
+  n077 --&gt; n078
+  n078 --&gt; n103
+  n079 --&gt; n080
+  n080 --&gt; n081
+  n081 --&gt; n082
+  n082 --&gt; n083
+  n083 --&gt; n084
+  n084 --&gt; n085
+  n085 --&gt; n086
+  n086 --&gt; n087
+  n087 --&gt; n088
+  n088 --&gt; n089
+  n089 --&gt; n090
+  n090 --&gt; n103
+  n091 --&gt; n092
+  n092 --&gt; n093
+  n093 --&gt; n094
+  n094 --&gt; n095
+  n095 --&gt; n096
+  n096 --&gt; n097
+  n097 --&gt; n098
+  n098 --&gt; n099
+  n099 --&gt; n100
+  n100 --&gt; n101
+  n101 --&gt; n102
+  n102 --&gt; n103
+    </div>
+  </div>
+
+  <footer>
+    Rendered with <a href="https://mermaid.js.org">Mermaid.js</a> (CDN). Requires an internet connection.
+  </footer>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>
