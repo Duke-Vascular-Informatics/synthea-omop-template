@@ -49,7 +49,12 @@ errorReportR.txt
 
 # JAAS config — generated at runtime by R/connection.R; contains local paths
 jaas.conf
-portable/transportable_bundle/drivers/jaas.conf
+
+# Portable bundle — has its own git repo targeting institutional GitLab;
+# managed by workflow/09_build_portable_analysis_bundle.sh, not tracked here.
+# The bundle's config.R contains site-specific server/schema names and must
+# never be committed to the public GitHub repo.
+portable/
 
 # external/synthea is tracked as a git submodule via .gitmodules — not ignored here
 # (new_study.R registers the submodule during study initialization)
