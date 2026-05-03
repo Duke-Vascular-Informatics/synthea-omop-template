@@ -2,8 +2,8 @@
 # =============================================================================
 # run_analysis.R
 #
-# Entry point for the PAD/OLER SSI integer risk score external validation on
-# protected analytic space against institutional OMOP CDM data.
+# Entry point for the risk score external validation on protected analytic
+# space against institutional OMOP CDM data.
 #
 # PREREQUISITES (run setup_env.sh first):
 #   1. conda activate openjdk                          — Java from conda-forge on PATH
@@ -22,8 +22,8 @@
 #   metrics.csv                        — discrimination/calibration + 95% CIs
 #   calibration_table_*.csv            — calibration decile tables
 #   calibration_*.png                  — calibration plots
-#   pad-oler-ssi-val_report_<date>.docx — manuscript Word report
-#   pad_oler_ssi_fringe_<date>.xlsx    — fringe-case Excel (clinical QC)
+#   <study_name>_report_<date>.docx — manuscript Word report
+#   <study_name>_fringe_<date>.xlsx  — fringe-case Excel (clinical QC)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -126,7 +126,7 @@ message("[run_analysis] Server  : ", config$server)
 message("[run_analysis] Database: ", config$database)
 message("[run_analysis] CDM     : ", config$cdm_schema)
 message("[run_analysis] Results : ", config$results_schema)
-message("[run_analysis] Window  : ", config$prediction_window_days, "-day SSI")
+message("[run_analysis] Window  : ", config$prediction_window_days, "-day outcome")
 
 # -----------------------------------------------------------------------------
 # Database connection
@@ -163,9 +163,9 @@ build_cohorts(cohort_conn, config)
 DatabaseConnector::disconnect(cohort_conn)
 
 # -----------------------------------------------------------------------------
-# Integer risk score pipeline
+# Risk score validation pipeline
 # -----------------------------------------------------------------------------
-message("\n[run_analysis] Running integer risk score pipeline ...")
+message("\n[run_analysis] Running risk score validation pipeline ...")
 results <- run_integer_risk_score_pipeline(config, connection_details,
                                            output_folder = config$output_folder)
 print(results$metrics)
@@ -175,14 +175,18 @@ print(results$metrics)
 # -----------------------------------------------------------------------------
 if (has_officer) {
   message("\n[run_analysis] Generating manuscript Word report ...")
-  report_path <- generate_manuscript_report(
-    output_dir          = config$risk_score_output_folder,
-    score_output_dir    = config$risk_score_output_folder,
-    cleanup_old_outputs = FALSE,
-    connection_details  = connection_details,
-    config              = config
-  )
-  message("[run_analysis] Report written to: ", report_path)
+  tryCatch({
+    report_path <- generate_manuscript_report(
+      output_dir          = config$risk_score_output_folder,
+      score_output_dir    = config$risk_score_output_folder,
+      cleanup_old_outputs = FALSE,
+      connection_details  = connection_details,
+      config              = config
+    )
+    message("[run_analysis] Report written to: ", report_path)
+  }, error = function(e) {
+    message("[run_analysis] Report generation skipped: ", conditionMessage(e))
+  })
 } else {
   message("\n[run_analysis] Skipping report generation (officer not installed).")
 }
