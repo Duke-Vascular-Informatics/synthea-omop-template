@@ -353,10 +353,13 @@ copy_bundle_file "R/cohort_demographics.R"   "portable/$STUDY_NAME/R/cohort_demo
 # report_extended.R is loaded as report.R on the protected analytic space (see run_analysis.R)
 copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 
-# Integer risk score reference data
-copy_bundle_file "risk_score/components.csv"         "portable/$STUDY_NAME/risk_score/components.csv"
-copy_bundle_file "risk_score/component_concepts.csv" "portable/$STUDY_NAME/risk_score/component_concepts.csv"
-copy_bundle_file "risk_score/risk_lookup.csv"        "portable/$STUDY_NAME/risk_score/risk_lookup.csv"
+# Integer risk score reference data — copy all CSVs from risk_score/ so the
+# correct files are included regardless of study-specific naming conventions
+# (e.g. components.csv vs covariates.csv, component_concepts.csv vs covariate_concepts.csv).
+for _csv in "$REPO_ROOT/risk_score/"*.csv; do
+  [[ -f "$_csv" ]] && copy_bundle_file "risk_score/$(basename "$_csv")" \
+    "portable/$STUDY_NAME/risk_score/$(basename "$_csv")"
+done
 
 # OMOP cohort SQL templates — copy all .sql files from cohorts/ so the correct
 # files are included regardless of study-specific naming conventions.
