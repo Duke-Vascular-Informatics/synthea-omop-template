@@ -170,16 +170,36 @@ ${analysis_desc}
 
 ---
 
+## Getting Started
+
+**First time setup (run once):**
+
+1. Create the project folder on the HPC login node:
+   \`\`\`bash
+   mkdir ~/${sname}
+   \`\`\`
+2. Open that folder in VS Code via the Remote SSH extension.
+3. In the VS Code terminal (which opens inside \`~/${sname}\`), clone the repository into the current directory:
+   \`\`\`bash
+   git clone ${BUNDLE_GITLAB_REMOTE} .
+   \`\`\`
+
+**To update an existing clone:**
+
+\`\`\`bash
+git pull origin main
+\`\`\`
+
+---
+
 ## Quick Start
 
 \`\`\`bash
-# One-time setup
-cd ~/${sname}
+# One-time setup (after cloning)
 bash setup_env.sh             # creates conda env, runs kinit, installs R packages
 # Edit .env — set OMOP_RESULTS_SCHEMA to your personal write schema (domain\netid)
 
 # Every session
-cd ~/${sname}
 export KRB5CCNAME=FILE:~/krb5cc_java
 kinit                      # enter institutional credentials when prompted
 conda activate openjdk
