@@ -361,6 +361,17 @@ for _csv in "$REPO_ROOT/risk_score/"*.csv; do
     "portable/$STUDY_NAME/risk_score/$(basename "$_csv")"
 done
 
+# Model artifacts — copy all .rds and .json files from model/ when present.
+# These are needed for the Word report (varImp.rds, modelSettings.rds,
+# hyperParamSearch.rds, populationSettings.rds). Subdirectories (e.g.
+# python_model/) are skipped; only top-level files are included.
+if [[ -d "$REPO_ROOT/model" ]]; then
+  for _mf in "$REPO_ROOT/model/"*.rds "$REPO_ROOT/model/"*.json; do
+    [[ -f "$_mf" ]] && copy_bundle_file "model/$(basename "$_mf")" \
+      "portable/$STUDY_NAME/model/$(basename "$_mf")"
+  done
+fi
+
 # OMOP cohort SQL templates — copy all .sql files from cohorts/ so the correct
 # files are included regardless of study-specific naming conventions.
 for _sql in "$REPO_ROOT/cohorts/"*.sql; do
