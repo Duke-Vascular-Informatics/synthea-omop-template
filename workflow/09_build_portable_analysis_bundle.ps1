@@ -11,20 +11,21 @@ param()
 # analysis into a self-contained zip file that can be transferred to and run on
 # the protected analytic space.
 #
-# The bundle lives in portable/transportable_bundle/ in this repository.  Step 9 keeps
-# that bundle up-to-date by pulling in the latest shared R source files and
-# JDBC driver JAR from the main project before zipping everything up.
+# The bundle lives in portable/<study_name>/ in this repository, where <study_name>
+# is read from study_params.yaml at runtime.  Step 9 keeps that bundle up-to-date
+# by pulling in the latest shared R source files and JDBC driver JAR from the main
+# project before zipping everything up.
 #
 # DEPLOYMENT WORKFLOW
 # -------------------
 # 1. Run this script on the developer workstation to produce a dated zip in
-#    dist/ (e.g. dist/transportable_bundle_20260410.zip).
+#    dist/ (e.g. dist/<study_name>_20260410.zip).
 # 2. Transfer the zip to the protected analytic space:
-#      scp dist/transportable_bundle_<date>.zip <netid>@your.hpc.cluster.hostname:/path/to/your/workspace/
+#      scp dist/<study_name>_<date>.zip <netid>@your.hpc.cluster.hostname:/path/to/your/workspace/
 # 3. On the protected analytic space, unzip keeping the dated zip folder name (do NOT rename it):
 #      cd /path/to/your/workspace
-#      unzip transportable_bundle_<date>.zip -d transportable_bundle_<date>
-#    This produces: /path/to/your/workspace/transportable_bundle_<date>/
+#      unzip <study_name>_<date>.zip -d <study_name>_<date>
+#    This produces: /path/to/your/workspace/<study_name>_<date>/
 # 4. Also place the your HPC support team custom JDBC wrapper JAR one level above the
 #    bundle, in a drivers/ sibling folder:
 #      /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
@@ -33,7 +34,7 @@ param()
 #    bundle because it is a site-specific file we do not redistribute.)
 # 5. Follow setup_env.sh and config.R instructions to fill in credentials
 #    and database connection details, then run:
-#      cd /path/to/your/workspace/transportable_bundle_<date>
+#      cd /path/to/your/workspace/<study_name>_<date>
 #      bash setup_env.sh
 #      conda activate openjdk
 #      export KRB5CCNAME=FILE:~/krb5cc_java && kinit
@@ -42,43 +43,42 @@ param()
 # WHAT THIS SCRIPT DOES
 # ---------------------
 #   1. Syncs shared R source files from the main project (R/, risk_score/,
-#      cohorts/) into portable/transportable_bundle/ so the bundle always reflects the
+#      cohorts/) into portable/<study_name>/ so the bundle always reflects the
 #      current analysis code.
 #   2. Copies the standard MSSQL JDBC JAR from drivers/jdbc-runtime/ into
-#      portable/transportable_bundle/drivers/ so HPC cluster has the driver it needs.
-#   3. Builds a dated zip: dist/transportable_bundle_<YYYYMMDD>.zip.
+#      portable/<study_name>/drivers/ so HPC cluster has the driver it needs.
+#   3. Builds a dated zip: dist/<study_name>_<YYYYMMDD>.zip.
 #      Previous zips in dist/ are retained so that any version already
 #      transferred to HPC cluster can still be reproduced or compared.
 #
 # FILES THAT ARE *NOT* OVERWRITTEN BY THIS SCRIPT
 # ------------------------------------------------
-# The following files inside portable/transportable_bundle/ are bundle-specific.  They
+# The following files inside portable/<study_name>/ are bundle-specific.  They
 # contain site-specific configuration, Kerberos authentication logic, and
 # install steps that differ between the developer workstation and the protected analytic space.
 # Overwriting them with the main-project versions would break HPC cluster execution:
 #
-#   portable/transportable_bundle/R/connection.R
+#   portable/<study_name>/R/connection.R
 #       Configures the JVM (JAVA_HOME, heap, JAAS config), adds both JDBC JARs
 #       to the classpath via rJava::.jaddClassPath(), and builds the full JDBC
 #       URL with authenticationScheme=JavaKerberos.  Completely different from
 #       the standard Windows ODBC connection used on the developer workstation.
 #
-#   portable/transportable_bundle/config.R
+#   portable/<study_name>/config.R
 #       Resolves JAVA_HOME from the active conda environment, sets the path to
 #       the your HPC support team custom JAR (~/drivers/), and contains CHANGE_ME
-#       placeholders for the SQL Server host, database, and
-#       schema names.
+#       placeholders for the SQL Server host, database, and schema names.
 #
-#   portable/transportable_bundle/run_analysis.R
+#   portable/<study_name>/run_analysis.R
 #       Entry-point script for HPC cluster execution.  Calls configure_java_hpc()
 #       BEFORE library(DatabaseConnector) — this ordering is required so that
 #       java.parameters and the classpath are set before the JVM starts.
 #
-#   portable/transportable_bundle/install_packages.R
+#   portable/<study_name>/install_packages.R
 #       Installs R packages from CRAN/Bioconductor using the miniforge/conda R
 #       environment available on the protected analytic space; includes packages not needed on Windows.
 #
-#   portable/transportable_bundle/setup_env.sh
+#   portable/<study_name>/setup_env.sh
 #       Shell script that activates the conda openjdk environment, obtains a
 #       Kerberos ticket (kinit), and sets KRB5CCNAME so the JAAS config can
 #       find the ticket cache file.
@@ -92,14 +92,163 @@ Push-Location $repoRoot
 
 try {
 
-    $bundle = Join-Path $repoRoot "portable\transportable_bundle"
+    # Derive bundle folder name from study_name in study_params.yaml so that
+    # each study's portable folder is named after the analysis (e.g. my-study).
+    # Falls back to "<study_name>" if study_params.yaml is not yet configured.
+    $studyParamsPath = Join-Path $repoRoot "study_params.yaml"
+    $studyName = "<study_name>"
+    if (Test-Path $studyParamsPath) {
+        $match = Select-String -Path $studyParamsPath -Pattern '^\s*study_name:\s*["\x27]?([A-Za-z0-9_-]+)'
+        if ($match) { $studyName = $match.Matches[0].Groups[1].Value }
+    }
+
+    $bundle = Join-Path $repoRoot "portable\$studyName"
     $dist   = Join-Path $repoRoot "dist"
 
     # Verify the bundle skeleton exists.  It is checked into version control and
     # must be present before this script runs.  The dist/ output directory is
     # created on first use if it does not yet exist.
-    if (!(Test-Path $bundle)) { throw "transportable bundle directory not found: $bundle" }
+    if (!(Test-Path $bundle)) { throw "portable bundle directory not found: $bundle" }
     if (!(Test-Path $dist))   { New-Item -ItemType Directory -Path $dist | Out-Null }
+
+    # -------------------------------------------------------------------------
+    # Generate-BundleReadme — writes README.md from study_params.yaml
+    # -------------------------------------------------------------------------
+    function Generate-BundleReadme {
+        param([string]$BundleDir)
+
+        $yaml        = Get-Content (Join-Path $repoRoot "study_params.yaml") -Raw
+        $sname       = ([regex]'(?m)^study_name:\s*["\x27]?([^"''\s#]+)').Match($yaml).Groups[1].Value
+        $predWindow  = ([regex]'(?m)^prediction_window_days:\s*(\d+)').Match($yaml).Groups[1].Value
+        $studyDesign = ([regex]'(?m)^study_design:\s*["\x27]?([^"''\s#]+)').Match($yaml).Groups[1].Value
+        if (-not $predWindow) { $predWindow = "30" }
+
+        $plp      = ([regex]'(?m)plp_model_validation:\s*(true|false)').Match($yaml).Groups[1].Value
+        $intScore = ([regex]'(?m)integer_risk_score:\s*(true|false)').Match($yaml).Groups[1].Value
+        $wordRpt  = ([regex]'(?m)word_report:\s*(true|false)').Match($yaml).Groups[1].Value
+        $charFlag = ([regex]'(?m)cohort_characterization:\s*(true|false)').Match($yaml).Groups[1].Value
+
+        $analysisDesc = if ($plp -eq "true") {
+            "External validation of a PatientLevelPrediction (PLP) Random Forest model predicting ${predWindow}-day outcomes."
+        } elseif ($intScore -eq "true") {
+            "External validation of an integer risk score predicting ${predWindow}-day outcomes."
+        } elseif ($charFlag -eq "true") {
+            "Cohort characterization — FeatureExtraction covariate summary of the target cohort."
+        } else {
+            "OMOP observational study ($studyDesign)."
+        }
+
+        $outputTable = if ($plp -eq "true") {
+            @"
+| File | Description |
+|------|-------------|
+| ``person_level_scores.csv`` | Per-patient predicted probabilities, observed outcomes, and prediction window flags |
+| ``risk_score_eval/person_level_scores.csv`` | Copy used by the report module |
+| ``risk_score_eval/covariate_summary.csv`` | Per-covariate activation rates across the validation cohort |
+| ``risk_score_eval/metrics.csv`` | AUROC, AUPRC, Brier score, ECE, calibration intercept and slope with 95% bootstrap CIs |
+| ``risk_score_eval/ece_subgroup.csv`` | Expected Calibration Error by demographic subgroup |
+| ``roc_curve.png`` | ROC curve |
+| ``calibration_lookup.png`` | Calibration plot |$(if ($wordRpt -eq "true") {"`n| ``${sname}_report_<date>.docx`` | Manuscript-format Word report with performance tables and calibration figures |"})
+"@
+        } elseif ($intScore -eq "true") {
+            @"
+| File | Description |
+|------|-------------|
+| ``person_level_scores.csv`` | Per-patient covariate points, total score, and predicted probabilities |
+| ``risk_score_eval/covariate_summary.csv`` | Covariate-level activation counts and mean points |
+| ``risk_score_eval/metrics.csv`` | AUROC, AUPRC, Brier score, ECE, calibration metrics with 95% CIs |
+| ``risk_score_eval/calibration_table_lookup.csv`` | Calibration decile table — published lookup model |
+| ``risk_score_eval/calibration_table_recalibrated.csv`` | Calibration decile table — recalibrated model |
+| ``calibration_lookup.png`` | Calibration plot — lookup model |
+| ``calibration_recalibrated.png`` | Calibration plot — recalibrated model |$(if ($wordRpt -eq "true") {"`n| ``${sname}_report_<date>.docx`` | Manuscript-format Word report |"})
+"@
+        } else {
+            "See ``output/`` directory for analysis outputs."
+        }
+
+        $readme = @"
+# $sname — Protected Analytic Space Bundle
+
+$analysisDesc
+
+**Generated:** $(Get-Date -Format 'yyyy-MM-dd') by ``workflow/09_build_portable_analysis_bundle.ps1``
+
+**Authentication:** Kerberos (institutional NetID) — no passwords stored in any file.
+**Java:** conda openjdk from miniforge — no system Java required.
+**JDBC driver:** pre-bundled in ``drivers/`` — no internet access needed after setup.
+
+---
+
+## Quick Start
+
+``````bash
+# One-time setup
+cd ~/$sname
+bash setup_env.sh          # creates conda env, runs kinit, installs R packages
+# Edit config.R — fill in server, database, spn_host, schemas
+
+# Every session
+cd ~/$sname
+export KRB5CCNAME=FILE:~/krb5cc_java
+kinit                      # enter institutional credentials when prompted
+conda activate openjdk
+bash run_analysis.sh
+``````
+
+Results are written to ``output/``.
+
+---
+
+## config.R — Required Fields
+
+| Field | Description |
+|-------|-------------|
+| ``server`` | SQL Server hostname |
+| ``database`` | Database containing the OMOP CDM |
+| ``spn_host`` | Kerberos SPN hostname (usually same as ``server``) |
+| ``vocab_schema`` | Schema with vocabulary tables |
+| ``cdm_schema`` | Schema with CDM clinical tables |
+| ``results_schema`` | Schema where cohort table will be written (needs CREATE TABLE) |
+
+Fill in every ``CHANGE_ME`` value before running.
+
+---
+
+## Output Files
+
+$outputTable
+
+---
+
+## Renewing a Kerberos Ticket
+
+Kerberos tickets expire after ~10 hours. On ``GSS initiate failed`` or ``Login failed``:
+
+``````bash
+export KRB5CCNAME=FILE:~/krb5cc_java
+kinit
+``````
+
+Then re-run ``bash run_analysis.sh``.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| ``GSS initiate failed`` / Kerberos error | Ticket expired | ``export KRB5CCNAME=FILE:~/krb5cc_java && kinit`` |
+| ``KDC not found`` | Not on HPC login node | Launch shell via cluster portal |
+| ``Login failed for user`` | Wrong ``spn_host`` | Check ``spn_host`` in config.R; ask HPC support for correct SPN |
+| ``JAVA_HOME is not set`` | conda env not active | ``conda activate openjdk`` then re-run |
+| ``No mssql-jdbc*.jar found`` | Missing JAR in drivers/ | Re-transfer bundle; confirm ``drivers/mssql-jdbc-*.jre11.jar`` exists |
+| ``fill in the following fields in config.R`` | ``CHANGE_ME`` not replaced | Edit config.R |
+| ``Run this script in a FRESH R session`` | Java already loaded | Open new terminal, re-activate conda, re-run |
+| ``CREATE TABLE permission denied`` | Insufficient DB permissions | Ask HPC support for CREATE TABLE on ``results_schema`` |
+"@
+        Set-Content -Path (Join-Path $BundleDir "README.md") -Value $readme -Encoding UTF8
+        Write-Host "  README.md generated from study_params.yaml"
+    }
 
     # -------------------------------------------------------------------------
     # Step 1 - Sync R source files from main project into bundle
@@ -135,7 +284,7 @@ try {
     #       age at index for each patient.  Used by the subgroup bias assessment
     #       section of the pipeline (compute_subgroup_bias).
     #
-    #   R/report_extended.R  →  portable/transportable_bundle/R/report.R
+    #   R/report_extended.R  →  portable/<study_name>/R/report.R
     #       Generates the manuscript-ready Word document (officer/flextable),
     #       including the discrimination/calibration table, calibration plots,
     #       and the subgroup ECE forest plot.  Note the filename translation:
@@ -182,21 +331,25 @@ try {
     }
 
     # --- Shared R analysis modules ---
-    Copy-BundleFile "R\risk_score_pipeline.R"        "portable\transportable_bundle\R\risk_score_pipeline.R"
-    Copy-BundleFile "R\cohorts.R"                    "portable\transportable_bundle\R\cohorts.R"
-    Copy-BundleFile "R\cohort_demographics.R"        "portable\transportable_bundle\R\cohort_demographics.R"
+    Copy-BundleFile "R\risk_score_pipeline.R"        "portable\$studyName\R\risk_score_pipeline.R"
+    Copy-BundleFile "R\cohorts.R"                    "portable\$studyName\R\cohorts.R"
+    Copy-BundleFile "R\cohort_demographics.R"        "portable\$studyName\R\cohort_demographics.R"
     # report_extended.R is the developer-workstation filename; the bundle
     # always loads it as report.R (see run_analysis.R: source("R/report.R")).
-    Copy-BundleFile "R\report_extended.R"            "portable\transportable_bundle\R\report.R"
+    Copy-BundleFile "R\report_extended.R"            "portable\$studyName\R\report.R"
 
     # --- Integer risk score reference data ---
-    Copy-BundleFile "risk_score\components.csv"          "portable\transportable_bundle\risk_score\components.csv"
-    Copy-BundleFile "risk_score\component_concepts.csv"  "portable\transportable_bundle\risk_score\component_concepts.csv"
-    Copy-BundleFile "risk_score\risk_lookup.csv"         "portable\transportable_bundle\risk_score\risk_lookup.csv"
+    Copy-BundleFile "risk_score\components.csv"          "portable\$studyName\risk_score\components.csv"
+    Copy-BundleFile "risk_score\component_concepts.csv"  "portable\$studyName\risk_score\component_concepts.csv"
+    Copy-BundleFile "risk_score\risk_lookup.csv"         "portable\$studyName\risk_score\risk_lookup.csv"
 
     # --- OMOP cohort SQL templates ---
-    Copy-BundleFile "cohorts\target_surgery.sql"     "portable\transportable_bundle\cohorts\target_surgery.sql"
-    Copy-BundleFile "cohorts\outcome_ssi.sql"        "portable\transportable_bundle\cohorts\outcome_ssi.sql"
+    Copy-BundleFile "cohorts\target_surgery.sql"     "portable\$studyName\cohorts\target_surgery.sql"
+    Copy-BundleFile "cohorts\outcome_ssi.sql"        "portable\$studyName\cohorts\outcome_ssi.sql"
+
+    # Generate README from study_params.yaml — overwrites any previous README
+    Write-Host "[Step 9] Generating bundle README ..." -ForegroundColor Cyan
+    Generate-BundleReadme -BundleDir $bundle
 
     # -------------------------------------------------------------------------
     # Step 2 - Sync MSSQL JDBC JAR into bundle/drivers/
@@ -240,14 +393,14 @@ try {
     } else {
         $jdbcDst = Join-Path $bundle "drivers\$($jdbcSrc.Name)"
         Copy-Item -Path $jdbcSrc.FullName -Destination $jdbcDst -Force
-        Write-Host "  $($jdbcSrc.Name) -> portable\transportable_bundle\drivers\"
+        Write-Host "  $($jdbcSrc.Name) -> portable\$studyName\drivers\"
     }
 
     # -------------------------------------------------------------------------
     # Step 3 - Build dated zip (previous zips are kept)
     #
     # WHY A DATED FILENAME:
-    #   Each build receives a date-stamped name (transportable_bundle_YYYYMMDD.zip)
+    #   Each build receives a date-stamped name (<study_name>_YYYYMMDD.zip)
     #   so that multiple versions can coexist in dist/.  This matters because:
     #     - A zip may already be in transit to or deployed on the protected analytic space when a new
     #       build is made.  The dated name lets us identify which version is
@@ -264,15 +417,15 @@ try {
     #   artefacts only.
     #
     # FILENAME SCHEME — multiple builds on the same day:
-    #   First build of the day  : transportable_bundle_YYYYMMDD.zip
-    #   Second build of the day : transportable_bundle_YYYYMMDD_1.zip
-    #   Third build of the day  : transportable_bundle_YYYYMMDD_2.zip
+    #   First build of the day  : <study_name>_YYYYMMDD.zip
+    #   Second build of the day : <study_name>_YYYYMMDD_1.zip
+    #   Third build of the day  : <study_name>_YYYYMMDD_2.zip
     #   ...and so on.
     #   The counter is found by scanning dist/ for existing files that match
     #   the date prefix and taking the next available number.
     #
     # WHAT IS INCLUDED IN THE ZIP:
-    #   Everything under portable/transportable_bundle/* is zipped EXCEPT output/.
+    #   Everything under portable/<study_name>/* is zipped EXCEPT output/.
     #   The output/ directory is excluded because:
     #     - It is created at runtime by run_integer_risk_score_pipeline().
     #     - Including a pre-existing directory in the zip causes it to be
@@ -298,14 +451,14 @@ try {
     Write-Host "[Step 9] Building zip ..." -ForegroundColor Cyan
 
     $stamp    = Get-Date -Format "yyyyMMdd"
-    $base     = "transportable_bundle_$stamp"
+    $base     = "${studyName}_$stamp"
 
     # Find the next available filename for today.
     # Existing files that match today's date are counted so the new zip always
     # gets a unique name:
-    #   transportable_bundle_YYYYMMDD.zip      (no suffix — first of the day)
-    #   transportable_bundle_YYYYMMDD_1.zip    (second build)
-    #   transportable_bundle_YYYYMMDD_2.zip    (third build)  ...
+    #   <study_name>_YYYYMMDD.zip      (no suffix — first of the day)
+    #   <study_name>_YYYYMMDD_1.zip    (second build)
+    #   <study_name>_YYYYMMDD_2.zip    (third build)  ...
     $existing = @(Get-ChildItem -Path $dist -Filter "${base}*.zip" -ErrorAction SilentlyContinue)
     if ($existing.Count -eq 0) {
         $zipName = "${base}.zip"

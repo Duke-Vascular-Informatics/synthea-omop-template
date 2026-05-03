@@ -19,9 +19,19 @@
 # Set the following variables in OMOP_Dev/.env (one level above this repo):
 #
 #   BUNDLE_GITLAB_REMOTE   Full SSH URL of the target GitLab repo.
-#                        e.g. git@your.gitlab.instance:netid/transportable-bundle.git
+#                          e.g. git@your.gitlab.instance:netid/study-bundle.git
 #   BUNDLE_GIT_USER_NAME   Your name for git commits inside the bundle repo.
 #   BUNDLE_GIT_USER_EMAIL  Your institutional email for git commits.
+#
+#   INST_OMOP_SERVER              SQL Server hostname for the institutional OMOP DB.
+#   INST_OMOP_DATABASE            Database name.
+#   INST_OMOP_SPN_HOST            Kerberos SPN hostname (often same as server).
+#   INST_OMOP_VOCAB_SCHEMA        Vocabulary schema.
+#   INST_OMOP_CDM_SCHEMA          CDM schema.
+#   INST_OMOP_RESULTS_SCHEMA      Personal write schema (domain\netid).
+#   INST_OMOP_CDM_DATABASE_ID     Short DB identifier for output files.
+#   INST_OMOP_CDM_DATABASE_NAME   Human-readable DB name for output files.
+#   INST_OMOP_CDM_DATABASE_DESCRIPTION  Description for output files.
 #
 # SSH authentication: the dev container must have access to an SSH agent with
 # your Git remote SSH key loaded.  Docker Desktop on macOS forwards the host
@@ -30,20 +40,20 @@
 #
 # WHAT THIS SCRIPT DOES
 # ---------------------
-#   1. Syncs shared R source files from the main project into portable/transportable_bundle/
+#   1. Syncs shared R source files from the main project into portable/$STUDY_NAME/
 #      so the bundle always reflects the current analysis code.
 #   2. Copies the MSSQL JDBC JAR from drivers/jdbc-runtime/ into the bundle.
-#   3. Commits the updated bundle to the portable/transportable_bundle/.git repo and
+#   3. Commits the updated bundle to the portable/$STUDY_NAME/.git repo and
 #      pushes to the 'transportable-bundle' branch on your.gitlab.instance.
 #   4. Builds a dated zip fallback in dist/ for offline transfers.
 #
-# FILES NOT OVERWRITTEN (bundle-specific, checked into portable/transportable_bundle/)
+# FILES NOT OVERWRITTEN (bundle-specific, checked into portable/$STUDY_NAME/)
 # -------------------------------------------------------------------------
-#   portable/transportable_bundle/R/connection.R      Kerberos / JVM setup for the protected analytic space
-#   portable/transportable_bundle/config.R            HPC cluster SQL Server + conda paths
-#   portable/transportable_bundle/run_analysis.R      HPC cluster entry-point script
-#   portable/transportable_bundle/install_packages.R  HPC cluster conda R package installer
-#   portable/transportable_bundle/setup_env.sh   Conda env + kinit helper
+#   portable/$STUDY_NAME/R/connection.R      Kerberos / JVM setup for the protected analytic space
+#   portable/$STUDY_NAME/config.R            HPC cluster SQL Server + conda paths
+#   portable/$STUDY_NAME/run_analysis.R      HPC cluster entry-point script
+#   portable/$STUDY_NAME/install_packages.R  HPC cluster conda R package installer
+#   portable/$STUDY_NAME/setup_env.sh   Conda env + kinit helper
 #
 # DEPLOYMENT ON HPC cluster (after this script runs)
 # -------------------------------------------
@@ -73,9 +83,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ---------------------------------------------------------------------------
 ENV_FILE="$REPO_ROOT/../.env"
 if [[ -f "$ENV_FILE" ]]; then
-  # Export only the BUNDLE_ variables; eval handles quoted values with spaces
+  # Export BUNDLE_* and INST_OMOP_* variables; eval handles quoted values
   while IFS= read -r line; do
-    [[ "$line" =~ ^BUNDLE_ ]] && export "${line?}"
+    [[ "$line" =~ ^BUNDLE_|^INST_OMOP_ ]] && export "${line?}"
   done < "$ENV_FILE"
 fi
 
@@ -83,6 +93,15 @@ BUNDLE_GITLAB_REMOTE="${BUNDLE_GITLAB_REMOTE:-}"
 BUNDLE_GIT_USER_NAME="${BUNDLE_GIT_USER_NAME:-}"
 BUNDLE_GIT_USER_EMAIL="${BUNDLE_GIT_USER_EMAIL:-}"
 BUNDLE_BRANCH="transportable-bundle"
+
+# Derive the bundle folder name from study_name in study_params.yaml so that
+# each study's portable folder is named after the analysis (e.g. my-study).
+# Falls back to "transportable_bundle" if study_params.yaml is not yet configured.
+STUDY_NAME=$(grep '^study_name:' "$REPO_ROOT/study_params.yaml" 2>/dev/null \
+  | sed 's/.*study_name:[[:space:]]*//' \
+  | tr -d '"'"'"' ' \
+  | tr -d '\r')
+STUDY_NAME="${STUDY_NAME:-transportable_bundle}"
 
 # ---------------------------------------------------------------------------
 # Validate config
@@ -94,15 +113,221 @@ if [[ -z "$BUNDLE_GITLAB_REMOTE" || "$BUNDLE_GITLAB_REMOTE" == *"CHANGE_ME"* ]];
   exit 1
 fi
 
-BUNDLE="$REPO_ROOT/portable/transportable_bundle"
+BUNDLE="$REPO_ROOT/portable/$STUDY_NAME"
 DIST="$REPO_ROOT/dist"
 
 if [[ ! -d "$BUNDLE" ]]; then
-  echo "[Step 9] ERROR: transportable bundle directory not found: $BUNDLE"
+  echo "[Step 9] ERROR: portable bundle directory not found: $BUNDLE"
   exit 1
 fi
 
 mkdir -p "$DIST"
+
+# ---------------------------------------------------------------------------
+# generate_bundle_readme — writes README.md to the bundle from study_params.yaml
+# ---------------------------------------------------------------------------
+generate_bundle_readme() {
+  local dest="$1"
+  local yaml="$REPO_ROOT/study_params.yaml"
+
+  local sname pred_window study_design
+  sname=$(grep '^study_name:' "$yaml" \
+    | sed 's/.*study_name:[[:space:]]*//' | cut -d'#' -f1 \
+    | tr -d '"'"'"' ' | tr -d '\r')
+  pred_window=$(grep '^prediction_window_days:' "$yaml" | grep -oE '[0-9]+' | head -1)
+  pred_window="${pred_window:-30}"
+  study_design=$(grep '^study_design:' "$yaml" \
+    | sed 's/.*study_design:[[:space:]]*//' | cut -d'#' -f1 \
+    | tr -d '"'"'"' ' | tr -d '\r')
+
+  local plp int_score char_flag word_rpt
+  plp=$(grep 'plp_model_validation:'   "$yaml" | grep -ioE 'true|false' | head -1 | tr A-Z a-z)
+  int_score=$(grep '^\s*integer_risk_score:' "$yaml" | grep -ioE 'true|false' | head -1 | tr A-Z a-z)
+  char_flag=$(grep 'cohort_characterization:' "$yaml" | grep -ioE 'true|false' | head -1 | tr A-Z a-z)
+  word_rpt=$(grep 'word_report:' "$yaml" | grep -ioE 'true|false' | head -1 | tr A-Z a-z)
+
+  local analysis_desc
+  if   [[ "$plp"       == "true" ]]; then
+    analysis_desc="External validation of a PatientLevelPrediction (PLP) Random Forest model predicting ${pred_window}-day outcomes."
+  elif [[ "$int_score" == "true" ]]; then
+    analysis_desc="External validation of an integer risk score predicting ${pred_window}-day outcomes."
+  elif [[ "$char_flag" == "true" ]]; then
+    analysis_desc="Cohort characterization — FeatureExtraction covariate summary of the target cohort."
+  else
+    analysis_desc="OMOP observational study (${study_design})."
+  fi
+
+  cat > "$dest/README.md" << EOF
+# ${sname} — Protected Analytic Space Bundle
+
+${analysis_desc}
+
+**Generated:** $(date +%Y-%m-%d) by \`workflow/09_build_portable_analysis_bundle.sh\`
+
+**Authentication:** Kerberos (institutional NetID) — no passwords stored in any file.
+**Java:** conda openjdk from miniforge — no system Java required.
+**JDBC driver:** pre-bundled in \`drivers/\` — no internet access needed after setup.
+
+---
+
+## Quick Start
+
+\`\`\`bash
+# One-time setup
+cd ~/${sname}
+bash setup_env.sh             # creates conda env, runs kinit, installs R packages
+# Edit .env — set OMOP_RESULTS_SCHEMA to your personal write schema (domain\netid)
+
+# Every session
+cd ~/${sname}
+export KRB5CCNAME=FILE:~/krb5cc_java
+kinit                      # enter institutional credentials when prompted
+conda activate openjdk
+bash run_analysis.sh
+\`\`\`
+
+Results are written to \`output/\`.
+
+---
+
+## .env — Configuration
+
+Connection details are pre-populated from the study coordinator's workspace.
+**You only need to update \`OMOP_RESULTS_SCHEMA\`** if you need to write to a
+different schema than the pre-filled value (format: \`domain\\netid\`).
+
+| Field | Description |
+|-------|-------------|
+| \`OMOP_SERVER\` | SQL Server hostname (pre-filled) |
+| \`OMOP_DATABASE\` | Database containing the OMOP CDM (pre-filled) |
+| \`OMOP_SPN_HOST\` | Kerberos SPN hostname (pre-filled) |
+| \`OMOP_VOCAB_SCHEMA\` | Schema with vocabulary tables (pre-filled) |
+| \`OMOP_CDM_SCHEMA\` | Schema with CDM clinical tables (pre-filled) |
+| \`OMOP_RESULTS_SCHEMA\` | Write schema — pre-filled; change only if running as a different user |
+
+---
+
+## Output Files
+
+EOF
+
+  if [[ "$plp" == "true" ]]; then
+    cat >> "$dest/README.md" << EOF
+| File | Description |
+|------|-------------|
+| \`person_level_scores.csv\` | Per-patient predicted probabilities, observed outcomes, and prediction window flags |
+| \`risk_score_eval/person_level_scores.csv\` | Copy used by the report module |
+| \`risk_score_eval/covariate_summary.csv\` | Per-covariate activation rates across the validation cohort |
+| \`risk_score_eval/metrics.csv\` | AUROC, AUPRC, Brier score, ECE, calibration intercept and slope with 95% bootstrap CIs |
+| \`risk_score_eval/ece_subgroup.csv\` | Expected Calibration Error by demographic subgroup |
+| \`roc_curve.png\` | ROC curve |
+| \`calibration_lookup.png\` | Calibration plot |
+EOF
+    if [[ "$word_rpt" == "true" ]]; then
+      printf '| `%s_report_<date>.docx` | Manuscript-format Word report with performance tables and calibration figures |\n' \
+        "$sname" >> "$dest/README.md"
+    fi
+  elif [[ "$int_score" == "true" ]]; then
+    cat >> "$dest/README.md" << EOF
+| File | Description |
+|------|-------------|
+| \`person_level_scores.csv\` | Per-patient covariate points, total score, and predicted probabilities |
+| \`risk_score_eval/covariate_summary.csv\` | Covariate-level activation counts and mean points |
+| \`risk_score_eval/metrics.csv\` | AUROC, AUPRC, Brier score, ECE, calibration metrics with 95% CIs |
+| \`risk_score_eval/calibration_table_lookup.csv\` | Calibration decile table — published lookup model |
+| \`risk_score_eval/calibration_table_recalibrated.csv\` | Calibration decile table — recalibrated model |
+| \`calibration_lookup.png\` | Calibration plot — lookup model |
+| \`calibration_recalibrated.png\` | Calibration plot — recalibrated model |
+EOF
+    if [[ "$word_rpt" == "true" ]]; then
+      printf '| `%s_report_<date>.docx` | Manuscript-format Word report with Tables 1–4, ROC curve, and calibration figures |\n' \
+        "$sname" >> "$dest/README.md"
+    fi
+  else
+    echo "See \`output/\` directory for analysis outputs." >> "$dest/README.md"
+  fi
+
+  cat >> "$dest/README.md" << 'STATIC_EOF'
+
+---
+
+## Renewing a Kerberos Ticket
+
+Kerberos tickets expire after ~10 hours. On `GSS initiate failed` or `Login failed`:
+
+```bash
+export KRB5CCNAME=FILE:~/krb5cc_java
+kinit
+```
+
+Then re-run `bash run_analysis.sh`.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `GSS initiate failed` / Kerberos error | Ticket expired | `export KRB5CCNAME=FILE:~/krb5cc_java && kinit` |
+| `KDC not found` | Not on HPC login node | Launch shell via cluster portal |
+| `Login failed for user` | Wrong `spn_host` | Check `OMOP_SPN_HOST` in `.env`; ask HPC support |
+| `JAVA_HOME is not set` | conda env not active | `conda activate openjdk` then re-run |
+| `No mssql-jdbc*.jar found` | Missing JAR in drivers/ | Re-transfer bundle; confirm `drivers/mssql-jdbc-*.jre11.jar` exists |
+| `fill in the following fields in config.R` | `OMOP_RESULTS_SCHEMA` still placeholder | Edit `.env` |
+| `Run this script in a FRESH R session` | Java already loaded | Open new terminal, re-activate conda, re-run |
+| `CREATE TABLE permission denied` | Insufficient DB permissions | Ask HPC support for CREATE TABLE on `results_schema` |
+STATIC_EOF
+
+  echo "  README.md generated from study_params.yaml"
+}
+
+# ---------------------------------------------------------------------------
+# generate_bundle_env — writes .env to the bundle with institution-specific
+# OMOP connection details sourced from the workspace .env (INST_OMOP_* vars).
+#
+# Each value is single-quoted so that backslashes in schema names
+# (e.g. OMOP_RESULTS_SCHEMA='dhe\apj20') are preserved literally when the
+# file is sourced by run_analysis.sh with set -o allexport.
+# ---------------------------------------------------------------------------
+generate_bundle_env() {
+  local dest="$1"
+
+  if [[ -z "${INST_OMOP_SERVER:-}" ]]; then
+    echo "  [WARN] INST_OMOP_SERVER not set in .env — .env will contain placeholders."
+    echo "         Add INST_OMOP_* variables to OMOP_Dev/.env and re-run step 9."
+  fi
+
+  cat > "$dest/.env" << 'ENVHEADER'
+# =============================================================================
+# .env — Site-specific OMOP connection for the portable analysis bundle.
+#
+# Generated by workflow/09_build_portable_analysis_bundle.sh from the
+# workspace .env (INST_OMOP_* variables).
+#
+# All connection values are pre-populated by the study coordinator.
+# Only change OMOP_RESULTS_SCHEMA if you need to write to a different schema
+# (e.g. you are a collaborator with a different domain\netid write schema).
+# =============================================================================
+
+# SQL Server connection
+ENVHEADER
+
+  printf "OMOP_SERVER='%s'\n"                   "${INST_OMOP_SERVER:-YOUR_SERVER.example.com}"           >> "$dest/.env"
+  printf "OMOP_DATABASE='%s'\n"                 "${INST_OMOP_DATABASE:-YOUR_DATABASE}"                   >> "$dest/.env"
+  printf "OMOP_SPN_HOST='%s'\n\n"               "${INST_OMOP_SPN_HOST:-YOUR_SPN_HOST}"                   >> "$dest/.env"
+  printf "# Schema names\n"                                                                               >> "$dest/.env"
+  printf "OMOP_VOCAB_SCHEMA='%s'\n"             "${INST_OMOP_VOCAB_SCHEMA:-omop_vocab}"                  >> "$dest/.env"
+  printf "OMOP_CDM_SCHEMA='%s'\n\n"             "${INST_OMOP_CDM_SCHEMA:-omop_cdm}"                      >> "$dest/.env"
+  printf "# Personal write schema — pre-filled; change only if running as a different user\n" >> "$dest/.env"
+  printf "OMOP_RESULTS_SCHEMA='%s'\n\n"         "${INST_OMOP_RESULTS_SCHEMA:-your_results_schema}"       >> "$dest/.env"
+  printf "# Database metadata (written into output files)\n"                                              >> "$dest/.env"
+  printf "OMOP_CDM_DATABASE_ID='%s'\n"          "${INST_OMOP_CDM_DATABASE_ID:-your_cdm_v5.4}"            >> "$dest/.env"
+  printf "OMOP_CDM_DATABASE_NAME='%s'\n"        "${INST_OMOP_CDM_DATABASE_NAME:-Your Institution OMOP CDM}" >> "$dest/.env"
+  printf "OMOP_CDM_DATABASE_DESCRIPTION='%s'\n" \
+    "${INST_OMOP_CDM_DATABASE_DESCRIPTION:-Brief description of the patient population and database.}"   >> "$dest/.env"
+
+  echo "  .env written with site-specific OMOP connection details"
+}
 
 # ---------------------------------------------------------------------------
 # Step 1 — Sync shared R source files into the bundle
@@ -122,20 +347,28 @@ copy_bundle_file() {
 }
 
 # Shared R analysis modules
-copy_bundle_file "R/risk_score_pipeline.R"   "portable/transportable_bundle/R/risk_score_pipeline.R"
-copy_bundle_file "R/cohorts.R"               "portable/transportable_bundle/R/cohorts.R"
-copy_bundle_file "R/cohort_demographics.R"   "portable/transportable_bundle/R/cohort_demographics.R"
+copy_bundle_file "R/risk_score_pipeline.R"   "portable/$STUDY_NAME/R/risk_score_pipeline.R"
+copy_bundle_file "R/cohorts.R"               "portable/$STUDY_NAME/R/cohorts.R"
+copy_bundle_file "R/cohort_demographics.R"   "portable/$STUDY_NAME/R/cohort_demographics.R"
 # report_extended.R is loaded as report.R on the protected analytic space (see run_analysis.R)
-copy_bundle_file "R/report_extended.R"       "portable/transportable_bundle/R/report.R"
+copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 
 # Integer risk score reference data
-copy_bundle_file "risk_score/components.csv"         "portable/transportable_bundle/risk_score/components.csv"
-copy_bundle_file "risk_score/component_concepts.csv" "portable/transportable_bundle/risk_score/component_concepts.csv"
-copy_bundle_file "risk_score/risk_lookup.csv"        "portable/transportable_bundle/risk_score/risk_lookup.csv"
+copy_bundle_file "risk_score/components.csv"         "portable/$STUDY_NAME/risk_score/components.csv"
+copy_bundle_file "risk_score/component_concepts.csv" "portable/$STUDY_NAME/risk_score/component_concepts.csv"
+copy_bundle_file "risk_score/risk_lookup.csv"        "portable/$STUDY_NAME/risk_score/risk_lookup.csv"
 
 # OMOP cohort SQL templates
-copy_bundle_file "cohorts/target_surgery.sql"  "portable/transportable_bundle/cohorts/target_surgery.sql"
-copy_bundle_file "cohorts/outcome_ssi.sql"     "portable/transportable_bundle/cohorts/outcome_ssi.sql"
+copy_bundle_file "cohorts/target_surgery.sql"  "portable/$STUDY_NAME/cohorts/target_surgery.sql"
+copy_bundle_file "cohorts/outcome_ssi.sql"     "portable/$STUDY_NAME/cohorts/outcome_ssi.sql"
+
+# Generate README from study_params.yaml — overwrites any previous README
+echo "[Step 9] Generating bundle README ..."
+generate_bundle_readme "$BUNDLE"
+
+# Generate .env with institution-specific OMOP connection details from INST_OMOP_*
+echo "[Step 9] Generating bundle .env from INST_OMOP_* ..."
+generate_bundle_env "$BUNDLE"
 
 # ---------------------------------------------------------------------------
 # Step 2 — Sync MSSQL JDBC JAR into bundle/drivers/
@@ -148,7 +381,7 @@ if [[ -z "$JDBC_JAR" ]]; then
 else
   mkdir -p "$BUNDLE/drivers"
   cp -f "$JDBC_JAR" "$BUNDLE/drivers/"
-  echo "  $(basename "$JDBC_JAR") -> portable/transportable_bundle/drivers/"
+  echo "  $(basename "$JDBC_JAR") -> portable/$STUDY_NAME/drivers/"
 fi
 
 # ---------------------------------------------------------------------------
@@ -170,7 +403,7 @@ cd "$BUNDLE"
 
 # Initialise git repo inside the bundle on first run
 if [[ ! -d ".git" ]]; then
-  echo "  Initialising git repo in portable/transportable_bundle/ ..."
+  echo "  Initialising git repo in portable/$STUDY_NAME/ ..."
   git init -b "$BUNDLE_BRANCH"
   git remote add origin "$BUNDLE_GITLAB_REMOTE"
 else
@@ -230,9 +463,9 @@ cd "$REPO_ROOT"
 echo "[Step 9] Building zip fallback ..."
 
 STAMP=$(date +"%Y%m%d")
-BASE="transportable_bundle_${STAMP}"
+BASE="${STUDY_NAME}_${STAMP}"
 
-# Find the next available filename for today (transportable_bundle_YYYYMMDD.zip,
+# Find the next available filename for today (STUDY_NAME_YYYYMMDD.zip,
 # then _1.zip, _2.zip, ... if multiple builds are made on the same day)
 EXISTING_COUNT=$(find "$DIST" -name "${BASE}*.zip" 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$EXISTING_COUNT" -eq 0 ]]; then
@@ -242,7 +475,7 @@ else
 fi
 ZIP_PATH="$DIST/$ZIP_NAME"
 
-# Zip everything under portable/transportable_bundle/ except output/ (created at runtime)
+# Zip everything under portable/$STUDY_NAME/ except output/ (created at runtime)
 (
   cd "$BUNDLE"
   find . -mindepth 1 \
@@ -260,6 +493,6 @@ echo ""
 echo "Step 9 complete."
 echo ""
 echo "To deploy on the protected analytic space:"
-echo "  git clone --branch $BUNDLE_BRANCH $BUNDLE_GITLAB_REMOTE transportable-bundle"
+echo "  git clone --branch $BUNDLE_BRANCH $BUNDLE_GITLAB_REMOTE $STUDY_NAME"
 echo "  # or to update an existing clone:"
-echo "  cd transportable-bundle && git pull origin $BUNDLE_BRANCH"
+echo "  cd $STUDY_NAME && git pull origin $BUNDLE_BRANCH"

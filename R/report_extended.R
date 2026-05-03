@@ -323,7 +323,10 @@ source("R/cohort_demographics.R")
 # Returns NULL silently if the input file does not exist or lacks the required
 # columns.
 # -----------------------------------------------------------------------------
-.save_calibration_plot_from_table <- function(calibration_table_path, output_folder, file_name = "calibration_lookup.png") {
+.save_calibration_plot_from_table <- function(calibration_table_path,
+                                              output_folder,
+                                              file_name = "calibration_lookup.png",
+                                              plot_title = "Calibration Plot") {
   if (!file.exists(calibration_table_path)) {
     return(NULL)
   }
@@ -338,7 +341,7 @@ source("R/cohort_demographics.R")
     ggplot2::geom_line() +
     ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
     ggplot2::labs(
-      title = "Calibration Plot: Lookup Model",
+      title = plot_title,
       x = "Mean predicted risk",
       y = "Observed event rate"
     ) +
@@ -349,6 +352,58 @@ source("R/cohort_demographics.R")
 
   out_file <- file.path(output_folder, file_name)
   ggplot2::ggsave(out_file, p, width = 5, height = 5, dpi = 150)
+  out_file
+}
+
+# -----------------------------------------------------------------------------
+# .save_calibration_plot_from_vectors()
+#
+# Fallback calibration plot generator when pipeline PNG/CSV artifacts are
+# missing but person-level predictions are available in memory.
+# -----------------------------------------------------------------------------
+.save_calibration_plot_from_vectors <- function(y,
+                                                p,
+                                                output_folder,
+                                                file_name,
+                                                plot_title,
+                                                n_bins = 10) {
+  ok <- !(is.na(y) | is.na(p))
+  y <- as.numeric(y[ok])
+  p <- as.numeric(p[ok])
+
+  if (length(y) < 10 || length(unique(y)) < 2) {
+    return(NULL)
+  }
+
+  p <- pmin(pmax(p, 0.0001), 0.9999)
+  qbreaks <- unique(stats::quantile(p, probs = seq(0, 1, length.out = n_bins + 1), na.rm = TRUE))
+  if (length(qbreaks) < 3) {
+    qbreaks <- c(0, 1)
+  }
+
+  bins <- cut(p, breaks = qbreaks, include.lowest = TRUE)
+  cal <- aggregate(
+    cbind(predicted = p, observed = y) ~ bins,
+    data = data.frame(p = p, y = y, bins = bins),
+    FUN = mean
+  )
+
+  p_cal <- ggplot2::ggplot(cal, ggplot2::aes(x = predicted, y = observed)) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::geom_line() +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+    ggplot2::labs(
+      title = plot_title,
+      x = "Mean predicted risk",
+      y = "Observed event rate"
+    ) +
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    ggplot2::coord_equal() +
+    ggplot2::theme_minimal()
+
+  out_file <- file.path(output_folder, file_name)
+  ggplot2::ggsave(out_file, p_cal, width = 5, height = 5, dpi = 150)
   out_file
 }
 
@@ -838,6 +893,51 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   if (file.exists(file.path(score_output_dir, "metrics.csv"))) {
     metrics <- read.csv(file.path(score_output_dir, "metrics.csv"), stringsAsFactors = FALSE)
   }
+
+  # Ensure calibration PNGs exist for report insertion by backfilling from CSV
+  # tables (preferred) or person-level predictions (fallback).
+  lookup_plot_path <- file.path(score_output_dir, "calibration_lookup.png")
+  recal_plot_path <- file.path(score_output_dir, "calibration_recalibrated.png")
+  lookup_table_path <- file.path(score_output_dir, "calibration_table_lookup.csv")
+  recal_table_path <- file.path(score_output_dir, "calibration_table_recalibrated.csv")
+
+  if (!file.exists(lookup_plot_path) && file.exists(lookup_table_path)) {
+    .save_calibration_plot_from_table(
+      calibration_table_path = lookup_table_path,
+      output_folder = score_output_dir,
+      file_name = "calibration_lookup.png",
+      plot_title = "Calibration Plot: Lookup Model"
+    )
+  }
+  if (!file.exists(recal_plot_path) && file.exists(recal_table_path)) {
+    .save_calibration_plot_from_table(
+      calibration_table_path = recal_table_path,
+      output_folder = score_output_dir,
+      file_name = "calibration_recalibrated.png",
+      plot_title = "Calibration Plot: Recalibrated Model"
+    )
+  }
+
+  if (!file.exists(lookup_plot_path) && !is.null(person_level) &&
+      all(c("outcome", "predicted_risk_lookup") %in% names(person_level))) {
+    .save_calibration_plot_from_vectors(
+      y = person_level$outcome,
+      p = person_level$predicted_risk_lookup,
+      output_folder = score_output_dir,
+      file_name = "calibration_lookup.png",
+      plot_title = "Calibration Plot: Lookup Model"
+    )
+  }
+  if (!file.exists(recal_plot_path) && !is.null(person_level) &&
+      all(c("outcome", "predicted_risk_recalibrated") %in% names(person_level))) {
+    .save_calibration_plot_from_vectors(
+      y = person_level$outcome,
+      p = person_level$predicted_risk_recalibrated,
+      output_folder = score_output_dir,
+      file_name = "calibration_recalibrated.png",
+      plot_title = "Calibration Plot: Recalibrated Model"
+    )
+  }
   
   # Check for calibration plot files
   cal_files <- list.files(score_output_dir, pattern = "^calibration_.*\\.png$", full.names = TRUE)
@@ -1013,6 +1113,16 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
   doc <- body_add_flextable(doc, .build_table1(.covariate_table_data()))
   doc <- body_add_par(doc, "", style = "Normal")
 
+  # ---- Figure 1. ROC Curve (placed immediately after Tables 1-2) ----------
+  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
+    doc <- body_add_par(doc,
+      "Figure 1.  Receiver operating characteristic (ROC) curve for 90-day SSI risk prediction.",
+      style = "Normal"
+    )
+    doc <- body_add_img(doc, src = roc_plot_file, width = 5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
   # ---- 5. Table 3: Covariate Summary & Cohort Counts ----------------------
   if (!is.null(covariate_summary)) {
     doc <- body_add_par(doc, "", style = "Normal")
@@ -1123,19 +1233,6 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
     doc <- body_add_par(doc, "", style = "Normal")
   }
 
-  # ---- 7. ROC Curve -------------------------------------------------------
-  if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
-    doc <- body_add_par(doc, "", style = "Normal")
-    doc <- body_add_par(doc, "", style = "Normal")
-    doc <- body_add_par(doc, "7.  Discrimination: ROC Curve", style = "heading 2")
-    doc <- body_add_par(doc,
-      "Figure 2 displays the receiver operating characteristic (ROC) curve for the risk score, ",
-      style = "Normal"
-    )
-    doc <- body_add_img(doc, src = roc_plot_file, width = 5, height = 3.5)
-    doc <- body_add_par(doc, "", style = "Normal")
-  }
-
   # ---- 8. Calibration Plots -----------------------------------------------
   if (length(calibration_plot_files) > 0) {
     doc <- body_add_par(doc, "", style = "Normal")
@@ -1143,14 +1240,14 @@ generate_word_report <- function(output_dir = "output/risk_score_eval",
     doc <- body_add_par(doc, "8.  Calibration: Observed vs. Predicted Risk", style = "heading 2")
     doc <- body_add_par(doc,
       paste0(
-        "Figures 3–4 display calibration plots for the lookup-based and recalibrated model specifications. ",
+        "Figures 2+ display calibration plots for the lookup-based and recalibrated model specifications. ",
         "The solid line represents perfect calibration (predicted = observed risk). Points above the line ",
         "indicate overprediction; points below indicate underprediction."
       ),
       style = "Normal"
     )
     
-    fig_num <- 3
+    fig_num <- 2
     for (model_name in names(calibration_plot_files)) {
       plot_file <- calibration_plot_files[[model_name]]
       if (file.exists(plot_file)) {
@@ -1290,8 +1387,11 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   covariate_summary_path <- file.path(score_output_dir, "covariate_summary.csv")
   metrics_path <- file.path(score_output_dir, "metrics.csv")
   lookup_calibration_plot <- file.path(score_output_dir, "calibration_lookup.png")
+  recalibrated_calibration_plot <- file.path(score_output_dir, "calibration_recalibrated.png")
   calibration_table_lookup_path <- file.path(score_output_dir, "calibration_table_lookup.csv")
+  calibration_table_recalibrated_path <- file.path(score_output_dir, "calibration_table_recalibrated.csv")
   lookup_calibration_plot_temp <- file.path(temp_figure_dir, "calibration_lookup.png")
+  recalibrated_calibration_plot_temp <- file.path(temp_figure_dir, "calibration_recalibrated.png")
 
   if (!file.exists(person_level_path) || !file.exists(covariate_summary_path) || !file.exists(metrics_path)) {
     stop("Missing one or more required pipeline outputs in ", score_output_dir)
@@ -2774,10 +2874,53 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     lookup_generated <- .save_calibration_plot_from_table(
       calibration_table_path = calibration_table_lookup_path,
       output_folder = temp_figure_dir,
-      file_name = "calibration_lookup.png"
+      file_name = "calibration_lookup.png",
+      plot_title = "Calibration Plot: Lookup Model"
     )
     if (!is.null(lookup_generated) && file.exists(lookup_generated)) {
       lookup_calibration_plot_temp <- lookup_generated
+    }
+  }
+
+  if (file.exists(recalibrated_calibration_plot)) {
+    file.copy(recalibrated_calibration_plot, recalibrated_calibration_plot_temp, overwrite = TRUE)
+  } else if (file.exists(calibration_table_recalibrated_path)) {
+    recal_generated <- .save_calibration_plot_from_table(
+      calibration_table_path = calibration_table_recalibrated_path,
+      output_folder = temp_figure_dir,
+      file_name = "calibration_recalibrated.png",
+      plot_title = "Calibration Plot: Recalibrated Model"
+    )
+    if (!is.null(recal_generated) && file.exists(recal_generated)) {
+      recalibrated_calibration_plot_temp <- recal_generated
+    }
+  }
+
+  if (!file.exists(lookup_calibration_plot_temp) &&
+      all(c("outcome", "predicted_risk_lookup") %in% names(person_level))) {
+    lookup_generated <- .save_calibration_plot_from_vectors(
+      y = person_level$outcome,
+      p = person_level$predicted_risk_lookup,
+      output_folder = temp_figure_dir,
+      file_name = "calibration_lookup.png",
+      plot_title = "Calibration Plot: Lookup Model"
+    )
+    if (!is.null(lookup_generated) && file.exists(lookup_generated)) {
+      lookup_calibration_plot_temp <- lookup_generated
+    }
+  }
+
+  if (!file.exists(recalibrated_calibration_plot_temp) &&
+      all(c("outcome", "predicted_risk_recalibrated") %in% names(person_level))) {
+    recal_generated <- .save_calibration_plot_from_vectors(
+      y = person_level$outcome,
+      p = person_level$predicted_risk_recalibrated,
+      output_folder = temp_figure_dir,
+      file_name = "calibration_recalibrated.png",
+      plot_title = "Calibration Plot: Recalibrated Model"
+    )
+    if (!is.null(recal_generated) && file.exists(recal_generated)) {
+      recalibrated_calibration_plot_temp <- recal_generated
     }
   }
 
@@ -3060,6 +3203,16 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
     message("[report] Table 2 (SSI outcomes) added.")
   }
 
+  # ---- Figure 1: SSI rate by year (placed after Tables 1-2) ---------------
+  if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
+    doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
+    doc <- body_add_par(doc,
+      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure, stratified by SSI type (Superficial, Deep, Organ-space). Stacked area bands show the cumulative SSI rate; the top edge of each band represents the sum of all SSI types up to and including that layer. Points and lines trace the top edge of each type's band.",
+      style = "Normal")
+    doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
+    doc <- body_add_par(doc, "", style = "Normal")
+  }
+
   # ---- Table 3: Features ---------------------------------------------------
   doc <- body_add_par(doc, "Predictor activation", style = "heading 3")
   doc <- body_add_par(doc, "Table 3. Features: predictor definitions and activation summary.", style = "Normal")
@@ -3082,16 +3235,6 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   doc <- body_add_flextable(doc, simple_ft(results_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
-  # ---- Figure 1: SSI rate by year ------------------------------------------
-  if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
-    doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
-    doc <- body_add_par(doc,
-      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure, stratified by SSI type (Superficial, Deep, Organ-space). Stacked area bands show the cumulative SSI rate; the top edge of each band represents the sum of all SSI types up to and including that layer. Points and lines trace the top edge of each type's band.",
-      style = "Normal")
-    doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
-    doc <- body_add_par(doc, "", style = "Normal")
-  }
-
   # ---- Figure 2: AUC / ROC curve -------------------------------------------
   if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
     doc <- body_add_par(doc, "Figure 2. Receiver operating characteristic (ROC) curve.", style = "Normal")
@@ -3101,10 +3244,20 @@ generate_manuscript_report <- function(output_dir        = "output/risk_score_ev
   }
 
   # ---- Figure 3: Calibration curve -----------------------------------------
-  if (file.exists(lookup_calibration_plot_temp)) {
+  if (file.exists(lookup_calibration_plot_temp) || file.exists(recalibrated_calibration_plot_temp)) {
+    cal_plot_path <- if (file.exists(lookup_calibration_plot_temp)) {
+      lookup_calibration_plot_temp
+    } else {
+      recalibrated_calibration_plot_temp
+    }
+    cal_caption <- if (identical(cal_plot_path, lookup_calibration_plot_temp)) {
+      "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the lookup model. Dashed diagonal = perfect calibration."
+    } else {
+      "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the recalibrated model. Dashed diagonal = perfect calibration."
+    }
     doc <- body_add_par(doc, "Figure 3. Calibration plot for the published lookup mapping.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the lookup model. Dashed diagonal = perfect calibration.", style = "Normal")
-    doc <- body_add_img(doc, src = lookup_calibration_plot_temp, width = 4.5, height = 4.5)
+    doc <- body_add_par(doc, cal_caption, style = "Normal")
+    doc <- body_add_img(doc, src = cal_plot_path, width = 4.5, height = 4.5)
     doc <- body_add_par(doc, "", style = "Normal")
   }
 
