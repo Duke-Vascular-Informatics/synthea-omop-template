@@ -358,9 +358,12 @@ copy_bundle_file "risk_score/components.csv"         "portable/$STUDY_NAME/risk_
 copy_bundle_file "risk_score/component_concepts.csv" "portable/$STUDY_NAME/risk_score/component_concepts.csv"
 copy_bundle_file "risk_score/risk_lookup.csv"        "portable/$STUDY_NAME/risk_score/risk_lookup.csv"
 
-# OMOP cohort SQL templates
-copy_bundle_file "cohorts/target_surgery.sql"  "portable/$STUDY_NAME/cohorts/target_surgery.sql"
-copy_bundle_file "cohorts/outcome_ssi.sql"     "portable/$STUDY_NAME/cohorts/outcome_ssi.sql"
+# OMOP cohort SQL templates — copy all .sql files from cohorts/ so the correct
+# files are included regardless of study-specific naming conventions.
+for _sql in "$REPO_ROOT/cohorts/"*.sql; do
+  [[ -f "$_sql" ]] && copy_bundle_file "cohorts/$(basename "$_sql")" \
+    "portable/$STUDY_NAME/cohorts/$(basename "$_sql")"
+done
 
 # Generate README from study_params.yaml — overwrites any previous README
 echo "[Step 9] Generating bundle README ..."
