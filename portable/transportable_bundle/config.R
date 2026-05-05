@@ -51,6 +51,17 @@ get_validation_config <- function() {
   )
   hpc_jar <- Sys.getenv("OMOP_HPC_JAR", unset = hpc_jar_default)
 
+  # Bracket-quote a SQL Server identifier that contains characters requiring
+  # quoting (backslash, space, hyphen, dot).  Applied to results_schema once at
+  # config creation so that every consumer of config$results_schema is safe to
+  # use the value directly in SQL — no call-site quoting needed.
+  .bq <- function(x) {
+    if (nchar(x) > 0 && grepl("[\\\\\\s\\-\\.]", x, perl = TRUE) &&
+        !grepl("^\\[", x))
+      paste0("[", x, "]")
+    else x
+  }
+
   # ---------------------------------------------------------------------------
   # SQL Server connection — FILL IN THESE VALUES
   # ---------------------------------------------------------------------------
@@ -88,7 +99,7 @@ get_validation_config <- function() {
     results_database = NA,
 
     # Results schema within the results database (your personal write schema).
-    results_schema   = Sys.getenv("OMOP_RESULTS_SCHEMA", unset = "your_results_schema"),
+    results_schema   = .bq(Sys.getenv("OMOP_RESULTS_SCHEMA", unset = "your_results_schema")),
     # ---- END CONNECTION -----------------------------------------------------
 
     dbms             = "sql server",

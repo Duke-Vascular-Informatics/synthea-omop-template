@@ -56,6 +56,17 @@ get_validation_config <- function() {
   jdbc_home        <- file.path(path_to_driver, "sqljdbc_13.2", "enu")
   jdbc_runtime_dir <- file.path(path_to_driver, "jdbc-runtime")
 
+  # Bracket-quote a SQL Server identifier that contains characters requiring
+  # quoting (backslash, space, hyphen, dot).  Applied to results_schema once at
+  # config creation so that every consumer of config$results_schema is safe to
+  # use the value directly in SQL — no call-site quoting needed.
+  .bq <- function(x) {
+    if (nchar(x) > 0 && grepl("[\\\\\\s\\-\\.]", x, perl = TRUE) &&
+        !grepl("^\\[", x))
+      paste0("[", x, "]")
+    else x
+  }
+
   list(
 
     # -------------------------------------------------------------------------
@@ -98,7 +109,7 @@ get_validation_config <- function() {
     # -------------------------------------------------------------------------
     cdm_schema        = p$cdm_schema     %||% "cdm_my_study",
     cdm_version       = 5L,
-    results_schema    = p$results_schema %||% "my_study_results",
+    results_schema    = .bq(p$results_schema %||% "my_study_results"),
     results_database  = p$results_database %||% NA_character_,
     cohort_table      = p$cohort_table   %||% "my_study_cohort",
 

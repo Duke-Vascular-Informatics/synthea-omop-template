@@ -69,9 +69,12 @@ ensure_results_schema <- function(connection, config) {
   }
 
   # Check whether the schema exists (sys.schemas is database-scoped).
+  # sys.schemas.name stores the raw identifier without bracket-quotes, so strip
+  # any brackets that config$results_schema may already carry before comparing.
+  raw_schema <- gsub("^\\[|\\]$", "", config$results_schema)
   schema_exists_sql <- SqlRender::render(
     sql            = "SELECT COUNT(*) AS N FROM sys.schemas WHERE name = '@results_schema'",
-    results_schema = config$results_schema
+    results_schema = raw_schema
   )
   schema_exists <- DatabaseConnector::querySql(
     connection,
@@ -79,18 +82,19 @@ ensure_results_schema <- function(connection, config) {
   )$N[1] > 0
 
   if (schema_exists) {
-    message("Results schema '", config$results_schema, "' already exists — skipping creation.")
+    message("Results schema '", raw_schema, "' already exists — skipping creation.")
   } else {
-    message("Results schema '", config$results_schema, "' not found — attempting to create ...")
+    message("Results schema '", raw_schema, "' not found — attempting to create ...")
     tryCatch(
       DatabaseConnector::executeSql(
         connection,
-        paste0("EXEC('CREATE SCHEMA [", config$results_schema, "]')"),
+        # config$results_schema is already bracket-quoted when needed; no extra []
+        paste0("EXEC('CREATE SCHEMA ", config$results_schema, "')"),
         reportOverallTime = FALSE
       ),
       error = function(e) {
         stop(
-          "Could not create results schema '", config$results_schema, "'.\n",
+          "Could not create results schema '", raw_schema, "'.\n",
           "Your account may not have CREATE SCHEMA permission.\n",
           "Ask DHTS to create the schema and grant INSERT/SELECT/DROP.\n\n",
           "Original error: ", conditionMessage(e)
