@@ -123,6 +123,19 @@ min_prior_observation_days: 365   # TODO [CONFIG]: adjust or set to 0 for no res
 covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 
 # =============================================================================
+# REPORT GENERATION
+# Controls how generate_manuscript_report() renders narrative text and tables.
+# score_type is only used when study_design is "prognostic_model".
+# Other study designs will use their own report: sub-keys when implemented.
+# =============================================================================
+report:
+  score_type:             "integer"                                  # "integer" | "lasso"
+  outcome_label:          "Outcome"                                  # TODO [CONFIG]: outcome display name, e.g. "Surgical Site Infection (SSI)"
+  model_type_description: "integer risk score"                       # TODO [CONFIG]: e.g. "integer risk score" | "LASSO model"
+  # lasso score_type only — path to PatientLevelPrediction variable-importance RDS:
+  # var_imp_file: "model/varImp.rds"
+
+# =============================================================================
 # OUTPUT
 # =============================================================================
 output_folder: "output/my_study"   # TODO [CONFIG]: update to match study_name

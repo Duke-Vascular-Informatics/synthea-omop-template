@@ -212,6 +212,15 @@ get_validation_config <- function() {
     run_prognostic_model        = isTRUE(p$analyses$prognostic_model),
     run_causal_inference        = isTRUE(p$analyses$causal_inference),
     run_integer_risk_score      = isTRUE(p$analyses$integer_risk_score),
-    run_word_report             = isTRUE(p$analyses$word_report)
+    run_word_report             = isTRUE(p$analyses$word_report),
+
+    # -------------------------------------------------------------------------
+    # Report generation — from study_params.yaml report: section.
+    # score_type is used only for study_design = "prognostic_model".
+    # -------------------------------------------------------------------------
+    score_type               = p$report$score_type             %||% "integer",
+    outcome_label            = p$report$outcome_label          %||% "Outcome",
+    model_type_description   = p$report$model_type_description %||% "integer risk score",
+    var_imp_file             = p$report$var_imp_file           %||% "model/varImp.rds"
   )
 }
