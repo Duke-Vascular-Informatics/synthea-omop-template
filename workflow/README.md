@@ -105,16 +105,21 @@ Add your analysis packages to the `required` vector. `DatabaseConnector` and
 Sections 1–6 are pre-wired infrastructure (bootstrap, Java guard, renv, config,
 connection, cohort instantiation). **Do not modify these.**
 
-Fill in the three blank sections:
+Sections 7–9 are the analysis sections. For most studies, enabling the right flags in
+`study_params.yaml` is all that is needed — no code changes are required in this file.
 
 | Section | What goes here |
 |---------|----------------|
-| **7 — YOUR ANALYSIS** | Call your analysis functions (PLP, CohortMethod, FeatureExtraction, custom code) |
-| **8 — YOUR OUTPUT** | Write results to `config$output_folder` (CSVs, Word report, plots, Excel) |
-| **9 — DONE** | Update the completion message to reflect what was produced |
+| **7 — YOUR ANALYSIS** | Driven by `analyses:` flags in `study_params.yaml`. Pre-wired blocks for `cohort_characterization`, `prognostic_model`, `causal_inference`, `integer_risk_score`. Add custom code below the flag-driven blocks only if needed. |
+| **8 — YOUR OUTPUT** | Calls `generate_manuscript_report()` (via `R/report_extended.R`) when `word_report: true`. Report template is selected automatically from `config$study_design` and `config$score_type`. |
+| **9 — DONE** | Completion message — update to reflect study-specific outputs if customized. |
 
-Starter patterns for all three study designs are provided as commented examples
-in the file — uncomment and adapt the block that matches your design.
+The report dispatcher (`R/report_extended.R`) routes to the correct template based on
+`config$study_design`. For `"prognostic_model"` the template is fully implemented and
+branches on `config$score_type` (`"integer"` or `"lasso"`). Stubs for
+`"descriptive"` / `"cohort_characterization"` and `"causal_inference"` are in
+`R/report_descriptive.R` and `R/report_causal.R` — uncomment their `source()` lines in
+`R/report_extended.R` once implemented.
 
 ### Available objects at the start of Section 7
 
