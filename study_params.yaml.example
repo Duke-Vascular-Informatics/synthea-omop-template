@@ -34,8 +34,13 @@ study_end_date:   "2025-12-31"   # TODO [CONFIG]
 # DATABASE SCHEMAS
 # =============================================================================
 cdm_schema:     "cdm_my_study"       # TODO [CONFIG]: CDM schema populated by Step 5 ETL
-results_schema: "my_study_results"   # TODO [CONFIG]: schema for cohort table and outputs
-cohort_table:   "my_study_cohort"    # TODO [CONFIG]: cohort table name (study-specific to avoid conflicts)
+
+# results_schema, cohort_table, and output_folder default to
+#   <study_name>_results, <study_name>_cohort, output/<study_name>
+# (with hyphens / spaces / dots in study_name collapsed to underscores).
+# Uncomment and set explicitly only if you need a non-standard name.
+# results_schema: ~
+# cohort_table:   ~
 
 # Optional: set only when the results schema is in a different SQL Server database
 # from the CDM. Leave commented out otherwise.
@@ -138,7 +143,9 @@ report:
 # =============================================================================
 # OUTPUT
 # =============================================================================
-output_folder: "output/my_study"   # TODO [CONFIG]: update to match study_name
+# Defaults to output/<study_name> when omitted.
+# Uncomment and set only if you need a non-standard output path.
+# output_folder: ~
 
 # =============================================================================
 # DATABASE METADATA

@@ -67,6 +67,20 @@ get_validation_config <- function() {
     else x
   }
 
+  # Slugify a study_name into a SQL-Server-safe identifier stem: lowercase,
+  # with hyphens / dots / whitespace collapsed to single underscores.  Used to
+  # derive default results_schema, cohort_table, and output_folder names from
+  # study_name when those fields are omitted from study_params.yaml.
+  .slugify <- function(x) {
+    s <- tolower(x)
+    s <- gsub("[\\s\\-\\.]+", "_", s, perl = TRUE)
+    s <- gsub("_+", "_", s)
+    sub("^_|_$", "", s)
+  }
+
+  study_name_value <- p$study_name %||% "my_study"
+  study_slug       <- .slugify(study_name_value)
+
   list(
 
     # -------------------------------------------------------------------------
@@ -101,17 +115,20 @@ get_validation_config <- function() {
     # -------------------------------------------------------------------------
     # Study identity — from study_params.yaml
     # -------------------------------------------------------------------------
-    study_name   = p$study_name   %||% "my_study",
+    study_name   = study_name_value,
     study_design = p$study_design %||% "prognostic_model",
 
     # -------------------------------------------------------------------------
-    # Database schemas — from study_params.yaml
+    # Database schemas — from study_params.yaml.
+    # results_schema and cohort_table auto-derive from study_name (via
+    # study_slug) when omitted; cdm_schema must be set explicitly because the
+    # CDM is typically a shared dataset populated by a separate ETL.
     # -------------------------------------------------------------------------
     cdm_schema        = p$cdm_schema     %||% "cdm_my_study",
     cdm_version       = 5L,
-    results_schema    = .bq(p$results_schema %||% "my_study_results"),
+    results_schema    = .bq(p$results_schema %||% paste0(study_slug, "_results")),
     results_database  = p$results_database %||% NA_character_,
-    cohort_table      = p$cohort_table   %||% "my_study_cohort",
+    cohort_table      = p$cohort_table   %||% paste0(study_slug, "_cohort"),
 
     # -------------------------------------------------------------------------
     # Cohort IDs — from study_params.yaml
@@ -191,10 +208,11 @@ get_validation_config <- function() {
     study_end_date   = p$study_end_date   %||% "2025-12-31",
 
     # -------------------------------------------------------------------------
-    # Output folder — from study_params.yaml
+    # Output folder — from study_params.yaml.
+    # Auto-derives to output/<study_slug> when omitted.
     # -------------------------------------------------------------------------
     output_folder = file.path(getwd(),
-                              p$output_folder %||% file.path("output", "my_study")),
+                              p$output_folder %||% file.path("output", study_slug)),
 
     # -------------------------------------------------------------------------
     # Database metadata — from study_params.yaml

@@ -601,8 +601,11 @@ study_name: "my_study"              # ← Change this
 study_design: "prognostic_model"    # ← Verify / change if different
 
 cdm_schema: "cdm_my_study"          # ← Change to your CDM schema name
-results_schema: "my_study_results"  # ← Change to your results schema
-cohort_table: "my_study_cohort"     # ← Change to your cohort table name
+# results_schema, cohort_table, and output_folder default to
+#   <study_name>_results, <study_name>_cohort, output/<study_name>
+# Uncomment and override only if you need non-standard names:
+# results_schema: "my_study_results"
+# cohort_table:   "my_study_cohort"
 
 target:
   cohort_id: 1

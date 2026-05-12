@@ -67,6 +67,8 @@ warnings <- 0L
 flag_fail <- function(msg) { FAIL(msg); issues   <<- issues   + 1L }
 flag_warn <- function(msg) { WARN(msg); warnings <<- warnings + 1L }
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
 # -----------------------------------------------------------------------------
 # 1. study_params.yaml — placeholder values
 # -----------------------------------------------------------------------------
@@ -93,26 +95,37 @@ if (is.null(p$study_design) || p$study_design == "prognostic_model") {
   PASS(paste0("study_design = '", p$study_design, "'"))
 }
 
-# Database schema placeholders
-schema_defaults <- list(
-  cdm_schema     = "cdm_my_study",
-  results_schema = "my_study_results",
-  cohort_table   = "my_study_cohort"
-)
-for (field in names(schema_defaults)) {
-  val <- p[[field]]
-  if (is.null(val) || val == schema_defaults[[field]]) {
-    flag_fail(paste0(field, " is still the default '", schema_defaults[[field]], "'"))
-  } else {
-    PASS(paste0(field, " = '", val, "'"))
-  }
+# cdm_schema must be set explicitly — the CDM is typically a shared dataset
+# populated by a separate ETL, so it cannot be auto-derived from study_name.
+if (is.null(p$cdm_schema) || p$cdm_schema == "cdm_my_study") {
+  flag_fail("cdm_schema is still the default 'cdm_my_study'")
+} else {
+  PASS(paste0("cdm_schema = '", p$cdm_schema, "'"))
 }
 
-# Output folder
-if (is.null(p$output_folder) || p$output_folder == "output/my_study") {
-  flag_fail("output_folder is still the default 'output/my_study'")
+# results_schema, cohort_table, and output_folder are optional — when omitted
+# they auto-derive from study_name (slugified to a SQL-safe identifier stem).
+# Report whichever form is in effect so the user can confirm it.
+study_slug <- gsub("_+", "_",
+                   gsub("[\\s\\-\\.]+", "_", tolower(p$study_name %||% "my_study"),
+                        perl = TRUE))
+study_slug <- sub("^_|_$", "", study_slug)
+
+derive_or_use <- function(field, default_fmt) {
+  val <- p[[field]]
+  if (is.null(val)) {
+    PASS(paste0(field, " auto-derived = '", sprintf(default_fmt, study_slug), "'"))
+  } else {
+    PASS(paste0(field, " = '", val, "' (explicit)"))
+  }
+}
+derive_or_use("results_schema", "%s_results")
+derive_or_use("cohort_table",   "%s_cohort")
+
+if (is.null(p$output_folder)) {
+  PASS(paste0("output_folder auto-derived = 'output/", study_slug, "'"))
 } else {
-  PASS(paste0("output_folder = '", p$output_folder, "'"))
+  PASS(paste0("output_folder = '", p$output_folder, "' (explicit)"))
 }
 
 # Database metadata
