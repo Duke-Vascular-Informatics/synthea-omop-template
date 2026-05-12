@@ -1057,6 +1057,97 @@ run_synthea_full_csv_builder_etl <- function(
         progress_tracker$tick(paste0("Loaded event SQL: ", basename(sql_file)))
       }
     }
+
+    # -------------------------------------------------------------------------
+    # Post-INSERT fix-up: populate visit_occurrence.discharged_to_concept_id
+    # and discharged_to_source_value from synthea.encounters.DISCHARGE.
+    #
+    # Why this step exists:
+    #   ETLSyntheaBuilder's bundled insert_visit_occurrence.sql hard-codes
+    #     discharged_to_concept_id   = 0
+    #     discharged_to_source_value = NULL
+    #   regardless of staging contents.  Studies whose external/synthea
+    #   submodule points at a fork that emits a DISCHARGE column in
+    #   encounters.csv (carrying the NUBC discharge_disposition code from
+    #   GMF EncounterEnd states) therefore see their disposition silently
+    #   dropped at INSERT time.  This UPDATE rewrites those two columns in
+    #   place by joining visit_occurrence back to the synthea staging
+    #   encounters table and resolving each NUBC code against the live OMOP
+    #   vocabulary.
+    #
+    # Why we join via final_visit_ids and aggregate:
+    #   Synthea's rollup (ALL_VISITS -> ASSIGN_ALL_VISIT_IDS -> FINAL_VISIT_IDS)
+    #   merges multiple source encounter rows into a single visit_occurrence
+    #   row.  Only the EncounterEnd state's encounter carries a DISCHARGE
+    #   code; the admission / ICU / ward rows in the same rolled-up visit
+    #   have an empty DISCHARGE.  Joining directly on
+    #   visit_occurrence.visit_source_value would only catch the disposition
+    #   if the chosen representative encounter happens to be the one with
+    #   DISCHARGE set, which is not guaranteed by the rollup priority.
+    #   Aggregating over all encounters that map to the same
+    #   visit_occurrence_id_new via FINAL_VISIT_IDS lets us pick up the
+    #   unique non-empty DISCHARGE value regardless of which row the rollup
+    #   chose as the visit's representative.  HAVING ... IS NOT NULL skips
+    #   visits whose source encounters all have empty DISCHARGE.
+    #
+    # COALESCE preference order for discharged_to_concept_id:
+    #   1. standard CMS Place of Service concept (preferred — rolled up via
+    #      concept_relationship 'Maps to' from the UB04 Pt dis status concept)
+    #   2. UB04 Pt dis status concept itself (fallback when the 'Maps to'
+    #      mapping is absent in this vocabulary build)
+    #   3. 0 ('No matching concept') when DISCHARGE is null / empty / unknown
+    #
+    # Stock-synthea-safe: when the synthea fork does NOT emit a DISCHARGE
+    # column, the staging DISCHARGE column added by step 10b is all NULL,
+    # the inner subquery returns no rows, and the UPDATE is a no-op.
+    # Idempotent: re-running rewrites the same column with the same derived
+    # values.
+    # -------------------------------------------------------------------------
+    fixup_disposition_sql <- render_sql(
+      "UPDATE vo
+       SET vo.discharged_to_concept_id   = COALESCE(c_std.concept_id, c_ub04.concept_id, 0),
+           vo.discharged_to_source_value = w.discharge
+       FROM @cdm_schema.visit_occurrence vo
+       INNER JOIN (
+         SELECT fvi.visit_occurrence_id_new AS vo_id,
+                -- Normalize: DatabaseConnector's bulk loader auto-detects the
+                -- DISCHARGE column as numeric and stores '01' as '1'.  UB04
+                -- Pt dis status concept_codes are always 2 digits in OMOP
+                -- (01, 02, ..., 99), so left-pad single-digit values with '0'
+                -- before the vocab join.  Multi-digit values pass through.
+                MAX(CASE
+                      WHEN LEN(NULLIF(LTRIM(RTRIM(e.discharge)), '')) = 1
+                        THEN '0' + LTRIM(RTRIM(e.discharge))
+                      ELSE NULLIF(LTRIM(RTRIM(e.discharge)), '')
+                    END) AS discharge
+         FROM @cdm_schema.final_visit_ids fvi
+         INNER JOIN @synthea_schema.encounters e
+           ON e.id = fvi.encounter_id
+         GROUP BY fvi.visit_occurrence_id_new
+         HAVING MAX(NULLIF(LTRIM(RTRIM(e.discharge)), '')) IS NOT NULL
+       ) w
+         ON w.vo_id = vo.visit_occurrence_id
+       LEFT JOIN @cdm_schema.concept c_ub04
+         ON c_ub04.vocabulary_id = 'UB04 Pt dis status'
+        AND c_ub04.concept_code  = w.discharge
+        AND c_ub04.invalid_reason IS NULL
+       LEFT JOIN @cdm_schema.concept_relationship cr
+         ON cr.concept_id_1     = c_ub04.concept_id
+        AND cr.relationship_id  = 'Maps to'
+        AND cr.invalid_reason  IS NULL
+       LEFT JOIN @cdm_schema.concept c_std
+         ON c_std.concept_id       = cr.concept_id_2
+        AND c_std.standard_concept = 'S'
+        AND c_std.invalid_reason  IS NULL;",
+      cdm_schema     = config$cdm_schema,
+      synthea_schema = synthea_schema
+    )
+    execute_sql_with_retry(conn_events, fixup_disposition_sql)
+    log_msg(
+      "Populated visit_occurrence.discharged_to_concept_id / ",
+      "discharged_to_source_value from ", synthea_schema,
+      ".encounters.DISCHARGE (via final_visit_ids rollup)."
+    )
   }
 
   # ---------------------------------------------------------------------------
@@ -1333,6 +1424,40 @@ run_synthea_full_csv_builder_etl <- function(
     syntheaVersion = synthea_version
   ))
   progress$tick("Synthea staging tables created")
+
+  # ---------------------------------------------------------------------------
+  # 10b. Add a DISCHARGE column to synthea.encounters.
+  #
+  # Stock synthea v3.3.0's CSV exporter does NOT write encounter.discharge to
+  # encounters.csv, and ETLSyntheaBuilder's CreateSyntheaTables DDL therefore
+  # does not define a DISCHARGE column on the staging table.  When a study
+  # uses a synthea fork that DOES emit the discharge_disposition NUBC code
+  # (e.g. the synthea-pad fork — see external/synthea pinning in study repos
+  # that need this), the loader needs a staging column to land that value
+  # in.  We add it pre-emptively here so the same template script works for
+  # both stock and patched synthea builds: stock-synthea runs leave the
+  # column all-NULL (the post-INSERT fix-up below is a no-op), patched-synthea
+  # runs populate it.
+  # IF NOT EXISTS guard keeps the step idempotent across re-runs.
+  # ---------------------------------------------------------------------------
+  conn_alter <- connect_with_retry(connection_details)
+  on.exit(DatabaseConnector::disconnect(conn_alter), add = TRUE)
+  alter_discharge_sql <- render_sql(
+    "IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = '@synthea_schema'
+                  AND TABLE_NAME   = 'encounters')
+      AND NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                       WHERE TABLE_SCHEMA = '@synthea_schema'
+                         AND TABLE_NAME   = 'encounters'
+                         AND COLUMN_NAME  = 'DISCHARGE')
+     BEGIN
+       ALTER TABLE [@synthea_schema].[encounters] ADD [DISCHARGE] VARCHAR(8) NULL;
+     END;",
+    synthea_schema = synthea_schema
+  )
+  execute_sql_with_retry(conn_alter, alter_discharge_sql)
+  log_msg("Added/confirmed DISCHARGE VARCHAR(8) column on ", synthea_schema, ".encounters.")
+  DatabaseConnector::disconnect(conn_alter)
 
   # ---------------------------------------------------------------------------
   # Pre-flight: scan all Synthea CSVs against staging schema and correct every
