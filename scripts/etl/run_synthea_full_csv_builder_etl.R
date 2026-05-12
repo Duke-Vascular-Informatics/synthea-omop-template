@@ -1075,6 +1075,21 @@ run_synthea_full_csv_builder_etl <- function(
     #   encounters table and resolving each NUBC code against the live OMOP
     #   vocabulary.
     #
+    # Why we join via final_visit_ids and aggregate:
+    #   Synthea's rollup (ALL_VISITS -> ASSIGN_ALL_VISIT_IDS -> FINAL_VISIT_IDS)
+    #   merges multiple source encounter rows into a single visit_occurrence
+    #   row.  Only the EncounterEnd state's encounter carries a DISCHARGE
+    #   code; the admission / ICU / ward rows in the same rolled-up visit
+    #   have an empty DISCHARGE.  Joining directly on
+    #   visit_occurrence.visit_source_value would only catch the disposition
+    #   if the chosen representative encounter happens to be the one with
+    #   DISCHARGE set, which is not guaranteed by the rollup priority.
+    #   Aggregating over all encounters that map to the same
+    #   visit_occurrence_id_new via FINAL_VISIT_IDS lets us pick up the
+    #   unique non-empty DISCHARGE value regardless of which row the rollup
+    #   chose as the visit's representative.  HAVING ... IS NOT NULL skips
+    #   visits whose source encounters all have empty DISCHARGE.
+    #
     # COALESCE preference order for discharged_to_concept_id:
     #   1. standard CMS Place of Service concept (preferred — rolled up via
     #      concept_relationship 'Maps to' from the UB04 Pt dis status concept)
@@ -1084,20 +1099,28 @@ run_synthea_full_csv_builder_etl <- function(
     #
     # Stock-synthea-safe: when the synthea fork does NOT emit a DISCHARGE
     # column, the staging DISCHARGE column added by step 10b is all NULL,
-    # the WHERE clause filters to zero rows, and this is a no-op.
+    # the inner subquery returns no rows, and the UPDATE is a no-op.
     # Idempotent: re-running rewrites the same column with the same derived
     # values.
     # -------------------------------------------------------------------------
     fixup_disposition_sql <- render_sql(
       "UPDATE vo
        SET vo.discharged_to_concept_id   = COALESCE(c_std.concept_id, c_ub04.concept_id, 0),
-           vo.discharged_to_source_value = NULLIF(LTRIM(RTRIM(e.discharge)), '')
+           vo.discharged_to_source_value = w.discharge
        FROM @cdm_schema.visit_occurrence vo
-       INNER JOIN @synthea_schema.encounters e
-         ON e.id = vo.visit_source_value
+       INNER JOIN (
+         SELECT fvi.visit_occurrence_id_new AS vo_id,
+                MAX(NULLIF(LTRIM(RTRIM(e.discharge)), '')) AS discharge
+         FROM @cdm_schema.final_visit_ids fvi
+         INNER JOIN @synthea_schema.encounters e
+           ON e.id = fvi.encounter_id
+         GROUP BY fvi.visit_occurrence_id_new
+         HAVING MAX(NULLIF(LTRIM(RTRIM(e.discharge)), '')) IS NOT NULL
+       ) w
+         ON w.vo_id = vo.visit_occurrence_id
        LEFT JOIN @cdm_schema.concept c_ub04
          ON c_ub04.vocabulary_id = 'UB04 Pt dis status'
-        AND c_ub04.concept_code  = NULLIF(LTRIM(RTRIM(e.discharge)), '')
+        AND c_ub04.concept_code  = w.discharge
         AND c_ub04.invalid_reason IS NULL
        LEFT JOIN @cdm_schema.concept_relationship cr
          ON cr.concept_id_1     = c_ub04.concept_id
@@ -1106,8 +1129,7 @@ run_synthea_full_csv_builder_etl <- function(
        LEFT JOIN @cdm_schema.concept c_std
          ON c_std.concept_id       = cr.concept_id_2
         AND c_std.standard_concept = 'S'
-        AND c_std.invalid_reason  IS NULL
-       WHERE NULLIF(LTRIM(RTRIM(e.discharge)), '') IS NOT NULL;",
+        AND c_std.invalid_reason  IS NULL;",
       cdm_schema     = config$cdm_schema,
       synthea_schema = synthea_schema
     )
@@ -1115,7 +1137,7 @@ run_synthea_full_csv_builder_etl <- function(
     log_msg(
       "Populated visit_occurrence.discharged_to_concept_id / ",
       "discharged_to_source_value from ", synthea_schema,
-      ".encounters.DISCHARGE."
+      ".encounters.DISCHARGE (via final_visit_ids rollup)."
     )
   }
 
