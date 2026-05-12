@@ -1110,7 +1110,16 @@ run_synthea_full_csv_builder_etl <- function(
        FROM @cdm_schema.visit_occurrence vo
        INNER JOIN (
          SELECT fvi.visit_occurrence_id_new AS vo_id,
-                MAX(NULLIF(LTRIM(RTRIM(e.discharge)), '')) AS discharge
+                -- Normalize: DatabaseConnector's bulk loader auto-detects the
+                -- DISCHARGE column as numeric and stores '01' as '1'.  UB04
+                -- Pt dis status concept_codes are always 2 digits in OMOP
+                -- (01, 02, ..., 99), so left-pad single-digit values with '0'
+                -- before the vocab join.  Multi-digit values pass through.
+                MAX(CASE
+                      WHEN LEN(NULLIF(LTRIM(RTRIM(e.discharge)), '')) = 1
+                        THEN '0' + LTRIM(RTRIM(e.discharge))
+                      ELSE NULLIF(LTRIM(RTRIM(e.discharge)), '')
+                    END) AS discharge
          FROM @cdm_schema.final_visit_ids fvi
          INNER JOIN @synthea_schema.encounters e
            ON e.id = fvi.encounter_id
