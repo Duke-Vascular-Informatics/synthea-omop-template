@@ -373,6 +373,7 @@ build_cohorts <- function(connection, config) {
         sql_file      = config$outcome_cohort_sql,
         render_params = c(common_params,
                           list(
+                            target_cohort_id    = config$target_cohort_id,
                             outcome_cohort_id   = config$outcome_cohort_id,
                             outcome_concept_ids = fmt_ids(config$outcome_concept_ids)
                           )),
