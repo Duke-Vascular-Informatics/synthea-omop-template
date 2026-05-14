@@ -92,7 +92,7 @@ fi
 BUNDLE_GITLAB_REMOTE="${BUNDLE_GITLAB_REMOTE:-}"
 BUNDLE_GIT_USER_NAME="${BUNDLE_GIT_USER_NAME:-}"
 BUNDLE_GIT_USER_EMAIL="${BUNDLE_GIT_USER_EMAIL:-}"
-BUNDLE_BRANCH="transportable-bundle"
+BUNDLE_BRANCH="main"
 
 # Derive the bundle folder name from study_name in study_params.yaml so that
 # each study's portable folder is named after the analysis (e.g. my-study).
