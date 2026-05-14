@@ -371,9 +371,11 @@ copy_bundle_file() {
 }
 
 # Shared R analysis modules
-copy_bundle_file "R/risk_score_pipeline.R"   "portable/$STUDY_NAME/R/risk_score_pipeline.R"
+copy_bundle_file "R/drivers.R"               "portable/$STUDY_NAME/R/drivers.R"
+copy_bundle_file "R/connection.R"            "portable/$STUDY_NAME/R/connection.R"
 copy_bundle_file "R/cohorts.R"               "portable/$STUDY_NAME/R/cohorts.R"
 copy_bundle_file "R/cohort_demographics.R"   "portable/$STUDY_NAME/R/cohort_demographics.R"
+copy_bundle_file "R/risk_score_pipeline.R"   "portable/$STUDY_NAME/R/risk_score_pipeline.R"
 # report_extended.R is loaded as report.R on the protected analytic space (see run_analysis.R)
 copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 # report_helpers.R and report_prognostic.R are sourced by report_extended.R at runtime;
