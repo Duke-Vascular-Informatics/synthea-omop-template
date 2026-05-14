@@ -552,13 +552,23 @@ copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 copy_bundle_file "R/report_helpers.R"        "portable/$STUDY_NAME/R/report_helpers.R"
 copy_bundle_file "R/report_prognostic.R"     "portable/$STUDY_NAME/R/report_prognostic.R"
 
-# Integer risk score reference data — copy all CSVs from risk_score/ so the
-# correct files are included regardless of study-specific naming conventions
-# (e.g. components.csv vs covariates.csv, component_concepts.csv vs covariate_concepts.csv).
-for _csv in "$REPO_ROOT/risk_score/"*.csv; do
-  [[ -f "$_csv" ]] && copy_bundle_file "risk_score/$(basename "$_csv")" \
-    "portable/$STUDY_NAME/risk_score/$(basename "$_csv")"
-done
+# Integer risk score reference data — copy all CSVs into risk_score/ in the bundle.
+# Source directory: risk_score/ when present (older studies); covariates/ otherwise
+# (CLAUDE.md convention). config.R always expects the files under risk_score/.
+_csv_src=""
+if compgen -G "$REPO_ROOT/risk_score/*.csv" > /dev/null 2>&1; then
+  _csv_src="risk_score"
+elif compgen -G "$REPO_ROOT/covariates/*.csv" > /dev/null 2>&1; then
+  _csv_src="covariates"
+fi
+if [[ -n "$_csv_src" ]]; then
+  for _csv in "$REPO_ROOT/$_csv_src/"*.csv; do
+    [[ -f "$_csv" ]] && copy_bundle_file "$_csv_src/$(basename "$_csv")" \
+      "portable/$STUDY_NAME/risk_score/$(basename "$_csv")"
+  done
+else
+  echo "  [WARN] No CSV files found in risk_score/ or covariates/ — skipping."
+fi
 
 # Model artifacts — copy all .rds and .json files from model/ when present.
 # These are needed for the Word report (varImp.rds, modelSettings.rds,
