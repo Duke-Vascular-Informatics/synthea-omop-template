@@ -46,13 +46,18 @@
 #      pushes to the 'main' branch on your.gitlab.instance.
 #   4. Builds a dated zip fallback in dist/ for offline transfers.
 #
-# FILES NOT OVERWRITTEN (bundle-specific, checked into portable/$STUDY_NAME/)
+# FILES AUTO-SEEDED ON FIRST RUN (from setup/bundle_templates/, never overwritten)
 # -------------------------------------------------------------------------
-#   portable/$STUDY_NAME/R/connection.R      Kerberos / JVM setup for the protected analytic space
+#   portable/$STUDY_NAME/setup_env.sh        Conda env + kinit setup (Step 1 of 2)
+#   portable/$STUDY_NAME/install_r_packages.sh  R package installer wrapper (Step 2 of 2)
+#   portable/$STUDY_NAME/install_packages.R  R package installer (called by above)
+#   portable/$STUDY_NAME/run_analysis.sh     HPC launcher (sets LD_LIBRARY_PATH, sources .env)
+#
+# FILES NOT OVERWRITTEN (bundle-specific, must be committed manually)
+# -------------------------------------------------------------------------
 #   portable/$STUDY_NAME/config.R            HPC cluster SQL Server + conda paths
-#   portable/$STUDY_NAME/run_analysis.R      HPC cluster entry-point script
-#   portable/$STUDY_NAME/install_packages.R  HPC cluster conda R package installer
-#   portable/$STUDY_NAME/setup_env.sh   Conda env + kinit helper
+#   portable/$STUDY_NAME/run_analysis.R      HPC cluster entry-point R script
+#   portable/$STUDY_NAME/R/connection.R      Kerberos / JVM setup for the protected analytic space
 #
 # DEPLOYMENT ON HPC cluster (after this script runs)
 # -------------------------------------------
@@ -354,6 +359,44 @@ ENVHEADER
 }
 
 # ---------------------------------------------------------------------------
+# seed_bundle_hpc_scripts — seeds HPC launcher scripts into the bundle on
+# first run (only when the file does not already exist).
+#
+# Each script is copied from setup/bundle_templates/ and the placeholder
+# __STUDY_LABEL__ is substituted with $STUDY_NAME so banners and headers
+# identify the study. Existing files are never overwritten so site-specific
+# customisations (e.g. custom module names, conda env paths) are preserved.
+# ---------------------------------------------------------------------------
+seed_bundle_hpc_scripts() {
+  local dest="$1"
+  local label="$2"
+  local templates="$REPO_ROOT/setup/bundle_templates"
+
+  if [[ ! -d "$templates" ]]; then
+    echo "  [WARN] setup/bundle_templates/ not found — skipping HPC script seeding."
+    echo "         Add the templates directory or seed scripts manually."
+    return
+  fi
+
+  local scripts=("setup_env.sh" "install_r_packages.sh" "install_packages.R" "run_analysis.sh")
+  for script in "${scripts[@]}"; do
+    local src="$templates/$script"
+    local dst="$dest/$script"
+    if [[ ! -f "$src" ]]; then
+      echo "  [WARN] Template not found, skipping: setup/bundle_templates/$script"
+      continue
+    fi
+    if [[ -f "$dst" ]]; then
+      echo "  [SKIP] Already exists (not overwritten): $script"
+    else
+      sed "s/__STUDY_LABEL__/${label}/g" "$src" > "$dst"
+      chmod +x "$dst" 2>/dev/null || true
+      echo "  [SEED] $script"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
 # Step 1 — Sync shared R source files into the bundle
 # ---------------------------------------------------------------------------
 echo "[Step 9] Syncing R source files ..."
@@ -416,6 +459,10 @@ generate_bundle_readme "$BUNDLE"
 # Generate .env with institution-specific OMOP connection details from INST_OMOP_*
 echo "[Step 9] Generating bundle .env from INST_OMOP_* ..."
 generate_bundle_env "$BUNDLE"
+
+# Seed HPC launcher scripts on first run (skips any that already exist)
+echo "[Step 9] Seeding HPC launcher scripts ..."
+seed_bundle_hpc_scripts "$BUNDLE" "$STUDY_NAME"
 
 # ---------------------------------------------------------------------------
 # Step 2 — Sync MSSQL JDBC JAR into bundle/drivers/
