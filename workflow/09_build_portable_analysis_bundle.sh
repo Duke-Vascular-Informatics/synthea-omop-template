@@ -456,6 +456,17 @@ seed_bundle_hpc_scripts() {
   outcome_ids=$(_yaml_ids_to_r "$(awk '/^outcome:/{f=1} f && /ancestor_concept_ids:/{print; f=0}' \
     "$yaml" 2>/dev/null | head -1 | sed 's/.*ancestor_concept_ids:[[:space:]]*//' | sed 's/#.*//')")
 
+  # report.score_type and report.outcome_label — from the report: block in YAML
+  score_type=$(awk '/^report:/{f=1} f && /score_type:/{print; f=0}' "$yaml" 2>/dev/null \
+    | head -1 | sed 's/.*score_type:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$score_type" ]] && score_type="integer"
+
+  outcome_label=$(awk '/^report:/{f=1} f && /outcome_label:/{print; f=0}' "$yaml" 2>/dev/null \
+    | head -1 | sed 's/.*outcome_label:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | sed 's/[[:space:]]*$//')
+  [[ -z "$outcome_label" ]] && outcome_label="Outcome"
+
   # Root-level scripts seeded as-is (with study label substitution)
   local scripts=("setup_env.sh" "install_r_packages.sh" "install_packages.R" "run_analysis.sh")
   for script in "${scripts[@]}"; do
@@ -477,21 +488,28 @@ seed_bundle_hpc_scripts() {
   # R/ files stored in templates as R_<name>.R to avoid confusion with main repo files.
   # These are HPC-specific versions (Kerberos auth, pre-bundled JDBC) that differ
   # from the devcontainer versions in the main repo's R/ directory.
-  declare -A r_files=(["R_connection.R"]="R/connection.R" ["R_drivers.R"]="R/drivers.R")
-  for tmpl_name in "${!r_files[@]}"; do
+  # Note: written as explicit pairs rather than an associative array so this script
+  # runs under macOS bash 3.2 (which does not support declare -A).
+  local _r_tmpls="R_connection.R R_drivers.R"
+  local _r_dests="R/connection.R R/drivers.R"
+  local _i=1
+  for tmpl_name in $_r_tmpls; do
+    local r_dest
+    r_dest=$(printf '%s' "$_r_dests" | tr ' ' '\n' | sed -n "${_i}p")
     local src="$templates/$tmpl_name"
-    local dst="$dest/${r_files[$tmpl_name]}"
+    local dst="$dest/$r_dest"
     if [[ ! -f "$src" ]]; then
       echo "  [WARN] Template not found, skipping: setup/bundle_templates/$tmpl_name"
-      continue
+      _i=$((_i + 1)); continue
     fi
     if [[ -f "$dst" ]]; then
-      echo "  [SKIP] Already exists (not overwritten): ${r_files[$tmpl_name]}"
+      echo "  [SKIP] Already exists (not overwritten): $r_dest"
     else
       mkdir -p "$(dirname "$dst")"
       sed "s/__STUDY_LABEL__/${label}/g" "$src" > "$dst"
-      echo "  [SEED] ${r_files[$tmpl_name]}"
+      echo "  [SEED] $r_dest"
     fi
+    _i=$((_i + 1))
   done
 
   # config.R — seeded once with all study-specific placeholder values substituted.
@@ -517,6 +535,8 @@ seed_bundle_hpc_scripts() {
       -e "s/__TARGET_WASHOUT_CONCEPT_IDS__/${washout_ids}/g" \
       -e "s/__TARGET_WASHOUT_LOOKBACK_DAYS__/${washout_days}/g" \
       -e "s/__OUTCOME_CONCEPT_IDS__/${outcome_ids}/g" \
+      -e "s/__SCORE_TYPE__/${score_type}/g" \
+      -e "s|__OUTCOME_LABEL__|${outcome_label}|g" \
       "$config_src" > "$config_dst"
     echo "  [SEED] config.R"
   fi
@@ -551,6 +571,10 @@ copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 # they must travel with the bundle or the analysis will halt with "No such file or directory".
 copy_bundle_file "R/report_helpers.R"        "portable/$STUDY_NAME/R/report_helpers.R"
 copy_bundle_file "R/report_prognostic.R"     "portable/$STUDY_NAME/R/report_prognostic.R"
+
+# run_analysis.R — canonical bundle entry point kept in sync with template.
+# Always overwritten so the report call and pipeline paths stay current.
+copy_bundle_file "setup/bundle_templates/run_analysis.R" "portable/$STUDY_NAME/run_analysis.R"
 
 # Covariate definition CSVs — copy all CSVs from covariates/ into covariates/
 # in the bundle. config.R expects them there (risk_score/ is a deprecated alias).
