@@ -371,12 +371,47 @@ seed_bundle_hpc_scripts() {
   local dest="$1"
   local label="$2"
   local templates="$REPO_ROOT/setup/bundle_templates"
+  local yaml="$REPO_ROOT/study_params.yaml"
 
   if [[ ! -d "$templates" ]]; then
     echo "  [WARN] setup/bundle_templates/ not found — skipping HPC script seeding."
     echo "         Add the templates directory or seed scripts manually."
     return
   fi
+
+  # ---------------------------------------------------------------------------
+  # Parse study_params.yaml for config.R placeholder substitution.
+  # All values fall back to safe defaults if the YAML key is absent or
+  # commented out (e.g. cohort_table is optional in the template YAML).
+  # ---------------------------------------------------------------------------
+  local cohort_table pred_window study_start study_end outcome_sql_file
+
+  cohort_table=$(grep '^cohort_table:' "$yaml" 2>/dev/null \
+    | sed 's/.*cohort_table:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$cohort_table" ]] && cohort_table="${label}_cohort"
+
+  pred_window=$(grep '^prediction_window_days:' "$yaml" 2>/dev/null \
+    | sed 's/.*prediction_window_days:[[:space:]]*//' \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$pred_window" ]] && pred_window="90"
+
+  study_start=$(grep '^study_start_date:' "$yaml" 2>/dev/null \
+    | sed 's/.*study_start_date:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$study_start" ]] && study_start="2017-01-01"
+
+  study_end=$(grep '^study_end_date:' "$yaml" 2>/dev/null \
+    | sed 's/.*study_end_date:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$study_end" ]] && study_end="2025-12-31"
+
+  # Outcome sql_file is the second sql_file: line in study_params.yaml
+  # (target cohort is first, outcome is second). Extract just the filename.
+  outcome_sql_file=$(grep 'sql_file:' "$yaml" 2>/dev/null | sed -n '2p' \
+    | sed 's/.*sql_file:[[:space:]]*//' | tr -d '"' | tr -d "'" \
+    | sed 's/#.*//' | tr -d '[:space:]')
+  outcome_sql_file=$(basename "${outcome_sql_file:-outcome.sql}")
 
   # Root-level scripts seeded as-is (with study label substitution)
   local scripts=("setup_env.sh" "install_r_packages.sh" "install_packages.R" "run_analysis.sh")
@@ -415,6 +450,27 @@ seed_bundle_hpc_scripts() {
       echo "  [SEED] ${r_files[$tmpl_name]}"
     fi
   done
+
+  # config.R — seeded once with all study-specific placeholder values substituted.
+  # Placeholders are populated from study_params.yaml so every field is correct
+  # on first run; the file is never overwritten so site-level edits are preserved.
+  local config_src="$templates/config.R"
+  local config_dst="$dest/config.R"
+  if [[ ! -f "$config_src" ]]; then
+    echo "  [WARN] Template not found, skipping: setup/bundle_templates/config.R"
+  elif [[ -f "$config_dst" ]]; then
+    echo "  [SKIP] Already exists (not overwritten): config.R"
+  else
+    sed \
+      -e "s/__COHORT_TABLE__/${cohort_table}/g" \
+      -e "s/__OUTCOME_SQL_FILE__/${outcome_sql_file}/g" \
+      -e "s/__STUDY_NAME__/${label}/g" \
+      -e "s/__PRED_WINDOW__/${pred_window}/g" \
+      -e "s/__STUDY_START__/${study_start}/g" \
+      -e "s/__STUDY_END__/${study_end}/g" \
+      "$config_src" > "$config_dst"
+    echo "  [SEED] config.R"
+  fi
 }
 
 # ---------------------------------------------------------------------------
