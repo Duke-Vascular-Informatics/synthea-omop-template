@@ -38,9 +38,10 @@ if (!file.exists(template)) {
 
 lines <- readLines(template, warn = FALSE)
 
-# Pre-fill study_name with the supplied value.  results_schema, cohort_table,
-# and output_folder auto-derive from study_name in config.R when omitted.
-lines <- gsub('"my_study"', paste0('"', study_name, '"'), lines, fixed = TRUE)
+# Pre-fill study_name and output_folder with the supplied value.
+# results_schema and cohort_table auto-derive from study_name in config.R when omitted.
+lines <- gsub('"my_study"',        paste0('"', study_name, '"'),          lines, fixed = TRUE)
+lines <- gsub('"output/my_study"', paste0('"output/', study_name, '"'),   lines, fixed = TRUE)
 
 writeLines(lines, dest)
 

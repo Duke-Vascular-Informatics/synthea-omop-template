@@ -355,6 +355,10 @@ ENVHEADER
   printf "OMOP_CDM_DATABASE_DESCRIPTION='%s'\n" \
     "${INST_OMOP_CDM_DATABASE_DESCRIPTION:-Brief description of the patient population and database.}"   >> "$dest/.env"
 
+  printf "\n# CRAN mirror — injected from workspace .env (CRAN_MIRROR)\n"                                >> "$dest/.env"
+  printf "CRAN_MIRROR='%s'\n" \
+    "${CRAN_MIRROR:-https://cloud.r-project.org}"                                                         >> "$dest/.env"
+
   echo "  .env written with site-specific OMOP connection details"
 }
 

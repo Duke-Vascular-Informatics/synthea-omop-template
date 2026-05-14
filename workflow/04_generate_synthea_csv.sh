@@ -25,8 +25,17 @@ STATE=${3:-"North Carolina"}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SYNTHEA_HOME="${SYNTHEA_HOME:-$REPO_ROOT/external/synthea}"
-MODULE_NAME="study_template"
-MODULE_FILE="$REPO_ROOT/synthea/modules/${MODULE_NAME}.json"
+
+# Auto-detect the study module JSON (any .json that isn't the generic template stub).
+MODULE_FILE="$(find "$REPO_ROOT/synthea/modules" -maxdepth 1 -name '*.json' \
+  ! -name 'study_template.json' | head -1)"
+if [ -z "$MODULE_FILE" ]; then
+  echo "ERROR: No study module JSON found in synthea/modules/."
+  echo "Create one and run Step 3 first."
+  exit 1
+fi
+MODULE_NAME="$(basename "$MODULE_FILE" .json)"
+
 MODULES_DIR="$SYNTHEA_HOME/src/main/resources/modules"
 SYNCED_MODULE="$MODULES_DIR/${MODULE_NAME}.json"
 
@@ -36,9 +45,18 @@ echo "  Population   : $POPULATION"
 echo "  Age range    : $AGE_RANGE"
 echo "  State        : $STATE"
 
+# Pre-flight: ensure external/synthea submodule is initialised.
+# git submodule update --init is idempotent — safe to run every time.
+if [ ! -d "$SYNTHEA_HOME/.git" ] && [ ! -f "$SYNTHEA_HOME/.git" ]; then
+  echo "Initialising external/synthea submodule..."
+  git -C "$REPO_ROOT" submodule update --init external/synthea
+fi
+
 # Pre-flight checks
 if [ ! -d "$MODULES_DIR" ]; then
   echo "ERROR: Synthea modules directory not found: $MODULES_DIR"
+  echo "The external/synthea submodule may not have cloned correctly."
+  echo "Run: git submodule update --init external/synthea"
   exit 1
 fi
 
