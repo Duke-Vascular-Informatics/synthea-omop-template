@@ -62,31 +62,33 @@ synthea_tmp  <- file.path(getwd(), "external", ".synthea_init_tmp")
 message("")
 message("Setting up synthea-pad submodule for branch: ", study_branch)
 
-# Clone to a temp path so we can create and push the study branch from master
-# before registering the submodule (git submodule add requires the branch to
-# already exist on the remote).
-message("  Cloning synthea-pad to create study branch ...")
-if (dir.exists(synthea_tmp)) unlink(synthea_tmp, recursive = TRUE)
+# Fork the new study branch from synthea-pad/main — the canonical dev-space
+# trunk that incorporates validated improvements from all analysis branches.
+# git submodule add requires the remote branch to exist before it is called,
+# so we create it via the GitHub API (no full clone needed).
+message("  Creating study branch '", study_branch, "' from synthea-pad/main ...")
 
-ret <- system2("git", c("clone", synthea_url, synthea_tmp), stdout = TRUE, stderr = TRUE)
-if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
-  stop("git clone failed:\n", paste(ret, collapse = "\n"))
-}
+base_sha_raw <- system2(
+  "gh",
+  c("api", "repos/adam-mdmph/synthea-pad/git/ref/heads/main",
+    "--jq", ".object.sha"),
+  stdout = TRUE, stderr = TRUE
+)
+if (!is.null(attr(base_sha_raw, "status")) && attr(base_sha_raw, "status") != 0)
+  stop("Could not resolve synthea-pad/main SHA:\n", paste(base_sha_raw, collapse = "\n"))
+base_sha <- trimws(paste(base_sha_raw, collapse = ""))
 
-ret <- system2("git", c("-C", synthea_tmp, "checkout", "-b", study_branch),
-               stdout = TRUE, stderr = TRUE)
-if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
-  stop("git checkout -b '", study_branch, "' failed:\n", paste(ret, collapse = "\n"))
-}
-
-ret <- system2("git", c("-C", synthea_tmp, "push", "origin", study_branch),
-               stdout = TRUE, stderr = TRUE)
-if (!is.null(attr(ret, "status")) && attr(ret, "status") != 0) {
-  stop("git push failed:\n", paste(ret, collapse = "\n"))
-}
-
-unlink(synthea_tmp, recursive = TRUE)
-message("  Branch '", study_branch, "' pushed to synthea-pad.")
+create_raw <- system2(
+  "gh",
+  c("api", "repos/adam-mdmph/synthea-pad/git/refs",
+    "--method", "POST",
+    "--field", paste0("ref=refs/heads/", study_branch),
+    "--field", paste0("sha=", base_sha)),
+  stdout = TRUE, stderr = TRUE
+)
+if (!is.null(attr(create_raw, "status")) && attr(create_raw, "status") != 0)
+  stop("Branch creation failed:\n", paste(create_raw, collapse = "\n"))
+message("  Branch '", study_branch, "' created from synthea-pad/main.")
 
 # Register external/synthea as a submodule pinned to the new branch
 message("  Registering external/synthea as submodule ...")
