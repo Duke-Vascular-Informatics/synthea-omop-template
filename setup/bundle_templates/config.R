@@ -95,6 +95,26 @@ get_validation_config <- function() {
     outcome_cohort_sql = file.path(getwd(), "cohorts", "__OUTCOME_SQL_FILE__"),
 
     # ---------------------------------------------------------------------------
+    # Target cohort parameters — injected into target_surgery.sql by SqlRender.
+    # Verify all concept IDs against the live vocabulary before use.
+    # ---------------------------------------------------------------------------
+    # Visit type filter. c(9201L) = Inpatient only. integer(0) = all visit types.
+    target_visit_concept_ids     = __TARGET_VISIT_CONCEPT_IDS__,
+
+    # Minimum age at index date in years. 0L = no age filter.
+    target_min_age               = __TARGET_MIN_AGE__L,
+
+    # Index event ancestor concept IDs (procedure_occurrence rollup). [vocab query]
+    target_index_concept_ids     = __TARGET_INDEX_CONCEPT_IDS__,
+
+    # Prior-outcome washout. integer(0) = washout disabled.
+    target_washout_concept_ids   = __TARGET_WASHOUT_CONCEPT_IDS__,
+    target_washout_lookback_days = __TARGET_WASHOUT_LOOKBACK_DAYS__L,
+
+    # Outcome ancestor concept IDs. integer(0) when outcome SQL is self-contained.
+    outcome_concept_ids          = __OUTCOME_CONCEPT_IDS__,
+
+    # ---------------------------------------------------------------------------
     # Pre-existing ATLAS cohorts (optional — set use_atlas_cohorts = TRUE if
     # cohorts are already in results schema from ATLAS; FALSE = build from SQL)
     # ---------------------------------------------------------------------------
