@@ -385,6 +385,7 @@ seed_bundle_hpc_scripts() {
   # commented out (e.g. cohort_table is optional in the template YAML).
   # ---------------------------------------------------------------------------
   local cohort_table pred_window study_start study_end outcome_sql_file
+  local visit_ids index_ids washout_ids washout_days min_age outcome_ids
 
   cohort_table=$(grep '^cohort_table:' "$yaml" 2>/dev/null \
     | sed 's/.*cohort_table:[[:space:]]*//' | tr -d '"' | tr -d "'" \
@@ -412,6 +413,48 @@ seed_bundle_hpc_scripts() {
     | sed 's/.*sql_file:[[:space:]]*//' | tr -d '"' | tr -d "'" \
     | sed 's/#.*//' | tr -d '[:space:]')
   outcome_sql_file=$(basename "${outcome_sql_file:-outcome.sql}")
+
+  # Helper: convert a YAML integer list "[9201]" or "[4236706, 4225375]" or "[]"
+  # into an R expression: "c(9201L)", "c(4236706L, 4225375L)", or "integer(0)".
+  _yaml_ids_to_r() {
+    local raw
+    raw=$(printf '%s' "$1" | tr -d '[]' | sed 's/[[:space:]]//g' | sed 's/#.*//')
+    if [[ -z "$raw" ]]; then
+      printf 'integer(0)'
+    else
+      local ids
+      ids=$(printf '%s' "$raw" | tr ',' '\n' | grep -E '^[0-9]+$' \
+              | sed 's/$/L/' | tr '\n' ',' | sed 's/,$//')
+      [[ -z "$ids" ]] && printf 'integer(0)' || printf 'c(%s)' "$ids"
+    fi
+  }
+
+  # Concept ID fields — using awk to handle nested YAML sections correctly.
+  # target.visit_concept_ids (appears once under target:)
+  visit_ids=$(_yaml_ids_to_r "$(grep 'visit_concept_ids:' "$yaml" 2>/dev/null | head -1 \
+    | sed 's/.*visit_concept_ids:[[:space:]]*//' | sed 's/#.*//')")
+
+  # target.min_age_at_index
+  min_age=$(grep 'min_age_at_index:' "$yaml" 2>/dev/null | head -1 \
+    | sed 's/.*min_age_at_index:[[:space:]]*//' | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$min_age" ]] && min_age="0"
+
+  # target.index_event.ancestor_concept_ids — first ancestor_concept_ids after index_event:
+  index_ids=$(_yaml_ids_to_r "$(awk '/index_event:/{f=1} f && /ancestor_concept_ids:/{print; f=0}' \
+    "$yaml" 2>/dev/null | head -1 | sed 's/.*ancestor_concept_ids:[[:space:]]*//' | sed 's/#.*//')")
+
+  # target.washout.ancestor_concept_ids — first ancestor_concept_ids after washout:
+  washout_ids=$(_yaml_ids_to_r "$(awk '/washout:/{f=1} f && /ancestor_concept_ids:/{print; f=0}' \
+    "$yaml" 2>/dev/null | head -1 | sed 's/.*ancestor_concept_ids:[[:space:]]*//' | sed 's/#.*//')")
+
+  # target.washout.lookback_days — first lookback_days after washout:
+  washout_days=$(awk '/washout:/{f=1} f && /lookback_days:/{print; f=0}' "$yaml" 2>/dev/null \
+    | head -1 | sed 's/.*lookback_days:[[:space:]]*//' | sed 's/#.*//' | tr -d '[:space:]')
+  [[ -z "$washout_days" ]] && washout_days="365"
+
+  # outcome.ancestor_concept_ids — first ancestor_concept_ids after ^outcome:
+  outcome_ids=$(_yaml_ids_to_r "$(awk '/^outcome:/{f=1} f && /ancestor_concept_ids:/{print; f=0}' \
+    "$yaml" 2>/dev/null | head -1 | sed 's/.*ancestor_concept_ids:[[:space:]]*//' | sed 's/#.*//')")
 
   # Root-level scripts seeded as-is (with study label substitution)
   local scripts=("setup_env.sh" "install_r_packages.sh" "install_packages.R" "run_analysis.sh")
@@ -468,6 +511,12 @@ seed_bundle_hpc_scripts() {
       -e "s/__PRED_WINDOW__/${pred_window}/g" \
       -e "s/__STUDY_START__/${study_start}/g" \
       -e "s/__STUDY_END__/${study_end}/g" \
+      -e "s/__TARGET_VISIT_CONCEPT_IDS__/${visit_ids}/g" \
+      -e "s/__TARGET_MIN_AGE__/${min_age}/g" \
+      -e "s/__TARGET_INDEX_CONCEPT_IDS__/${index_ids}/g" \
+      -e "s/__TARGET_WASHOUT_CONCEPT_IDS__/${washout_ids}/g" \
+      -e "s/__TARGET_WASHOUT_LOOKBACK_DAYS__/${washout_days}/g" \
+      -e "s/__OUTCOME_CONCEPT_IDS__/${outcome_ids}/g" \
       "$config_src" > "$config_dst"
     echo "  [SEED] config.R"
   fi
