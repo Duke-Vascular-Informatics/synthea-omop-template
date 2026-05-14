@@ -372,6 +372,10 @@ copy_bundle_file "R/cohorts.R"               "portable/$STUDY_NAME/R/cohorts.R"
 copy_bundle_file "R/cohort_demographics.R"   "portable/$STUDY_NAME/R/cohort_demographics.R"
 # report_extended.R is loaded as report.R on the protected analytic space (see run_analysis.R)
 copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
+# report_helpers.R and report_prognostic.R are sourced by report_extended.R at runtime;
+# they must travel with the bundle or the analysis will halt with "No such file or directory".
+copy_bundle_file "R/report_helpers.R"        "portable/$STUDY_NAME/R/report_helpers.R"
+copy_bundle_file "R/report_prognostic.R"     "portable/$STUDY_NAME/R/report_prognostic.R"
 
 # Integer risk score reference data — copy all CSVs from risk_score/ so the
 # correct files are included regardless of study-specific naming conventions
