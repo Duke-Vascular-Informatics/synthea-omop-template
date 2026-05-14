@@ -125,6 +125,29 @@ for (p in github_packages) {
   renv::install(paste0(p$repo, "@", p$ref))
 }
 
+# --- reticulate + Python model constraints -----------------------------------
+# If model/python_model/ exists this study uses a Python-backed PLP model.
+# reticulate is the R-Python bridge.  Version constraints for the Python
+# environment are declared in model/python_requirements.txt — apply them
+# before running the analysis (see instructions in that file).
+if (dir.exists("model/python_model")) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    message("Installing reticulate ...")
+    renv::install("reticulate", prompt = FALSE)
+  }
+
+  req_file <- "setup/python_requirements.txt"
+  if (file.exists(req_file)) {
+    message("\n*** Python model constraints detected ***")
+    message("  setup/python_requirements.txt specifies version pins required")
+    message("  for pickle compatibility with model/python_model/model.pkl.")
+    message("  Ensure your Python virtualenv satisfies these constraints before")
+    message("  running the analysis pipeline.")
+    message("  See setup/python_requirements.txt for install instructions.")
+    message("  Inside the devcontainer /opt/mlenv is pre-configured — no action needed.")
+  }
+}
+
 # --- Snapshot environment ----------------------------------------------------
 if (requireNamespace("renv", quietly = TRUE)) {
   renv::snapshot(prompt = FALSE)
