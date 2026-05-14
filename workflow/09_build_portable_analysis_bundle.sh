@@ -6,10 +6,9 @@
 #
 # PURPOSE
 # -------
-# Packages the PAD/OLER SSI integer risk score external validation analysis
-# into a self-contained bundle for execution on the protected analytic space (Phoenix
-# protected analytic space, then pushes it to a Git remote so the
-# can clone or pull it directly.
+# Packages the study's analysis into a self-contained bundle for execution on
+# the protected analytic space (Phoenix protected analytic space), then pushes
+# it to a Git remote so the site can clone or pull it directly.
 #
 # A dated zip is also written to dist/ as a local fallback (useful if GitLab
 # is unreachable from HPC cluster or for offline transfers via scp).
@@ -44,7 +43,7 @@
 #      so the bundle always reflects the current analysis code.
 #   2. Copies the MSSQL JDBC JAR from drivers/jdbc-runtime/ into the bundle.
 #   3. Commits the updated bundle to the portable/$STUDY_NAME/.git repo and
-#      pushes to the 'transportable-bundle' branch on your.gitlab.instance.
+#      pushes to the 'main' branch on your.gitlab.instance.
 #   4. Builds a dated zip fallback in dist/ for offline transfers.
 #
 # FILES NOT OVERWRITTEN (bundle-specific, checked into portable/$STUDY_NAME/)
@@ -59,9 +58,9 @@
 # -------------------------------------------
 #   ssh <netid>@your.hpc.cluster.hostname
 #   cd /path/to/your/workspace/
-#   git clone --branch transportable-bundle git@your.gitlab.instance:<remote> transportable-bundle
+#   git clone --branch main git@your.gitlab.instance:<remote> <study-name>
 #   # — or to pull updates into an existing clone: —
-#   cd transportable-bundle && git pull origin transportable-bundle
+#   cd <study-name> && git pull origin main
 #
 #   # Place the your HPC support team custom JDBC wrapper one level above the bundle:
 #   #   /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
@@ -109,7 +108,7 @@ STUDY_NAME="${STUDY_NAME:-transportable_bundle}"
 if [[ -z "$BUNDLE_GITLAB_REMOTE" || "$BUNDLE_GITLAB_REMOTE" == *"CHANGE_ME"* ]]; then
   echo "[Step 9] ERROR: BUNDLE_GITLAB_REMOTE is not set or still contains CHANGE_ME."
   echo "         Edit OMOP_Dev/.env and set BUNDLE_GITLAB_REMOTE to the full SSH URL."
-  echo "         Example: git@your.gitlab.instance:netid/transportable-bundle.git"
+  echo "         Example: git@your.gitlab.instance:netid/your-study-bundle.git"
   exit 1
 fi
 
@@ -130,7 +129,7 @@ generate_bundle_readme() {
   local dest="$1"
   local yaml="$REPO_ROOT/study_params.yaml"
 
-  local sname pred_window study_design
+  local sname pred_window study_design outcome_label
   sname=$(grep '^study_name:' "$yaml" \
     | sed 's/.*study_name:[[:space:]]*//' | cut -d'#' -f1 \
     | tr -d '"'"'"' ' | tr -d '\r')
@@ -139,6 +138,11 @@ generate_bundle_readme() {
   study_design=$(grep '^study_design:' "$yaml" \
     | sed 's/.*study_design:[[:space:]]*//' | cut -d'#' -f1 \
     | tr -d '"'"'"' ' | tr -d '\r')
+  # outcome_label is nested under report: in study_params.yaml; grab the first match
+  outcome_label=$(grep 'outcome_label:' "$yaml" \
+    | sed 's/.*outcome_label:[[:space:]]*//' | cut -d'#' -f1 \
+    | tr -d '"' | tr -d "'" | tr -d '\r' | head -1)
+  outcome_label="${outcome_label:-outcome}"
 
   local plp int_score char_flag word_rpt
   plp=$(grep 'plp_model_validation:'   "$yaml" | grep -ioE 'true|false' | head -1 | tr A-Z a-z)
@@ -148,9 +152,9 @@ generate_bundle_readme() {
 
   local analysis_desc
   if   [[ "$plp"       == "true" ]]; then
-    analysis_desc="External validation of a PatientLevelPrediction (PLP) Random Forest model predicting ${pred_window}-day outcomes."
+    analysis_desc="External validation of a PatientLevelPrediction (PLP) model predicting ${pred_window}-day ${outcome_label}."
   elif [[ "$int_score" == "true" ]]; then
-    analysis_desc="External validation of an integer risk score predicting ${pred_window}-day outcomes."
+    analysis_desc="External validation of an integer risk score predicting ${pred_window}-day ${outcome_label}."
   elif [[ "$char_flag" == "true" ]]; then
     analysis_desc="Cohort characterization — FeatureExtraction covariate summary of the target cohort."
   else
@@ -426,7 +430,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3 — Commit and push to GitLab (transportable-bundle branch)
+# Step 3 — Commit and push to GitLab (main branch)
 # ---------------------------------------------------------------------------
 echo "[Step 9] Pushing bundle to GitLab ($BUNDLE_GITLAB_REMOTE, branch: $BUNDLE_BRANCH) ..."
 
@@ -454,7 +458,7 @@ else
   else
     git remote add origin "$BUNDLE_GITLAB_REMOTE"
   fi
-  # Switch to / create the transportable-bundle branch if not already on it
+  # Switch to / create the target branch (BUNDLE_BRANCH) if not already on it
   if ! git rev-parse --verify "$BUNDLE_BRANCH" &>/dev/null; then
     git checkout -b "$BUNDLE_BRANCH"
   else
