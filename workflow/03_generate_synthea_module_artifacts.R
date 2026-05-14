@@ -306,7 +306,7 @@ if (n_placeholders == 0L) {
 # - status != 0: hard stop because downstream SME review artifact is missing.
 # -----------------------------------------------------------------------------
 # Regenerate the HTML diagram viewer from the module JSON.
-args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, "synthea/modules/study_template.diagram.html")
+args <- c("scripts/synthea/generate_synthea_mermaid.R", module_path, sub("\\.json$", ".diagram.html", module_path))
 rscript_bin <- if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript"
 status <- system2(file.path(R.home("bin"), rscript_bin), args = args)
 if (!identical(status, 0L)) {

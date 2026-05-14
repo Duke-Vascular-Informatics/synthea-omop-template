@@ -103,21 +103,22 @@ parse_args <- function(args) {
     }
   }
 
-  if (!nzchar(opts$run_name)) {
-    opts$run_name <- paste0(config$study_name, "-qc-", format(Sys.Date(), "%Y%m%d"))
-  }
-
   opts
 }
 
 args <- commandArgs(trailingOnly = TRUE)
 opts <- parse_args(args)
-run_name <- opts$run_name
 
 # -----------------------------------------------------------------------------
 # Connection helpers and metadata probes
 # -----------------------------------------------------------------------------
 config <- get_validation_config()
+
+# Derive default run_name now that config is available.
+if (!nzchar(opts$run_name)) {
+  opts$run_name <- paste0(config$study_name, "-qc-", format(Sys.Date(), "%Y%m%d"))
+}
+run_name <- opts$run_name
 conn <- DatabaseConnector::connect(build_connection_details(config))
 on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
 
