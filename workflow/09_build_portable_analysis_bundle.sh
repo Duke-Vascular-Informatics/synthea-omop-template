@@ -378,6 +378,7 @@ seed_bundle_hpc_scripts() {
     return
   fi
 
+  # Root-level scripts seeded as-is (with study label substitution)
   local scripts=("setup_env.sh" "install_r_packages.sh" "install_packages.R" "run_analysis.sh")
   for script in "${scripts[@]}"; do
     local src="$templates/$script"
@@ -392,6 +393,26 @@ seed_bundle_hpc_scripts() {
       sed "s/__STUDY_LABEL__/${label}/g" "$src" > "$dst"
       chmod +x "$dst" 2>/dev/null || true
       echo "  [SEED] $script"
+    fi
+  done
+
+  # R/ files stored in templates as R_<name>.R to avoid confusion with main repo files.
+  # These are HPC-specific versions (Kerberos auth, pre-bundled JDBC) that differ
+  # from the devcontainer versions in the main repo's R/ directory.
+  declare -A r_files=(["R_connection.R"]="R/connection.R" ["R_drivers.R"]="R/drivers.R")
+  for tmpl_name in "${!r_files[@]}"; do
+    local src="$templates/$tmpl_name"
+    local dst="$dest/${r_files[$tmpl_name]}"
+    if [[ ! -f "$src" ]]; then
+      echo "  [WARN] Template not found, skipping: setup/bundle_templates/$tmpl_name"
+      continue
+    fi
+    if [[ -f "$dst" ]]; then
+      echo "  [SKIP] Already exists (not overwritten): ${r_files[$tmpl_name]}"
+    else
+      mkdir -p "$(dirname "$dst")"
+      sed "s/__STUDY_LABEL__/${label}/g" "$src" > "$dst"
+      echo "  [SEED] ${r_files[$tmpl_name]}"
     fi
   done
 }
@@ -413,9 +434,9 @@ copy_bundle_file() {
   echo "  $1 -> $2"
 }
 
-# Shared R analysis modules
-copy_bundle_file "R/drivers.R"               "portable/$STUDY_NAME/R/drivers.R"
-copy_bundle_file "R/connection.R"            "portable/$STUDY_NAME/R/connection.R"
+# Shared R analysis modules (HPC-specific R/drivers.R and R/connection.R are
+# seeded from setup/bundle_templates/ by seed_bundle_hpc_scripts() — never
+# copied from the main repo, which has devcontainer-only versions of those files)
 copy_bundle_file "R/cohorts.R"               "portable/$STUDY_NAME/R/cohorts.R"
 copy_bundle_file "R/cohort_demographics.R"   "portable/$STUDY_NAME/R/cohort_demographics.R"
 copy_bundle_file "R/risk_score_pipeline.R"   "portable/$STUDY_NAME/R/risk_score_pipeline.R"
