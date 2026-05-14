@@ -69,6 +69,15 @@ covariate_lookback_days    <- config$covariate_lookback_days
 covariate_definitions_path  <- config$covariate_definitions_file
 covariate_concepts_path    <- config$covariate_concepts_file
 
+# Guard: comparator is active only when comparator.cohort_id is explicitly set
+# in study_params.yaml (not null/NA). Studies without a comparator skip all
+# comparator artifact loading and validation silently.
+comparator_enabled <- !is.na(config$comparator_cohort_id)
+
+# Guard: points column in covariates.csv is only required when the integer
+# risk score analysis is enabled. Continuous PLP studies don't use it.
+require_points <- isTRUE(config$run_integer_risk_score)
+
 
 # -----------------------------------------------------------------------------
 # Chunk 2 - Resolve required vs. optional artifact list for this design
@@ -80,15 +89,20 @@ optional_artifacts  <- list()
 required_artifacts[["target_cohort"]] <- target_cohort_sql_path
 
 # Comparator, outcome, and covariate files depend on study design.
-if (study_design %in% c("prognostic_model", "causal_inference", "descriptive")) {
+if (study_design %in% c("causal_inference", "descriptive") && comparator_enabled) {
   if (!is.null(comparator_cohort_sql_path)) {
     required_artifacts[["comparator_cohort"]] <- comparator_cohort_sql_path
-  } else if (study_design %in% c("causal_inference", "descriptive")) {
+  } else {
     warning(
-      "[Step 2] study_design = '", study_design, "' typically requires a comparator cohort.\n",
+      "[Step 2] study_design = '", study_design, "' with comparator enabled requires a comparator SQL file.\n",
       "  Set comparator.sql_file in study_params.yaml or change study_design."
     )
   }
+} else if (study_design %in% c("causal_inference", "descriptive") && !comparator_enabled) {
+  warning(
+    "[Step 2] study_design = '", study_design, "' typically requires a comparator cohort.\n",
+    "  Set comparator.cohort_id in study_params.yaml or change study_design."
+  )
 }
 
 if (study_design %in% c("prognostic_model", "causal_inference")) {
@@ -150,7 +164,7 @@ load_sql <- function(path, label) {
 }
 
 target_cohort_sql   <- load_sql(target_cohort_sql_path, "Target cohort")
-comparator_cohort_sql <- if (!is.null(comparator_cohort_sql_path) && file.exists(comparator_cohort_sql_path))
+comparator_cohort_sql <- if (comparator_enabled && !is.null(comparator_cohort_sql_path) && file.exists(comparator_cohort_sql_path))
   load_sql(comparator_cohort_sql_path, "Comparator cohort") else NULL
 outcome_cohort_sql  <- if (!is.null(outcome_cohort_sql_path) && file.exists(outcome_cohort_sql_path))
   load_sql(outcome_cohort_sql_path, "Outcome cohort") else NULL
@@ -167,11 +181,14 @@ if (!is.null(covariate_definitions_path) && file.exists(covariate_definitions_pa
                                     stringsAsFactors = FALSE, comment.char = "#")
 
   required_cols <- c("covariate_id", "covariate_name", "domain",
-                     "lookback_start_day", "lookback_end_day", "min_count", "points")
+                     "lookback_start_day", "lookback_end_day", "min_count")
+  if (require_points) required_cols <- c(required_cols, "points")
   missing_cols  <- setdiff(required_cols, names(covariate_definitions))
   if (length(missing_cols) > 0)
     stop("Covariates file is missing required columns: ",
          paste(missing_cols, collapse = ", "))
+  if (!require_points && !("points" %in% names(covariate_definitions)))
+    message("[Step 2] No 'points' column in covariates — fine unless analyses.integer_risk_score = true.")
 
   # Warn on placeholder rows (covariate_id still matching template defaults).
   placeholder_ids <- grep("^covariate_[0-9]+$", covariate_definitions$covariate_id, value = TRUE)
