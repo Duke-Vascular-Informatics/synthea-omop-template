@@ -128,10 +128,10 @@ get_validation_config <- function() {
     # Risk score pipeline settings
     # ---------------------------------------------------------------------------
     model_name                 = "__STUDY_NAME__",
-    risk_score_lookup_file     = file.path(getwd(), "risk_score", "risk_lookup.csv"),
+    risk_score_lookup_file     = file.path(getwd(), "covariates", "risk_lookup.csv"),
     risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
-    covariate_definitions_file = file.path(getwd(), "risk_score", "covariates.csv"),
-    covariate_concepts_file    = file.path(getwd(), "risk_score", "covariate_concepts.csv"),
+    covariate_definitions_file = file.path(getwd(), "covariates", "covariates.csv"),
+    covariate_concepts_file    = file.path(getwd(), "covariates", "covariate_concepts.csv"),
     output_folder              = file.path(getwd(), "output", "risk_score_eval"),
 
     prediction_window_days = __PRED_WINDOW__L,

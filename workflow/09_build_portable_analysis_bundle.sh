@@ -552,22 +552,15 @@ copy_bundle_file "R/report_extended.R"       "portable/$STUDY_NAME/R/report.R"
 copy_bundle_file "R/report_helpers.R"        "portable/$STUDY_NAME/R/report_helpers.R"
 copy_bundle_file "R/report_prognostic.R"     "portable/$STUDY_NAME/R/report_prognostic.R"
 
-# Integer risk score reference data — copy all CSVs into risk_score/ in the bundle.
-# Source directory: risk_score/ when present (older studies); covariates/ otherwise
-# (CLAUDE.md convention). config.R always expects the files under risk_score/.
-_csv_src=""
-if compgen -G "$REPO_ROOT/risk_score/*.csv" > /dev/null 2>&1; then
-  _csv_src="risk_score"
-elif compgen -G "$REPO_ROOT/covariates/*.csv" > /dev/null 2>&1; then
-  _csv_src="covariates"
-fi
-if [[ -n "$_csv_src" ]]; then
-  for _csv in "$REPO_ROOT/$_csv_src/"*.csv; do
-    [[ -f "$_csv" ]] && copy_bundle_file "$_csv_src/$(basename "$_csv")" \
-      "portable/$STUDY_NAME/risk_score/$(basename "$_csv")"
+# Covariate definition CSVs — copy all CSVs from covariates/ into covariates/
+# in the bundle. config.R expects them there (risk_score/ is a deprecated alias).
+if compgen -G "$REPO_ROOT/covariates/*.csv" > /dev/null 2>&1; then
+  for _csv in "$REPO_ROOT/covariates/"*.csv; do
+    [[ -f "$_csv" ]] && copy_bundle_file "covariates/$(basename "$_csv")" \
+      "portable/$STUDY_NAME/covariates/$(basename "$_csv")"
   done
 else
-  echo "  [WARN] No CSV files found in risk_score/ or covariates/ — skipping."
+  echo "  [WARN] No CSV files found in covariates/ — skipping."
 fi
 
 # Model artifacts — copy all .rds and .json files from model/ when present.
