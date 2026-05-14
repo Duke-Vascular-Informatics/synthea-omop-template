@@ -125,14 +125,32 @@ get_validation_config <- function() {
     atlas_outcome_cohort_id = NA_integer_,
 
     # ---------------------------------------------------------------------------
+    # Study identity — used by the report template for routing and file naming.
+    # ---------------------------------------------------------------------------
+    study_name   = "__STUDY_NAME__",
+    study_design = "prognostic_model",
+
+    # ---------------------------------------------------------------------------
     # Risk score pipeline settings
     # ---------------------------------------------------------------------------
     model_name                 = "__STUDY_NAME__",
     risk_score_lookup_file     = file.path(getwd(), "covariates", "risk_lookup.csv"),
+    # Pipeline CSVs (person_level_scores.csv, metrics.csv, etc.) land here.
     risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
     covariate_definitions_file = file.path(getwd(), "covariates", "covariates.csv"),
     covariate_concepts_file    = file.path(getwd(), "covariates", "covariate_concepts.csv"),
-    output_folder              = file.path(getwd(), "output", "risk_score_eval"),
+    # Top-level output folder — manuscript report (.docx) is written here.
+    output_folder              = file.path(getwd(), "output"),
+
+    # ---------------------------------------------------------------------------
+    # Report generation — must match the pipeline run above.
+    # score_type:   "integer" | "lasso"
+    # outcome_label: plain-English outcome name used in report headings and text.
+    # ---------------------------------------------------------------------------
+    score_type             = "__SCORE_TYPE__",
+    outcome_label          = "__OUTCOME_LABEL__",
+    model_type_description = "integer risk score",
+    var_imp_file           = "model/varImp.rds",
 
     prediction_window_days = __PRED_WINDOW__L,
 
