@@ -81,6 +81,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ---------------------------------------------------------------------------
+# SSH agent fallback for docker exec sessions.
+# devcontainer.json mounts the macOS host agent at /ssh-agent and sets
+# SSH_AUTH_SOCK=/ssh-agent via remoteEnv — but remoteEnv only applies to
+# VS Code-launched terminals, not bare docker exec calls.  If SSH_AUTH_SOCK
+# is unset (or points to a non-existent socket) and /ssh-agent is present,
+# use it so the GitLab push succeeds from either context.
+# ---------------------------------------------------------------------------
+if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "${SSH_AUTH_SOCK}" ]] && [[ -S /ssh-agent ]]; then
+  export SSH_AUTH_SOCK=/ssh-agent
+fi
+
+# ---------------------------------------------------------------------------
 # Load HPC cluster config from .env
 # When run on the host Mac: .env is one level up (OMOP_Dev/.env)
 # When run inside dev container: vars are already injected by docker-compose
