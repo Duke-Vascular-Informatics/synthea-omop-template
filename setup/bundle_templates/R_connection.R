@@ -13,7 +13,7 @@
 #     library(DatabaseConnector) is called — this is required so that
 #     java.parameters (including the JAAS path) take effect.
 #   - Two JARs are added to the classpath:
-#       1. hpc-jdbc-wrapper.jar  (your HPC support team wrapper, ~/drivers/)
+#       1. prcc-jdbc-mssql-1.0-SNAPSHOT.jar  (your HPC support team wrapper, ~/drivers/)
 #       2. mssql-jdbc-13.2.1.jre11.jar       (bundled in drivers/)
 #   - The JDBC URL uses integratedSecurity=true + authenticationScheme=JavaKerberos.
 #   - No username or password is embedded in the script.

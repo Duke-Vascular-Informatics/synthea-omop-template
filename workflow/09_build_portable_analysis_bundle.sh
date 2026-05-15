@@ -67,8 +67,8 @@
 #   # — or to pull updates into an existing clone: —
 #   cd <study-name> && git pull origin main
 #
-#   # Place the your HPC support team custom JDBC wrapper one level above the bundle:
-#   #   /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
+#   # Place the HPC support team JDBC wrapper one level above the bundle:
+#   #   /path/to/your/workspace/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
 #   bash setup_env.sh
 #   conda activate openjdk
 #   export KRB5CCNAME=FILE:~/krb5cc_java && kinit
