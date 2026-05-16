@@ -67,8 +67,8 @@
 #   # — or to pull updates into an existing clone: —
 #   cd <study-name> && git pull origin main
 #
-#   # Place the your HPC support team custom JDBC wrapper one level above the bundle:
-#   #   /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
+#   # Place the HPC support team JDBC wrapper one level above the bundle:
+#   #   /path/to/your/workspace/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
 #   bash setup_env.sh
 #   conda activate openjdk
 #   export KRB5CCNAME=FILE:~/krb5cc_java && kinit
@@ -79,6 +79,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ---------------------------------------------------------------------------
+# SSH agent fallback for docker exec sessions.
+# devcontainer.json mounts the macOS host agent at /ssh-agent and sets
+# SSH_AUTH_SOCK=/ssh-agent via remoteEnv — but remoteEnv only applies to
+# VS Code-launched terminals, not bare docker exec calls.  If SSH_AUTH_SOCK
+# is unset (or points to a non-existent socket) and /ssh-agent is present,
+# use it so the GitLab push succeeds from either context.
+# ---------------------------------------------------------------------------
+if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "${SSH_AUTH_SOCK}" ]] && [[ -S /ssh-agent ]]; then
+  export SSH_AUTH_SOCK=/ssh-agent
+fi
 
 # ---------------------------------------------------------------------------
 # Load HPC cluster config from .env

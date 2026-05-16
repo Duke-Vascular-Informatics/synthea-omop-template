@@ -112,8 +112,8 @@ cat <<SUMMARY
   set to your personal write schema (format: domain\netid).
 
   The HPC support team JDBC wrapper JAR must be in place at:
-       $(dirname "$BUNDLE_DIR")/drivers/hpc-jdbc-wrapper.jar
-  (Contact your HPC support team if you do not have this file.)
+       $(dirname "$BUNDLE_DIR")/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+  (Contact Duke SOM-HPC if you do not have this file.)
 
   Kerberos tickets expire after ~10 hours. If you get authentication
   errors, re-run this script to renew:
