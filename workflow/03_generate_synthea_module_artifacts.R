@@ -112,13 +112,33 @@ if (!requireNamespace("jsonlite", quietly = TRUE)) {
 # Purpose:
 # Validate the core input artifact and confirm the expected Synthea structure.
 # Code path notes:
-# - Missing file: stop with path-specific error.
+# - Auto-detect: prefer any study-specific .json that is not study_template.json.
+# - Fallback: use study_template.json when no renamed module exists yet (template runs).
+# - Neither found: stop with actionable error.
 # - Empty / malformed states collection: stop (cannot run coverage checks).
 # - Valid structure: proceed to concept coverage evaluation.
 # -----------------------------------------------------------------------------
-module_path <- "synthea/modules/study_template.json"
+module_candidates <- list.files("synthea/modules", pattern = "\\.json$", full.names = TRUE)
+study_candidates  <- module_candidates[basename(module_candidates) != "study_template.json"]
+
+if (length(study_candidates) > 0L) {
+  if (length(study_candidates) > 1L) {
+    warning(
+      "Multiple study module JSON files found in synthea/modules/; using the first: ",
+      study_candidates[1], call. = FALSE
+    )
+  }
+  module_path <- study_candidates[1]
+} else {
+  # Fall back to the template default when no study-specific JSON exists yet.
+  module_path <- "synthea/modules/study_template.json"
+}
+
 if (!file.exists(module_path)) {
-  stop("Missing module file: ", module_path)
+  stop(
+    "No study module JSON found in synthea/modules/. ",
+    "Add a study-specific .json file or ensure study_template.json is present."
+  )
 }
 
 module <- jsonlite::fromJSON(module_path, simplifyVector = FALSE)
@@ -155,44 +175,47 @@ for (candidate in modules_dir_candidates) {
 }
 
 if (is.na(target_modules_dir)) {
-  stop(
-    "Could not find a Synthea modules directory. Checked: ",
+  warning(
+    "Synthea runtime modules directory not found (checked: ",
     paste(modules_dir_candidates, collapse = ", "),
-    ". Ensure your Synthea checkout exists or set SYNTHEA_HOME."
+    "). Module will NOT be copied to the runtime. ",
+    "Run: git submodule update --init external/synthea before Step 4.",
+    call. = FALSE
   )
-}
+  cat("[SKIP] Synthea module copy skipped — no runtime directory found.\n")
+} else {
+  target_module_path <- file.path(target_modules_dir, basename(module_path))
 
-target_module_path <- file.path(target_modules_dir, basename(module_path))
-
-# Replace prior version explicitly to avoid any ambiguity about which file is
-# active in the Synthea checkout.
-if (file.exists(target_module_path)) {
-  removed <- file.remove(target_module_path)
-  if (!removed) {
-    stop("Failed to remove existing module file before copy: ", target_module_path)
+  # Replace prior version explicitly to avoid any ambiguity about which file is
+  # active in the Synthea checkout.
+  if (file.exists(target_module_path)) {
+    removed <- file.remove(target_module_path)
+    if (!removed) {
+      stop("Failed to remove existing module file before copy: ", target_module_path)
+    }
   }
-}
 
-copy_ok <- file.copy(module_path, target_module_path, overwrite = FALSE)
-if (!copy_ok) {
-  stop("Failed to copy module JSON to Synthea modules folder: ", target_module_path)
-}
+  copy_ok <- file.copy(module_path, target_module_path, overwrite = FALSE)
+  if (!copy_ok) {
+    stop("Failed to copy module JSON to Synthea modules folder: ", target_module_path)
+  }
 
-if (!file.exists(target_module_path)) {
-  stop("Module copy reported success but destination file is missing: ", target_module_path)
-}
+  if (!file.exists(target_module_path)) {
+    stop("Module copy reported success but destination file is missing: ", target_module_path)
+  }
 
-src_size <- file.info(module_path)$size
-dst_size <- file.info(target_module_path)$size
-if (!identical(src_size, dst_size)) {
-  stop(
-    "Module copy verification failed (size mismatch). Source bytes=", src_size,
-    ", destination bytes=", dst_size,
-    ". Destination: ", target_module_path
-  )
-}
+  src_size <- file.info(module_path)$size
+  dst_size <- file.info(target_module_path)$size
+  if (!identical(src_size, dst_size)) {
+    stop(
+      "Module copy verification failed (size mismatch). Source bytes=", src_size,
+      ", destination bytes=", dst_size,
+      ". Destination: ", target_module_path
+    )
+  }
 
-cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
+  cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
+}
 
 # ---------------------------------------------------------------------------
 # REPLACE_ME READINESS CHECK
