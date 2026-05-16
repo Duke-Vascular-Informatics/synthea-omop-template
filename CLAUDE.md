@@ -24,3 +24,28 @@ git add synthea-omop-dev
 git commit -m "chore: update synthea-omop-dev submodule pointer"
 git push origin main
 ```
+
+### Daily Sync Routine
+
+When running the repository sync agent (comparing analysis repos against this template), **do not use a hardcoded repo list**. Instead, auto-discover repos at runtime:
+
+1. Locate the workspace root — the parent directory of this repo:
+   ```bash
+   WORKSPACE_ROOT="$(git -C . rev-parse --show-toplevel)/.."
+   ```
+2. Find all sibling directories whose names match `pad-*`:
+   ```bash
+   find "$WORKSPACE_ROOT" -maxdepth 1 -type d -name 'pad-*' | sort
+   ```
+   Or use the helper script:
+   ```bash
+   bash scripts/list_analysis_repos.sh
+   ```
+3. For each discovered directory, read its GitHub remote from git:
+   ```bash
+   git -C "$REPO_DIR" remote get-url origin
+   ```
+4. Compare the `main` branch of each discovered repo against this template's `main` branch.
+5. Apply the file-scope rules (PROPAGATE / SKIP paths) defined in the sync agent prompt.
+
+**Naming convention:** analysis repos follow `pad-{study-name-kebab-case}` (e.g. `pad-oler-ssi-val`, `pad-amp-nhd-val`). Any new repo added to the workspace root matching this pattern is automatically included in the next sync run — no prompt editing required.

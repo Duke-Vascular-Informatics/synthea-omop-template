@@ -77,6 +77,7 @@ if (length(loaded_java_ns) > 0) {
 # =============================================================================
 # 3. Activate renv, load config, and source helper modules
 # =============================================================================
+Sys.setenv(RENV_CONFIG_SYNCHRONIZED_CHECK = "FALSE")
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 source("config.R")       # get_validation_config()
@@ -337,11 +338,17 @@ if (config$run_causal_inference) {
 # Integer risk score validation — custom pipeline
 # Reads covariates/covariates.csv and covariates/covariate_concepts.csv.
 # Those files must have a points column and verified concept IDs.
-# Pass lookup_file= to supply a score → probability table.
+# Pass lookup_file= to supply a score → probability table from the derivation
+# cohort; omit to use logistic recalibration only.
 # -----------------------------------------------------------------------------
 if (config$run_integer_risk_score) {
   message("[Step 8] Running integer risk score pipeline ...")
-  run_integer_risk_score_pipeline(config, connection_details)
+  lookup_path <- file.path("covariates", "risk_lookup.csv")
+  run_integer_risk_score_pipeline(
+    config,
+    connection_details,
+    lookup_file = if (file.exists(lookup_path)) lookup_path else NULL
+  )
   message("[Step 8] Integer risk score pipeline complete.")
 }
 
@@ -350,12 +357,17 @@ if (config$run_integer_risk_score) {
 # Word report — requires a pipeline above to have written its outputs first.
 # Reads person_level_scores.csv, covariate_summary.csv, and metrics.csv from
 # config$output_folder.
+# generate_manuscript_report() dispatches to the appropriate report format
+# based on config flags; supply score_output_dir when a pipeline writes its
+# CSVs to a subdirectory (e.g. "risk_score_eval/").
 # -----------------------------------------------------------------------------
 if (config$run_word_report) {
   message("[Step 8] Generating Word report ...")
-  generate_word_report(
-    output_dir      = config$output_folder,
-    score_output_dir = config$output_folder
+  generate_manuscript_report(
+    output_dir         = config$output_folder,
+    score_output_dir   = config$output_folder,
+    connection_details = connection_details,
+    config             = config
   )
   message("[Step 8] Word report complete.")
 }
