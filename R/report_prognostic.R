@@ -422,10 +422,10 @@
       labels = function(x) paste0(round(x, 1), "%")
     ) +
     ggplot2::labs(
-      title   = "90-Day SSI Rate by Type and Procedure Year",
-      subtitle = "Top line = overall SSI rate; bands show contribution of each type",
+      title   = "Outcome Rate by Type and Procedure Year",
+      subtitle = "Top line = overall rate; bands show contribution of each type",
       x       = "Year of procedure",
-      y       = "90-day SSI rate (%)",
+      y       = "Outcome rate (%)",
       caption = paste0("N = ", total_procs, " procedures across ", total_years,
                        " years; years with < 10 procedures suppressed.")
     ) +
@@ -509,9 +509,9 @@
       labels = function(x) paste0(round(x, 1), "%")
     ) +
     ggplot2::labs(
-      title   = "90-Day SSI Rate by Month of Procedure",
+      title   = "Outcome Rate by Month of Procedure",
       x       = "Month of index procedure",
-      y       = "90-day SSI rate (%)",
+      y       = "Outcome rate (%)",
       caption = paste0("Pooled across all study years (", min(df_mo$month, na.rm = TRUE),
                        "\u2013", max(df_mo$month, na.rm = TRUE), "). ",
                        "Months with < 5 procedures suppressed.")
@@ -1018,8 +1018,38 @@
 # Renamed from generate_word_report() in the original synthea-omop-dev monolith.
 # Body is verbatim — no parameterization applied to the simple report.
 # ===========================================================================
-.report_word_simple <- function(output_dir = "output/risk_score_eval",
-                                 score_output_dir = "output/risk_score_eval") {
+# =============================================================================
+# CLAUDE CODE — READ BEFORE GENERATING THIS REPORT
+#
+# Before calling this function (or enabling word_report: true in study_params.yaml),
+# read the following study files and fill in the report: section of study_params.yaml
+# so the Methods paragraphs accurately describe THIS study:
+#
+#   1. study_params.yaml               — study design, prediction window, outcome label
+#   2. cohorts/<target_sql_file>       — target cohort inclusion/exclusion criteria,
+#                                        index event concept IDs, washout definition
+#   3. cohorts/<outcome_sql_file>      — outcome definition and OMOP concept IDs
+#   4. covariates/covariates.csv       — risk score components, point values, lookback windows
+#   5. covariates/covariate_concepts.csv — OMOP concept IDs mapped to each component
+#
+# After reading those files, update these fields in study_params.yaml under report:
+#
+#   study_title                   — display title for the report
+#   target_population_description — 2–3 sentence paragraph for Methods §2.1 (target cohort)
+#   outcome_description           — 2–3 sentence paragraph for Methods §2.1 (outcome)
+#   score_description             — narrative paragraph for Methods §2.2 (model components)
+#
+# Paragraphs still showing "[...]" placeholder text mean that field has not been set.
+# Do NOT leave placeholder text in a final report.
+# =============================================================================
+.report_word_simple <- function(output_dir       = "output/risk_score_eval",
+                                score_output_dir = "output/risk_score_eval",
+                                config           = NULL) {
+
+  # Load config from study_params.yaml when not supplied by the caller.
+  if (is.null(config)) {
+    config <- tryCatch(get_validation_config(), error = function(e) NULL)
+  }
 
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
@@ -1103,11 +1133,53 @@
     )
   }
 
+  # ---- Resolve narrative text from config (set via study_params.yaml report:) ----
+  # Falls back to a "[PLACEHOLDER]" reminder string — see CLAUDE CODE INSTRUCTIONS above.
+  cfg_study_title <- config$report_study_title %||%
+    paste0("[STUDY_TITLE: Set report.study_title in study_params.yaml.",
+           " Ask Claude Code to read cohorts/ and covariates/ and generate the title.]")
+
+  cfg_target_pop <- config$report_target_population_description %||%
+    paste0("[TARGET_POPULATION_DESCRIPTION: Read ",
+           config$target_cohort_sql %||% "cohorts/target.sql",
+           " and rewrite this paragraph to describe who enters the cohort,",
+           " how the index date is defined, and what washout is applied.",
+           " Store the result in report.target_population_description in study_params.yaml.]")
+
+  cfg_outcome <- config$report_outcome_description %||%
+    paste0("[OUTCOME_DESCRIPTION: Read ",
+           config$outcome_cohort_sql %||% "cohorts/outcome.sql",
+           " and rewrite this paragraph to describe the outcome concept IDs, ascertainment logic,",
+           " and the ", config$prediction_window_days %||% "N",
+           "-day prediction window.",
+           " Store the result in report.outcome_description in study_params.yaml.]")
+
+  cfg_score <- config$report_score_description %||%
+    paste0("[SCORE_DESCRIPTION: Read covariates/covariates.csv and covariates/covariate_concepts.csv",
+           " and rewrite this paragraph to describe the ",
+           config$model_type_description %||% "risk model",
+           " components, point values, lookback windows, and scoring algorithm.",
+           " Store the result in report.score_description in study_params.yaml.]")
+
+  cfg_outcome_label <- config$outcome_label          %||% "the outcome"
+  cfg_model_type    <- config$model_type_description %||% "risk score"
+  cfg_window        <- config$prediction_window_days %||% "N"
+  cfg_study_name    <- config$study_name             %||% "this study"
+
   doc <- read_docx()
+  doc <- officer::body_set_default_section(
+    doc,
+    officer::prop_section(
+      page_margins = officer::page_mar(
+        top = 0.5, bottom = 0.5, left = 0.5, right = 0.5,
+        header = 0.3, footer = 0.3, gutter = 0
+      )
+    )
+  )
 
   # ---- Title ---------------------------------------------------------------
   today_str <- format(Sys.Date(), "%B %d, %Y")
-  doc <- body_add_par(doc, "PAD / OLER — Surgical Site Infection Risk Score",
+  doc <- body_add_par(doc, cfg_study_title,
                       style = "heading 1")
   doc <- body_add_par(doc, "External Validation Report", style = "heading 1")
   doc <- body_add_par(doc, paste("Report Generated:", today_str), style = "heading 2")
@@ -1126,11 +1198,10 @@
     doc <- body_add_par(doc,
       paste0(
         "This validation study evaluated the external performance of a previously developed ",
-        "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
-        "disease (PAD) undergoing lower-extremity vascular surgery. The analysis was performed on ",
+        cfg_model_type, " for ", cfg_outcome_label, ". The analysis was performed on ",
         "an OMOP CDM dataset containing ", n_patients, " unique patients with ",
-        n_procedures, " eligible procedures. Overall SSI incidence was ", n_ssi_events,
-        " events (", ssi_rate, "%). The mean risk score was ", mean_score, "."
+        n_procedures, " eligible procedures. Overall ", cfg_outcome_label, " incidence was ",
+        n_ssi_events, " events (", ssi_rate, "%). The mean risk score was ", mean_score, "."
       ),
       style = "Normal"
     )
@@ -1138,8 +1209,7 @@
     doc <- body_add_par(doc,
       paste0(
         "This validation study evaluated the external performance of a previously developed ",
-        "integer risk score for surgical site infection (SSI) in patients with peripheral arterial ",
-        "disease (PAD) undergoing lower-extremity vascular surgery."
+        cfg_model_type, " for ", cfg_outcome_label, "."
       ),
       style = "Normal"
     )
@@ -1151,59 +1221,17 @@
   doc <- body_add_par(doc, "2.  Methods", style = "heading 2")
 
   doc <- body_add_par(doc, "2.1  Study Population and Data Source", style = "heading 3")
-  doc <- body_add_par(doc,
-    paste0(
-      "The target cohort comprised adults aged 18 years or older who underwent an inpatient ",
-      "open lower-extremity revascularization procedure, defined using OMOP standard concept ",
-      "4236706 (Arterial bypass of lower limb artery) and 4225375 (Endarterectomy of lower limb artery) ",
-      "and all descendants via the concept_ancestor table. These concepts are scoped to operative ",
-      "procedures on arteries of the lower extremity only, excluding diagnostic imaging, venous ",
-      "procedures, and upper extremity arterial procedures. Qualifying procedure subtypes include ",
-      "femoral-popliteal bypass, femorotibial bypass, aorto-femoral bypass, and femoral endarterectomy. ",
-      "The index date ",
-      "was defined as the start date of the first qualifying inpatient visit per person within ",
-      "the study window. Persons with any surgical site infection (SSI) diagnosis (OMOP concept ",
-      "4334801, SNOMED-CT 433202001) recorded in the 365 days prior to the index date were ",
-      "excluded to remove prevalent cases."
-    ),
-    style = "Normal"
-  )
-  doc <- body_add_par(doc,
-    paste0(
-      "The outcome cohort identified incident SSI events using OMOP concept 4334801 and all ",
-      "descendants, capturing superficial incisional, deep incisional, and organ-space SSI ",
-      "consistent with CDC/NHSN classification. An SSI event was attributed to the target cohort ",
-      "if the condition onset occurred within 90 days of the index date (prediction_window_days = 90). ",
-      "Both cohort definitions are implemented as SqlRender-parameterised SQL templates stored ",
-      "under 'cohorts/' and are compatible with OMOP CDM v5.4. The dataset contained ",
-      if (!is.null(person_level)) length(unique(person_level$subject_id)) else "N",
-      " patients with at least one qualifying procedure within the study window."
-    ),
-    style = "Normal"
-  )
+  # TODO [CLAUDE]: cfg_target_pop is drawn from report.target_population_description in
+  # study_params.yaml. Read cohorts/<target_sql_file> and populate that field first.
+  doc <- body_add_par(doc, cfg_target_pop, style = "Normal")
+  # TODO [CLAUDE]: cfg_outcome is drawn from report.outcome_description in
+  # study_params.yaml. Read cohorts/<outcome_sql_file> and populate that field first.
+  doc <- body_add_par(doc, cfg_outcome, style = "Normal")
 
   doc <- body_add_par(doc, "2.2  Risk Score Computation", style = "heading 3")
-  doc <- body_add_par(doc,
-    paste0(
-      "The PAD SSI integer risk score comprises ten pre-operative and intra-operative components ",
-      "(Table 2). Each component is mapped to one or more OMOP standard concept IDs with descendant ",
-      "expansion via the concept_ancestor table where applicable. Components include: female sex ",
-      "(concept 8532); overweight (BMI 25–<30) and obesity (BMI \u226530), each resolved from direct BMI measurement (LOINC 3038553) or computed from weight and height (LOINC 3025315 + 3036277, with additional EHR variants); ",
-      "urgent or emergency procedure (concepts 4158569, 4250892); low ankle-brachial index ≤0.35 ",
-      "(concepts 40489833, 46237026); prior lower-extremity revascularization within 10 years ",
-      "(concepts 4236706 + 4225375 + descendants); prolonged antibiotic exposure >2 days within 90 days ",
-      "(concept 21603553 + descendants); operative time ≥4 hours (procedure_start/end_datetime); ",
-      "high modified Frailty Index (mFI >0.25, requiring ≥2 of: diabetes 201820, COPD 255573, ",
-      "congestive heart failure 316139, hypertension 316866, functional impairment 4215267); and ",
-      "operative indication of intermittent claudication (concept 442774 + descendants, −1 point). ",
-      "Component event counts were aggregated per person over component-specific lookback windows ",
-      "relative to the index date. A person meeting the minimum event threshold for a component ",
-      "received the full integer point value; those below threshold received zero. Missing data were ",
-      "treated as zero evidence (absence of component). The total score is the arithmetic sum of all ",
-      "component point values and ranges from −1 (claudication only) to +12."
-    ),
-    style = "Normal"
-  )
+  # TODO [CLAUDE]: cfg_score is drawn from report.score_description in study_params.yaml.
+  # Read covariates/covariates.csv and covariates/covariate_concepts.csv and populate that field first.
+  doc <- body_add_par(doc, cfg_score, style = "Normal")
 
   doc <- body_add_par(doc, "2.3  Performance Evaluation", style = "heading 3")
   doc <- body_add_par(doc,
@@ -1212,7 +1240,8 @@
       "(AUROC) and the area under the precision-recall curve (AUPRC). Calibration was evaluated under two ",
       "model specifications: (1) lookup-based predicted probabilities drawn directly from the published ",
       "score-to-risk calibration table (no refitting), and (2) recalibrated probabilities estimated by ",
-      "fitting a logistic regression of the total integer score on the observed binary 90-day SSI outcome ",
+      paste0("fitting a logistic regression of the total integer score on the observed binary ",
+             cfg_window, "-day ", cfg_outcome_label, " outcome "),
       "in the validation cohort. Calibration-in-the-large was summarised by the intercept and slope of the ",
       "calibration regression. Expected calibration error (ECE) was computed as the probability-weighted ",
       "mean absolute difference between mean predicted and observed event rates across 10 equal-frequency bins."
@@ -1247,13 +1276,14 @@
   doc <- body_add_par(doc, "4.  Risk Model Variables", style = "heading 2")
   doc <- body_add_par(doc,
     paste0(
-      "Table 2 lists the ten components of the PAD SSI integer risk score, the point value assigned to each, ",
-      "the lookback window applied, and the OMOP concept-based derivation method used in this validation."
+      paste0("Table 2 lists the components of the ", cfg_model_type,
+             ", the point value assigned to each, ",
+             "the lookback window applied, and the OMOP concept-based derivation method used in this validation.")
     ),
     style = "Normal"
   )
   doc <- body_add_par(doc,
-    "Table 2.  PAD SSI risk score components, point values, and OMOP CDM derivation method.",
+    paste0("Table 2.  ", cfg_model_type, " components, point values, and OMOP CDM derivation method."),
     style = "Normal"
   )
   doc <- body_add_flextable(doc, .build_table1(.covariate_table_data()))
@@ -1262,7 +1292,8 @@
   # ---- Figure 1. ROC Curve (placed immediately after Tables 1-2) ----------
   if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
     doc <- body_add_par(doc,
-      "Figure 1.  Receiver operating characteristic (ROC) curve for 90-day SSI risk prediction.",
+      paste0("Figure 1.  Receiver operating characteristic (ROC) curve for ",
+             cfg_window, "-day ", cfg_outcome_label, " risk prediction."),
       style = "Normal"
     )
     doc <- body_add_img(doc, src = roc_plot_file, width = 5, height = 3.5)
@@ -1441,12 +1472,12 @@
   doc <- body_add_par(doc, "10.  Discussion and Conclusion", style = "heading 2")
   doc <- body_add_par(doc,
     paste0(
-      "This external validation demonstrates the applicability of the PAD SSI integer risk score to an ",
-      "OMOP CDM v5.4 dataset. All ten score components were successfully mapped to OMOP standard concept IDs ",
-      "using transparent, scriptable SQL against the concept_ancestor and concept tables. The target cohort ",
-      "was restricted to adult patients undergoing inpatient open lower-extremity revascularization with a ",
-      "pre-operative washout for prior SSI, and the 90-day post-operative SSI outcome was ascertained using ",
-      "the validated concept hierarchy under SNOMED-CT 433202001. Performance metrics indicate ",
+      # TODO [CLAUDE]: Rewrite this paragraph to describe the specific model validated,
+      # the target population, the outcome, the CDM version, and the key performance finding.
+      "This external validation demonstrates the applicability of the ", cfg_model_type,
+      " for ", cfg_outcome_label, " to an OMOP CDM v5.4 dataset. All score components were ",
+      "successfully mapped to OMOP standard concept IDs using transparent, scriptable SQL against ",
+      "the concept_ancestor and concept tables. Performance metrics indicate ",
       if (!is.null(metrics)) {
         auroc <- metrics$value[metrics$metric == "AUROC" & metrics$model == "lookup"]
         if (length(auroc) > 0 && !is.na(auroc[1])) {
@@ -1455,8 +1486,7 @@
           else "modest discriminative properties that warrant further investigation"
         } else "good performance"
       } else "reasonable",
-      ", supporting its continued evaluation as a perioperative clinical decision-support tool for ",
-      "patients undergoing open lower-extremity vascular surgery."
+      ", supporting its continued evaluation as a clinical decision-support tool."
     ),
     style = "Normal"
   )
@@ -1467,14 +1497,13 @@
       "The fully reproducible workflow — implemented as executable R scripts with SqlRender-parameterised ",
       "cohort SQL — enables validation teams to audit all cohort inclusion criteria, concept mappings, ",
       "lookback windows, and statistical calculations end-to-end. This transparency aligns with OHDSI ",
-      "best practices for network studies and external validation. Future steps include applying this ",
-      "validated pipeline to de-identified real-world vascular surgery registry data."
+      "best practices for network studies and external validation."
     ),
     style = "Normal"
   )
 
   # ---- Write output -------------------------------------------------------
-  out_path <- file.path(output_dir, "ssi_validation_report.docx")
+  out_path <- file.path(output_dir, paste0(cfg_study_name, "_validation_report.docx"))
   print(doc, target = out_path)
   message("Report written to: ", normalizePath(out_path))
   invisible(out_path)
@@ -2616,9 +2645,9 @@
       sub_row("Femoral-popliteal bypass", fempop_n,   n_target),
       sub_row("Femorotibial bypass",      femtib_n,    n_target),
       sub_row("Extra-anatomic bypass",    extraanat_n, n_target),
-      # 90-day outcome
-      row1("90-day outcome", header = TRUE),
-      sub_row("Surgical site infection", n_outcome, n_target),
+      # Prediction window outcome
+      row1(paste0(config$prediction_window_days, "-day outcome"), header = TRUE),
+      sub_row(config$outcome_label, n_outcome, n_target),
       # Total (last row)
       row1("Total cohort", fmt_n_pct(n_target, n_target))
     )
@@ -2853,7 +2882,7 @@
         fill    = NULL,
         caption = paste0(
           "N = ", nrow(df), " patients. ",
-          "SSI = 90-day surgical site infection."
+          config$prediction_window_days, "-day ", config$outcome_label, " = outcome group."
         )
       ) +
       ggplot2::theme_bw(base_size = 11) +
@@ -3140,9 +3169,58 @@
     }, error = function(e) NULL)
   }
 
+  # =============================================================================
+  # CLAUDE CODE — READ BEFORE GENERATING THIS REPORT
+  #
+  # Before running .report_prognostic(), read the following study files and
+  # ensure the report: section of study_params.yaml is complete:
+  #
+  #   1. study_params.yaml               — study design, prediction window, outcome label
+  #   2. cohorts/<target_sql_file>       — target cohort inclusion/exclusion criteria,
+  #                                        index event concept IDs, washout definition
+  #   3. cohorts/<outcome_sql_file>      — outcome definition and OMOP concept IDs
+  #   4. covariates/covariates.csv       — risk score components, point values, lookback windows
+  #   5. covariates/covariate_concepts.csv — OMOP concept IDs mapped to each component
+  #   6. workflow/08_run_analysis_and_manuscript_report.R — confirm active analysis flags
+  #
+  # After reading those files, populate (in study_params.yaml report: section):
+  #   report.study_title                   — display title for the manuscript
+  #   report.target_population_description — Methods "Target cohort" paragraph
+  #   report.outcome_description           — Methods "Outcome cohort" paragraph
+  #   report.score_description             — Methods "Risk score evaluation" paragraph
+  #
+  # Paragraphs still showing "[...]" placeholder text mean that field has not been set.
+  # =============================================================================
+
+  # Resolve narrative text from config — falls back to "[PLACEHOLDER]" reminder strings.
+  cfg_study_title <- config$report_study_title %||%
+    paste0("[STUDY_TITLE: Set report.study_title in study_params.yaml.]")
+
+  cfg_target_pop <- config$report_target_population_description %||%
+    paste0("[TARGET_POPULATION_DESCRIPTION: Read cohorts/<target_sql_file> and",
+           " populate report.target_population_description in study_params.yaml.]")
+
+  cfg_outcome_par <- config$report_outcome_description %||%
+    paste0("[OUTCOME_DESCRIPTION: Read cohorts/<outcome_sql_file> and",
+           " populate report.outcome_description in study_params.yaml.]")
+
+  cfg_score_par <- config$report_score_description %||%
+    paste0("[SCORE_DESCRIPTION: Read covariates/covariates.csv and",
+           " covariates/covariate_concepts.csv and populate",
+           " report.score_description in study_params.yaml.]")
+
   doc <- read_docx()
+  doc <- officer::body_set_default_section(
+    doc,
+    officer::prop_section(
+      page_margins = officer::page_mar(
+        top = 0.5, bottom = 0.5, left = 0.5, right = 0.5,
+        header = 0.3, footer = 0.3, gutter = 0
+      )
+    )
+  )
   doc <- body_add_par(doc, "Manuscript Draft: Methods and Results", style = "heading 1")
-  doc <- body_add_par(doc, paste0("PAD Open Lower Extremity Revascularization and ", config$prediction_window_days, "-Day ", config$outcome_label, " Risk Score: External Validation"), style = "Normal")
+  doc <- body_add_par(doc, cfg_study_title %||% paste0(config$prediction_window_days, "-Day ", config$outcome_label, " Risk Score: External Validation"), style = "Normal")
   doc <- body_add_par(doc, paste("Date:", format(Sys.Date(), "%Y-%m-%d")), style = "Normal")
   doc <- body_add_par(doc, "", style = "Normal")
 
@@ -3161,24 +3239,12 @@
     "OMOP CDM v5 data source. Full data source metadata are reported in Supplemental Table S1."
   ), style = "Normal")
   doc <- body_add_par(doc, "Target and outcome cohort definitions", style = "heading 3")
-  doc <- body_add_par(doc, paste0(
-    "The target cohort comprised adults aged 18 years or older who underwent inpatient open ",
-    "lower-extremity arterial surgery, defined using OMOP concepts 4236706 (Arterial bypass of ",
-    "lower limb artery) and 4225375 (Endarterectomy of lower limb artery) and all descendants, ",
-    "including femoral-popliteal bypass, femorotibial bypass, aortobifemoral bypass, femoral ",
-    "endarterectomy, and extra-anatomic bypass (axillofemoral and femorofemoral). Both anchor ",
-    "concepts are explicitly scoped to arterial procedures of the lower extremity, excluding ",
-    "diagnostic imaging and venous procedures. The index date was the start of the first qualifying ",
-    paste0("inpatient visit per person. Patients with any ", tolower(config$outcome_label), " diagnosis in the 365 days prior to index "),
-    "were excluded. Corresponding CPT-4 codes for each procedure subgroup are listed in ",
-    "Supplemental Table S2."
-  ), style = "Normal")
-  doc <- body_add_par(doc, paste0(
-    "The outcome cohort identified the first surgical site infection diagnosis (OMOP concept 4334801, ",
-    "SNOMED-CT 433202001, and descendants, capturing superficial incisional, deep incisional, and ",
-    "organ-space SSI per CDC/NHSN classification) within 90 days of the index date. Source ICD ",
-    "codes used to identify SSI prior to standardisation are listed in Supplemental Table S3."
-  ), style = "Normal")
+  # TODO [CLAUDE]: cfg_target_pop is drawn from report.target_population_description in
+  # study_params.yaml. Read cohorts/<target_sql_file> and populate that field first.
+  doc <- body_add_par(doc, cfg_target_pop, style = "Normal")
+  # TODO [CLAUDE]: cfg_outcome_par is drawn from report.outcome_description in
+  # study_params.yaml. Read cohorts/<outcome_sql_file> and populate that field first.
+  doc <- body_add_par(doc, cfg_outcome_par, style = "Normal")
   doc <- body_add_par(doc, "Risk score evaluation", style = "heading 3")
 
   # Branch 4 — Methods §2.2 narrative for the risk score computation.
@@ -3214,32 +3280,45 @@
     "Calibration was assessed for the published lookup model using the Brier score, expected calibration ",
     "error (ECE), calibration intercept, and calibration slope, each with 95% bootstrap percentile CIs ",
     "(B\u2009=\u2009500 resamples). ECE was computed as the probability-weighted mean absolute difference ",
-    "between mean predicted and observed 90-day SSI rates across quantile-based bins. Calibration plots ",
+    paste0("between mean predicted and observed ", config$prediction_window_days, "-day ",
+           config$outcome_label, " rates across quantile-based bins. Calibration plots "),
     "compare mean predicted risk versus observed event rate within each bin; the dashed diagonal represents ",
     "perfect calibration."
   ), style = "Normal")
   doc <- body_add_par(doc, "Subgroup analysis and bias assessment", style = "heading 3")
+  # TODO [CLAUDE]: Rewrite the subgroup paragraph to list the prespecified subgroups
+  # for THIS study (sex, age, indication, procedure type, calendar year, etc.).
+  # Replace study-specific subgroup labels if they differ from the PAD SSI example.
   doc <- body_add_par(doc, paste0(
     "Model calibration was assessed across prespecified patient subgroups to identify populations ",
-    paste0("in which the lookup risk score may systematically over- or underestimate observed ", tolower(config$outcome_label), " risk. "),
+    "in which the ", config$model_type_description, " may systematically over- or underestimate observed ",
+    tolower(config$outcome_label), " risk. ",
     "Subgroups evaluated included biological sex, race, ethnicity, age group (<65, 65\u201374, \u226575 years), ",
-    "operative indication (claudication vs. critical limb ischemia), procedure type (aortobifemoral ",
-    "bypass, femoral-popliteal bypass, femorotibial bypass, femoral endarterectomy, extra-anatomic ",
-    "bypass), and calendar year of the index procedure. Expected calibration error (ECE) was ",
+    "and calendar year of the index procedure. Expected calibration error (ECE) was ",
     "computed within each subgroup as the weighted mean absolute difference between grouped ",
     "predicted and observed event rates across quantile-based bins. Uncertainty was quantified ",
     "using 200 bootstrap resamples (percentile 95% CI). Subgroup levels with fewer than 10 ",
-    "observed SSI events were suppressed to avoid unreliable estimates. Results are presented in ",
-    "Supplemental Table S6 and Supplemental Figure S7."
+    "observed ", tolower(config$outcome_label), " events were suppressed to avoid unreliable estimates. ",
+    "Results are presented in Supplemental Table S6 and Supplemental Figure S7."
   ), style = "Normal")
 
   doc <- body_add_par(doc, "Results", style = "heading 2")
 
   # ---- Table 1: Demographics -----------------------------------------------
   doc <- body_add_par(doc, "Cohort characteristics", style = "heading 3")
-  doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ", n_outcome, " experienced surgical site infection within 90 days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."), style = "Normal")
+  doc <- body_add_par(doc, paste0("The final target cohort included ", n_target, " patients, of whom ",
+    n_outcome, " experienced ", tolower(config$outcome_label), " within ", config$prediction_window_days,
+    " days, corresponding to an observed event rate of ", fmt(outcome_prev, 2), "%."),
+    style = "Normal")
   doc <- body_add_par(doc, "Table 1. Demographics of the external validation cohort.", style = "Normal")
-  doc <- body_add_par(doc, "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). Race and ethnicity are derived from OMOP person table concept fields. Indication categories use OMOP concept-ancestor rollup within 365 days before index (claudication: concept 442774, SNOMED 63491006; rest pain: concept 4325344, SNOMED 428171009; tissue loss: concept 4029926 [Ischemic ulcer], SNOMED 238794007; asymptomatic = residual). Procedure subtypes use concept-ancestor rollup at the index visit (aortobifemoral: 4231680; femoral endarterectomy: 4040974; femoral-popliteal: 4012936; femorotibial: 4166196; extra-anatomic bypass: 4050281). Procedure sub-rows are not mutually exclusive.", style = "Normal")
+  # TODO [CLAUDE]: Update this caption to reflect the specific demographic and clinical
+  # variables displayed in Table 1 for this study. Remove or replace PAD-specific
+  # subgroup rows (indication, procedure type) that do not apply to this cohort.
+  doc <- body_add_par(doc, paste0(
+    "Caption: Values are n (%) unless stated. Age is summarised as median (IQR). ",
+    "Race and ethnicity are derived from OMOP person table concept fields. ",
+    "[TODO: update subgroup row definitions and OMOP concept IDs to match this study's cohort SQL.]"
+  ), style = "Normal")
   doc <- body_add_flextable(doc, table1_ft(cohort_tbl))
   doc <- body_add_par(doc, "", style = "Normal")
 
@@ -3371,10 +3450,12 @@
 
   # ---- Figure 1: SSI rate by year (placed after Tables 1-2) ---------------
   if (!is.null(ssi_year_plot_file) && file.exists(ssi_year_plot_file)) {
-    doc <- body_add_par(doc, "Figure 1. Annual 90-day SSI rate.", style = "Normal")
-    doc <- body_add_par(doc,
-      "Caption: 90-day surgical site infection rate (%) by calendar year of procedure, stratified by SSI type (Superficial, Deep, Organ-space). Stacked area bands show the cumulative SSI rate; the top edge of each band represents the sum of all SSI types up to and including that layer. Points and lines trace the top edge of each type's band.",
-      style = "Normal")
+    doc <- body_add_par(doc, paste0("Figure 1. Annual ", config$prediction_window_days, "-day ", config$outcome_label, " rate."), style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: ", config$prediction_window_days, "-day ", config$outcome_label,
+      " rate (%) by calendar year of procedure. ",
+      "Points and lines trace the annual event rate. Years with fewer than 5 events are suppressed."
+    ), style = "Normal")
     doc <- body_add_img(doc, src = ssi_year_plot_file, width = 5.5, height = 3.5)
     doc <- body_add_par(doc, "", style = "Normal")
   }
@@ -3412,7 +3493,12 @@
   # ---- Figure 2: AUC / ROC curve -------------------------------------------
   if (!is.null(roc_plot_file) && file.exists(roc_plot_file)) {
     doc <- body_add_par(doc, "Figure 2. Receiver operating characteristic (ROC) curve.", style = "Normal")
-    doc <- body_add_par(doc, "Caption: ROC curve for the lookup model predicting 90-day surgical site infection. AUROC with 95% bootstrap percentile CI (B\u2009=\u2009500 resamples). Dashed diagonal = no-discrimination reference line.", style = "Normal")
+    doc <- body_add_par(doc, paste0(
+      "Caption: ROC curve for the lookup model predicting ", config$prediction_window_days,
+      "-day ", config$outcome_label,
+      ". AUROC with 95% bootstrap percentile CI (B\u2009=\u2009500 resamples). ",
+      "Dashed diagonal = no-discrimination reference line."
+    ), style = "Normal")
     doc <- body_add_img(doc, src = roc_plot_file, width = 4.5, height = 4.5)
     doc <- body_add_par(doc, "", style = "Normal")
   }
@@ -3425,9 +3511,17 @@
       recalibrated_calibration_plot_temp
     }
     cal_caption <- if (identical(cal_plot_path, lookup_calibration_plot_temp)) {
-      "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the lookup model. Dashed diagonal = perfect calibration."
+      paste0("Caption: Mean predicted ", config$prediction_window_days, "-day ",
+             config$outcome_label, " risk (x-axis, 0\u20131) vs. observed ",
+             config$prediction_window_days, "-day ", config$outcome_label,
+             " event rate (y-axis, 0\u20131) by quantile bin for the lookup model. ",
+             "Dashed diagonal = perfect calibration.")
     } else {
-      "Caption: Mean predicted 90-day SSI risk (x-axis, 0\u20131) vs. observed 90-day SSI event rate (y-axis, 0\u20131) by quantile bin for the recalibrated model. Dashed diagonal = perfect calibration."
+      paste0("Caption: Mean predicted ", config$prediction_window_days, "-day ",
+             config$outcome_label, " risk (x-axis, 0\u20131) vs. observed ",
+             config$prediction_window_days, "-day ", config$outcome_label,
+             " event rate (y-axis, 0\u20131) by quantile bin for the recalibrated model. ",
+             "Dashed diagonal = perfect calibration.")
     }
     doc <- body_add_par(doc, "Figure 3. Calibration plot for the published lookup mapping.", style = "Normal")
     doc <- body_add_par(doc, cal_caption, style = "Normal")
@@ -3453,12 +3547,12 @@
         n_ev     <- sum(sub$outcome, na.rm = TRUE)
         obs_rate <- if (n_tier > 0) n_ev / n_tier else NA_real_
         data.frame(
-          "Risk Tier"       = tier,
-          "N"               = n_tier,
-          "SSI Events"      = n_ev,
-          "Observed SSI Rate (%)" = if (!is.na(obs_rate)) paste0(round(obs_rate * 100, 1), "%") else "N/A",
-          check.names       = FALSE,
-          stringsAsFactors  = FALSE
+          "Risk Tier"          = tier,
+          "N"                  = n_tier,
+          "Events"             = n_ev,
+          "Observed Rate (%)"  = if (!is.na(obs_rate)) paste0(round(obs_rate * 100, 1), "%") else "N/A",
+          check.names          = FALSE,
+          stringsAsFactors     = FALSE
         )
       }))
 
@@ -3469,25 +3563,26 @@
         flextable::bg(part = "header", bg = "#1F3864") |>
         flextable::color(part = "header", color = "white") |>
         flextable::padding(padding = 4, part = "all") |>
-        flextable::align(j = c("N", "SSI Events", "Observed SSI Rate (%)"),
+        flextable::align(j = c("N", "Events", "Observed Rate (%)"),
                          align = "center", part = "all") |>
-        flextable::width(j = "Risk Tier",              width = 2.0) |>
-        flextable::width(j = "N",                      width = 0.7) |>
-        flextable::width(j = "SSI Events",             width = 0.9) |>
-        flextable::width(j = "Observed SSI Rate (%)",  width = 1.6) |>
+        flextable::width(j = "Risk Tier",             width = 2.0) |>
+        flextable::width(j = "N",                     width = 0.7) |>
+        flextable::width(j = "Events",                width = 0.9) |>
+        flextable::width(j = "Observed Rate (%)",     width = 1.6) |>
         flextable::set_table_properties(layout = "fixed")
 
       doc <- body_add_par(doc, "Risk tier analysis", style = "heading 3")
       doc <- body_add_par(doc, paste0(
         "Table 5. Risk tier classification of the validation cohort. ",
-        "Patients are stratified into three tiers based on the model-predicted 90-day SSI risk: ",
+        "Patients are stratified into three tiers based on the model-predicted ", config$prediction_window_days,
+        "-day ", config$outcome_label, " risk: ",
         "Low (<5%), Intermediate (5\u201320%), and High (>20%). ",
-        "The observed SSI rate within each tier provides a direct assessment of clinical utility."
+        "The observed ", tolower(config$outcome_label), " rate within each tier provides a direct assessment of clinical utility."
       ), style = "Normal")
       doc <- body_add_par(doc, paste0(
         "Caption: N = number of patients in each tier. ",
-        "SSI Events = number with 90-day SSI. ",
-        "Observed SSI Rate = SSI Events / N. ",
+        "Events = number with ", config$prediction_window_days, "-day ", config$outcome_label, ". ",
+        "Observed Rate = Events / N. ",
         "Predicted risk thresholds: Low <5%, Intermediate 5\u201320%, High >20%."
       ), style = "Normal")
       doc <- body_add_flextable(doc, tier_ft)
@@ -3500,7 +3595,8 @@
   if (!is.null(dca_plot_file) && file.exists(dca_plot_file)) {
     doc <- body_add_par(doc, "Figure 4. Decision curve analysis.", style = "Normal")
     doc <- body_add_par(doc, paste0(
-      "Caption: Decision curve analysis for the lookup model predicting 90-day SSI. ",
+      paste0("Caption: Decision curve analysis for the lookup model predicting ",
+             config$prediction_window_days, "-day ", config$outcome_label, ". "),
       "Net benefit is plotted across threshold probabilities from 1% to 40%. ",
       "The model curve (blue) is compared with the 'treat-all' (dashed) and ",
       "'treat-none' (zero reference) strategies. Threshold probabilities correspond ",
@@ -3749,16 +3845,17 @@
             flextable::width(j = "Cases (n)",   width = 0.7) |>
             flextable::align(j = "Cases (n)", align = "right", part = "all") |>
             flextable::set_table_properties(layout = "fixed")
-          doc <- body_add_par(doc, "SSI outcome ICD codes", style = "heading 3")
+          doc <- body_add_par(doc, paste0(config$outcome_label, " outcome ICD codes"), style = "heading 3")
           doc <- body_add_par(doc,
-            "Supplemental Table S3. ICD codes mapping to the surgical site infection outcome concept.",
+            paste0("Supplemental Table S3. ICD codes mapping to the ",
+                   tolower(config$outcome_label), " outcome concept."),
             style = "Normal")
           doc <- body_add_par(doc,
-            paste0("Caption: Source ICD-9-CM and ICD-10-CM codes that map to OMOP concept 4334801 ",
-                   "(Surgical site infection, SNOMED-CT 433202001) or its descendants via ",
+            paste0("Caption: Source ICD-9-CM and ICD-10-CM codes that map to the ",
+                   tolower(config$outcome_label), " outcome concept(s) or their descendants via ",
                    "concept_relationship (relationship: 'Maps to'). Cases (n) = number of distinct ",
                    "patients in condition_occurrence with that source concept. ",
-                   "These are the codes used to identify the SSI outcome in source data prior to OMOP ETL standardisation."),
+                   "These are the codes used to identify the outcome in source data prior to OMOP ETL standardisation."),
             style = "Normal")
           doc <- body_add_flextable(doc, icd_ft)
           doc <- body_add_par(doc, "", style = "Normal")
@@ -3776,14 +3873,15 @@
 
   # ---- S4: SSI rate by month of year ----------------------------------------
   if (!is.null(ssi_month_plot_file) && file.exists(ssi_month_plot_file)) {
-    doc <- body_add_par(doc, "SSI rate by month", style = "heading 3")
+    doc <- body_add_par(doc, paste0(config$outcome_label, " rate by month"), style = "heading 3")
     doc <- body_add_par(doc,
-      "Supplemental Figure S4. 90-day SSI rate by calendar month of procedure.",
+      paste0("Supplemental Figure S4. ", config$prediction_window_days, "-day ",
+             config$outcome_label, " rate by calendar month of procedure."),
       style = "Normal")
     doc <- body_add_par(doc, paste0(
-      "Caption: Observed 90-day surgical site infection rate (%) for each calendar month ",
-      "(January through December), pooled across all study years. Bar height represents the ",
-      "SSI rate; numbers above each bar show the total procedure count for that month. ",
+      "Caption: Observed ", config$prediction_window_days, "-day ", config$outcome_label,
+      " rate (%) for each calendar month (January through December), pooled across all study years. ",
+      "Bar height represents the event rate; numbers above each bar show the total procedure count for that month. ",
       "Months with fewer than 5 procedures are suppressed."
     ), style = "Normal")
     doc <- body_add_img(doc, src = ssi_month_plot_file, width = 5.5, height = 3.5)
@@ -3798,8 +3896,10 @@
       "Supplemental Figure S5. Distribution of predicted risk by outcome group.",
       style = "Normal")
     doc <- body_add_par(doc, paste0(
-      "Caption: Overlapping density histograms of model-predicted 90-day SSI risk (x-axis) ",
-      "for patients who did (red) and did not (blue) experience a surgical site infection ",
+      paste0("Caption: Overlapping density histograms of model-predicted ",
+             config$prediction_window_days, "-day ", config$outcome_label, " risk (x-axis) "),
+      paste0("for patients who did (red) and did not (blue) experience ",
+             tolower(config$outcome_label), " "),
       "within the prediction window. Improved separation between the two distributions ",
       "indicates better model discrimination."
     ), style = "Normal")
@@ -3865,7 +3965,7 @@
       style = "Normal")
     doc <- body_add_par(doc,
       paste0("Caption: ECE is shown for the lookup model within each subgroup. ",
-             "Subgroups with fewer than 10 observed SSI events are suppressed. ",
+             paste0("Subgroups with fewer than 10 observed ", tolower(config$outcome_label), " events are suppressed. "),
              "Overall ECE (dashed reference line in Supplemental Figure S7) = ",
              round(overall_ece_val, 3), ". ",
              "95% CI = bootstrap percentile interval (B\u2009=\u2009200 resamples)."),
@@ -3888,9 +3988,8 @@
       doc <- body_add_par(doc,
         paste0("Caption: Expected calibration error (ECE) with 95% bootstrap percentile CIs (B\u2009=\u2009200) ",
                "by subgroup. Dashed vertical line = overall ECE for the lookup model. ",
-               "Subgroups with < 10 SSI events are suppressed. ",
-               "Subgroups include sex, race, ethnicity, age group, operative indication, ",
-               "and calendar year of procedure."),
+               paste0("Subgroups with < 10 ", tolower(config$outcome_label), " events are suppressed. "),
+               "Subgroups include sex, race, ethnicity, age group, and calendar year of procedure."),
         style = "Normal")
       doc <- body_add_img(doc, src = forest_png,
                           width  = 5.5,

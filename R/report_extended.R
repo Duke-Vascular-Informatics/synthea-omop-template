@@ -92,5 +92,6 @@ generate_manuscript_report <- function(output_dir          = "output",
 # Delegates to .report_word_simple() defined in R/report_prognostic.R.
 # -----------------------------------------------------------------------------
 generate_word_report <- function(output_dir, score_output_dir = output_dir) {
-  .report_word_simple(output_dir = output_dir, score_output_dir = score_output_dir)
+  config <- tryCatch(get_validation_config(), error = function(e) NULL)
+  .report_word_simple(output_dir = output_dir, score_output_dir = score_output_dir, config = config)
 }
