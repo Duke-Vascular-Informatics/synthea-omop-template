@@ -1015,7 +1015,7 @@
 # document.  No live CDM queries.  Called by generate_word_report() in
 # R/report_extended.R.
 #
-# Renamed from generate_word_report() in the original synthea-omop-dev monolith.
+# Renamed from generate_word_report() in the original synthea-omop-template monolith.
 # Body is verbatim — no parameterization applied to the simple report.
 # ===========================================================================
 # =============================================================================
@@ -1517,7 +1517,7 @@
 # Parameterized by config$score_type ("integer" | "lasso") with 4 branches.
 # Called by generate_manuscript_report() in R/report_extended.R.
 #
-# Renamed from generate_manuscript_report() in the original synthea-omop-dev
+# Renamed from generate_manuscript_report() in the original synthea-omop-template
 # monolith.  All 4 parameterization branches have been applied; the rest of
 # the body is verbatim.
 # ===========================================================================

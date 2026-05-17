@@ -24,8 +24,8 @@ authors:
 version: "1.0.0"
 date-released: "2026-04-27"
 
-repository-code: "https://github.com/adam-mdmph/synthea-omop-dev"
-url: "https://github.com/adam-mdmph/synthea-omop-dev"
+repository-code: "https://github.com/adam-mdmph/synthea-omop-template"
+url: "https://github.com/adam-mdmph/synthea-omop-template"
 
 license: GPL-3.0
 

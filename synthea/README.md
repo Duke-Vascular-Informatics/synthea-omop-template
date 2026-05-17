@@ -1,7 +1,7 @@
 # synthea/
 
 Synthea disease module and generated artifacts for OMOP observational studies
-using the synthea-omop-dev template repository.
+using the synthea-omop-template template repository.
 
 ## modules/
 
