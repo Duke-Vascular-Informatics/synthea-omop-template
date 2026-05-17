@@ -62,7 +62,9 @@ build_connection_details <- function(config) {
       ";trustServerCertificate=true",
       ";portNumber=", config$sql_server_port,
       ";connectRetryCount=3",
-      ";connectRetryInterval=10"
+      ";connectRetryInterval=10",
+      ";socketTimeout=0",    # disable socket timeout — prevents drops on large batch inserts
+      ";queryTimeout=0"      # disable per-statement query timeout for bulk ETL operations
     )
   )
 }

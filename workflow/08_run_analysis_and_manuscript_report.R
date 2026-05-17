@@ -89,8 +89,9 @@ source("R/cohorts.R")    # ensure_results_schema(), build_cohorts()
 config <- get_validation_config()
 
 # Source analysis-specific helper modules for the analyses that are enabled.
-if (config$run_integer_risk_score) source("R/risk_score_pipeline.R")
-if (config$run_word_report)         source("R/report_extended.R")
+if (config$run_integer_risk_score)   source("R/risk_score_pipeline.R")
+if (config$run_word_report)          source("R/report_extended.R")
+if (config$run_plp_model_validation) source("R/plp_validation_pipeline.R")
 
 
 # =============================================================================
@@ -373,6 +374,24 @@ if (config$run_word_report) {
 }
 
 
+# -----------------------------------------------------------------------------
+# PLP prebuilt model external validation
+# Runs an external validation pass for a prebuilt PatientLevelPrediction model
+# (linear / LASSO / Ridge) whose coefficients are stored in a standardised spec
+# file.  No Python dependency.  See R/plp_validation_pipeline.R for the model
+# spec format and required files (model_spec.yaml, covariates/covariates.csv).
+# Outputs are written to config$output_folder/plp_validation/.
+# -----------------------------------------------------------------------------
+if (config$run_plp_model_validation) {
+  message("[Step 8] Running PLP model external validation ...")
+  run_plp_validation_pipeline(
+    config             = config,
+    connection_details = connection_details
+  )
+  message("[Step 8] PLP model external validation complete.")
+}
+
+
 # =============================================================================
 # 8. DONE
 # =============================================================================
@@ -381,7 +400,8 @@ enabled <- Filter(isTRUE, list(
   prognostic_model        = config$run_prognostic_model,
   causal_inference        = config$run_causal_inference,
   integer_risk_score      = config$run_integer_risk_score,
-  word_report             = config$run_word_report
+  word_report             = config$run_word_report,
+  plp_model_validation    = config$run_plp_model_validation
 ))
 message("\n[Step 8] Complete. Analyses run: ",
         if (length(enabled) > 0) paste(names(enabled), collapse = ", ") else "none")
