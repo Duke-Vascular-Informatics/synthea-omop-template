@@ -270,3 +270,63 @@ cat("  Covariate lookback : ",
     "\n", sep = "")
 cat("\nNext step: Rscript workflow/03_generate_synthea_module_artifacts.R\n")
 cat("           (or skip to Step 7 if not using Synthea)\n")
+
+
+# -----------------------------------------------------------------------------
+# Chunk 7 - Study registry
+# Purpose:
+# - Register this study in the workspace-level studies.yaml index on first run.
+# - Subsequent runs are idempotent: already-registered studies are skipped.
+# - Fails gracefully when studies.yaml is absent (e.g., standalone repo outside
+#   the standard workspace layout).
+# Output:
+# - Appends one YAML entry to <workspace_root>/studies.yaml.
+# -----------------------------------------------------------------------------
+
+# Workspace root is one level above the study repo root (standard layout).
+workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
+registry_path  <- file.path(workspace_root, "studies.yaml")
+
+if (!file.exists(registry_path)) {
+  message(
+    "[Step 2] Study registry not found at: ", registry_path, "\n",
+    "         Skipping auto-registration. To enable, create studies.yaml at\n",
+    "         the workspace root using the template in synthea-omop-template."
+  )
+} else {
+  study_dir <- basename(getwd())
+
+  # Check for an existing entry by scanning raw text — avoids a hard yaml dep.
+  registry_text <- paste(readLines(registry_path, warn = FALSE), collapse = "\n")
+  already_registered <- grepl(
+    paste0("(^|\\n)\\s+dir:\\s+['\"]?", study_dir, "['\"]?"),
+    registry_text,
+    perl = TRUE
+  )
+
+  if (already_registered) {
+    message("[Step 2] Study already registered in studies.yaml: ", study_dir)
+  } else {
+    # Resolve GitHub remote slug (https://github.com/org/repo or git@github.com:org/repo).
+    github_slug <- tryCatch({
+      raw <- trimws(system("git remote get-url origin 2>/dev/null", intern = TRUE))
+      raw <- sub("\\.git$", "", raw)
+      raw <- sub("^https?://github\\.com/", "", raw)
+      raw <- sub("^git@github\\.com:", "", raw)
+      raw
+    }, error = function(e) "")
+
+    new_entry <- paste0(
+      "\n  - dir: ", study_dir, "\n",
+      "    github: ", github_slug, "\n",
+      "    study_name: ", config$study_name, "\n",
+      "    study_design: ", config$study_design, "\n",
+      "    description: \"\"  # TODO [CONFIG]: add a one-line study description\n",
+      "    registered: ", format(Sys.Date(), "%Y-%m-%d"), "\n"
+    )
+
+    cat(new_entry, file = registry_path, append = TRUE)
+    message("[Step 2] Registered study in studies.yaml: ", study_dir,
+            " (", registry_path, ")")
+  }
+}
