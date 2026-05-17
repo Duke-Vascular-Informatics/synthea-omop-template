@@ -14,14 +14,14 @@ This repo is a **git submodule** of the workspace root (`omop-dev-workspace`). I
 
 | Remote | URL | What to push |
 |--------|-----|-------------|
-| `origin` | `https://github.com/adam-mdmph/synthea-omop-dev.git` | Full repository (`git push origin main`) |
+| `origin` | `https://github.com/adam-mdmph/synthea-omop-template.git` | Full repository (`git push origin main`) |
 
 **Submodule rule:** after committing and pushing changes here, also update the submodule pointer in the workspace root repo:
 
 ```bash
 # From /workspace (root repo)
-git add synthea-omop-dev
-git commit -m "chore: update synthea-omop-dev submodule pointer"
+git add synthea-omop-template
+git commit -m "chore: update synthea-omop-template submodule pointer"
 git push origin main
 ```
 
