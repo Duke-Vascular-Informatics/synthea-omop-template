@@ -139,6 +139,7 @@ analyses:
   causal_inference:         false  # CohortMethod PS matching (requires comparator cohort in config)
   integer_risk_score:       false  # custom integer score pipeline (R/risk_score_pipeline.R)
   word_report:              false  # Word report via R/report_extended.R (run after a pipeline above)
+  plp_model_validation:     false  # external validation of a prebuilt PLP model (R/plp_validation_pipeline.R)
 
 # =============================================================================
 # REPORT GENERATION

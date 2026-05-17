@@ -231,6 +231,7 @@ get_validation_config <- function() {
     run_causal_inference        = isTRUE(p$analyses$causal_inference),
     run_integer_risk_score      = isTRUE(p$analyses$integer_risk_score),
     run_word_report             = isTRUE(p$analyses$word_report),
+    run_plp_model_validation    = isTRUE(p$analyses$plp_model_validation),
 
     # -------------------------------------------------------------------------
     # Report generation — from study_params.yaml report: section.

@@ -10,13 +10,20 @@
 #   their own template-specific functions.
 #
 # Exports (functions sourced into the caller's environment):
-#   .append_references_section()        — bibliography formatter (Vancouver/NLM)
-#   .compute_ece()                      — expected calibration error
-#   .save_roc_plot()                    — ROC curve PNG generation
-#   .save_calibration_plot_from_table() — calibration plot from CSV
-#   .save_calibration_plot_from_vectors() — calibration plot from vectors
-#   .build_table1()                     — flextable styling helper
-#   .build_cohort_summary_table()       — cohort-level summary stats flextable
+#   Word document primitives (public — called directly from report templates):
+#     make_doc_run()                      — Calibri-styled ftext run
+#     add_doc_heading()                   — section heading with auto-spacing
+#     add_doc_paragraph()                 — indented body paragraph
+#     add_doc_caption()                   — bold-title + normal-body caption
+#     add_doc_page_break()                — manual page break
+#   Internal helpers (prefixed with "."):
+#     .append_references_section()        — bibliography formatter (Vancouver/NLM)
+#     .compute_ece()                      — expected calibration error
+#     .save_roc_plot()                    — ROC curve PNG generation
+#     .save_calibration_plot_from_table() — calibration plot from CSV
+#     .save_calibration_plot_from_vectors() — calibration plot from vectors
+#     .build_table1()                     — flextable styling helper
+#     .build_cohort_summary_table()       — cohort-level summary stats flextable
 #
 # Usage:
 #   This file is sourced automatically by R/report_extended.R (the dispatcher).
@@ -37,6 +44,121 @@ library(pROC)
 
 # Load cohort demographics helper functions (shared across all templates)
 source("R/cohort_demographics.R")
+
+# ---------------------------------------------------------------------------
+# Word document primitives
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# make_doc_run()
+#
+# Wraps a text string in a styled officer::ftext run using Calibri font.
+# Used by add_doc_heading() and add_doc_caption() to build formatted
+# paragraphs (officer::fpar) before inserting them into the document.
+#
+# Parameters:
+#   text      — the character string to format
+#   bold      — logical; TRUE renders the text bold (default FALSE)
+#   font_size — point size (default 10.5)
+#
+# Returns an officer::ftext object.
+# ---------------------------------------------------------------------------
+make_doc_run <- function(text, bold = FALSE, font_size = 10.5) {
+  officer::ftext(
+    text,
+    officer::fp_text(
+      bold = bold,
+      font.size = font_size,
+      font.family = "Calibri"
+    )
+  )
+}
+
+# ---------------------------------------------------------------------------
+# add_doc_heading()
+#
+# Inserts a styled heading paragraph into a Word document object.
+# Prepends a blank "Normal" paragraph before every heading after the first
+# so that headings have visual separation from preceding body text.
+#
+# NOTE: Uses heading_counter from the calling environment; templates must
+# initialise heading_counter <- 0L before the first call.
+#
+# Parameters:
+#   doc   — officer rdocx object
+#   text  — heading text string
+#   level — heading level 1, 2, or 3 (controls font size: 13, 11.5, 11 pt)
+#
+# Returns the modified rdocx object.
+# ---------------------------------------------------------------------------
+add_doc_heading <- function(doc, text, level = 1L) {
+  if (heading_counter > 0L) {
+    doc <- officer::body_add_par(doc, "", style = "Normal")
+  }
+  size_map <- c(`1` = 13, `2` = 11.5, `3` = 11)
+  heading_par <- officer::fpar(
+    make_doc_run(text, bold = TRUE, font_size = unname(size_map[as.character(level)])),
+    fp_p = officer::fp_par(text.align = "left")
+  )
+  heading_counter <<- heading_counter + 1L
+  officer::body_add_fpar(doc, value = heading_par, style = "Normal")
+}
+
+# ---------------------------------------------------------------------------
+# add_doc_paragraph()
+#
+# Inserts a body text paragraph indented by one tab stop (OHDSI report style).
+#
+# Parameters:
+#   doc  — officer rdocx object
+#   text — paragraph text
+#
+# Returns the modified rdocx object.
+# ---------------------------------------------------------------------------
+add_doc_paragraph <- function(doc, text) {
+  officer::body_add_par(doc, paste0("\t", text), style = "Normal")
+}
+
+# ---------------------------------------------------------------------------
+# add_doc_caption()
+#
+# Inserts a figure or table caption with a bold title followed by
+# normal-weight body text.  Placed immediately after a flextable or figure.
+#
+# Parameters:
+#   doc       — officer rdocx object
+#   title     — bold caption title (e.g. "Table 1. Cohort characteristics.")
+#   body_text — optional additional caption text (rendered at normal weight)
+#
+# Returns the modified rdocx object.
+# ---------------------------------------------------------------------------
+add_doc_caption <- function(doc, title, body_text = NULL) {
+  caption_runs <- list(make_doc_run(title, bold = TRUE, font_size = 10))
+  if (!is.null(body_text) && nzchar(body_text)) {
+    caption_runs[[length(caption_runs) + 1L]] <- make_doc_run(
+      paste0(" ", body_text), bold = FALSE, font_size = 10
+    )
+  }
+  caption_par <- do.call(
+    officer::fpar,
+    c(caption_runs, list(fp_p = officer::fp_par(text.align = "left")))
+  )
+  officer::body_add_fpar(doc, value = caption_par, style = "Normal")
+}
+
+# ---------------------------------------------------------------------------
+# add_doc_page_break()
+#
+# Inserts a manual page break into the Word document.
+#
+# Parameters:
+#   doc — officer rdocx object
+#
+# Returns the modified rdocx object.
+# ---------------------------------------------------------------------------
+add_doc_page_break <- function(doc) {
+  officer::body_add_break(doc)
+}
 
 # ---------------------------------------------------------------------------
 # Internal helpers

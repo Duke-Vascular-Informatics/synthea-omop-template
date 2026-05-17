@@ -93,17 +93,26 @@ if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "${SSH_AUTH_SOCK}" ]] && [[ -S /ssh-agent 
 fi
 
 # ---------------------------------------------------------------------------
-# Load HPC cluster config from .env
-# When run on the host Mac: .env is one level up (OMOP_Dev/.env)
-# When run inside dev container: vars are already injected by docker-compose
+# Load HPC cluster config from .env files (two-pass: workspace then study)
+#
+# Pass 1 — workspace .env (OMOP_Dev/.env): shared INST_OMOP_* connection
+#           details and default BUNDLE_* values.
+# Pass 2 — per-study .env (REPO_ROOT/.env): study-specific overrides for
+#           BUNDLE_GITLAB_REMOTE, BUNDLE_GIT_USER_*, INST_OMOP_* schemas,
+#           and any other per-study keys.  Loaded second so it wins over
+#           the workspace defaults.
+#
+# When run inside the dev container: vars are already injected by
+# docker-compose; the per-study load still adds analysis-specific keys.
 # ---------------------------------------------------------------------------
-ENV_FILE="$REPO_ROOT/../.env"
-if [[ -f "$ENV_FILE" ]]; then
-  # Export BUNDLE_* and INST_OMOP_* variables; eval handles quoted values
-  while IFS= read -r line; do
-    [[ "$line" =~ ^BUNDLE_|^INST_OMOP_ ]] && export "${line?}"
-  done < "$ENV_FILE"
-fi
+for ENV_FILE in "$REPO_ROOT/../.env" "$REPO_ROOT/.env"; do
+  if [[ -f "$ENV_FILE" ]]; then
+    # Export BUNDLE_* and INST_OMOP_* variables; eval handles quoted values
+    while IFS= read -r line; do
+      [[ "$line" =~ ^BUNDLE_|^INST_OMOP_ ]] && export "${line?}"
+    done < "$ENV_FILE"
+  fi
+done
 
 BUNDLE_GITLAB_REMOTE="${BUNDLE_GITLAB_REMOTE:-}"
 BUNDLE_GIT_USER_NAME="${BUNDLE_GIT_USER_NAME:-}"

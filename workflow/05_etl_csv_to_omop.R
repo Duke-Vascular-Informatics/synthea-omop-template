@@ -163,7 +163,11 @@ if (!is.null(cfg$java_home) && nzchar(cfg$java_home) && dir.exists(cfg$java_home
     Sys.getenv("PATH"),
     sep = .Platform$path.sep
   ))
-  options(java.parameters = paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE)))
+  options(java.parameters = c(
+    "-Xmx4g",  # 4 GB heap — prevents OOM during bulk CSV-to-staging load
+    "-Xms512m",
+    paste0("-Djava.home=", normalizePath(cfg$java_home, winslash = "/", mustWork = FALSE))
+  ))
 
   # Set the JDBC Windows Integrated Authentication native library path so that
   # DatabaseConnector can locate sqljdbc_auth.dll without needing manual env-var

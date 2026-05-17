@@ -28,7 +28,7 @@ param()
 #    This produces: /path/to/your/workspace/<study_name>_<date>/
 # 4. Also place the your HPC support team custom JDBC wrapper JAR one level above the
 #    bundle, in a drivers/ sibling folder:
-#      /path/to/your/workspace/drivers/prcc-jdbc-mssql-1.0-SNAPSHOT.jar
+#      /path/to/your/workspace/drivers/hpc-jdbc-wrapper.jar
 #    config.R resolves this path automatically as dirname(bundle)/drivers/.
 #    (This JAR is provided by your HPC support team and is NOT included in the
 #    bundle because it is a site-specific file we do not redistribute.)
@@ -357,7 +357,7 @@ Then re-run ``bash run_analysis.sh``.
     # WHY: Connecting to the institutional SQL Server from a Linux/HPC R session requires
     # the Microsoft MSSQL JDBC driver.  This is the *standard* JDBC JAR from
     # Microsoft (mssql-jdbc-*.jre11.jar).  It is separate from the your HPC support team
-    # custom wrapper JAR (prcc-jdbc-mssql-1.0-SNAPSHOT.jar), which is NOT
+    # custom wrapper JAR (hpc-jdbc-wrapper.jar), which is NOT
     # included in this bundle for the following reasons:
     #
     #   1. It is provided directly by your HPC support team and is not ours to
@@ -444,7 +444,7 @@ Then re-run ``bash run_analysis.sh``.
     #     - install_r_packages.sh  Step 2: activates env + runs install_packages.R
     #
     # WHAT IS *NOT* IN THE ZIP:
-    #     - prcc-jdbc-mssql-1.0-SNAPSHOT.jar  (your HPC support team JAR, not ours to ship)
+    #     - hpc-jdbc-wrapper.jar  (your HPC support team JAR, not ours to ship)
     #     - jaas.conf                           (generated at runtime from env vars)
     #     - Any files under dist/, workflow/, or the main project R/ directly
     # -------------------------------------------------------------------------
