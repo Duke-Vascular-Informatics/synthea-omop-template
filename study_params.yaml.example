@@ -140,6 +140,19 @@ report:
   # lasso score_type only — path to PatientLevelPrediction variable-importance RDS:
   # var_imp_file: "model/varImp.rds"
 
+  # ---------------------------------------------------------------------------
+  # Narrative Methods text — Claude Code fills these in before running the report
+  # ---------------------------------------------------------------------------
+  # Before enabling word_report: true, ask Claude Code to read your analytic
+  # files and populate these fields. See the CLAUDE CODE INSTRUCTIONS block at
+  # the top of R/report_prognostic.R for the exact procedure.
+  # Leave as ~ (null) to get a placeholder reminder string in the report output.
+  # ---------------------------------------------------------------------------
+  study_title: ~                        # TODO [CONFIG]: e.g. "Hip Replacement — 90-Day Readmission Risk Score: External Validation"
+  target_population_description: ~     # TODO [CONFIG]: 2–3 sentences — who enters the cohort, index event, washout
+  outcome_description: ~               # TODO [CONFIG]: 2–3 sentences — outcome concept IDs, ascertainment, prediction window
+  score_description: ~                 # TODO [CONFIG]: narrative description of the risk model components and scoring algorithm
+
 # =============================================================================
 # OUTPUT
 # =============================================================================

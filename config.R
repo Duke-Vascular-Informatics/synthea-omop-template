@@ -239,6 +239,13 @@ get_validation_config <- function() {
     score_type               = p$report$score_type             %||% "integer",
     outcome_label            = p$report$outcome_label          %||% "Outcome",
     model_type_description   = p$report$model_type_description %||% "integer risk score",
-    var_imp_file             = p$report$var_imp_file           %||% "model/varImp.rds"
+    var_imp_file             = p$report$var_imp_file           %||% "model/varImp.rds",
+
+    # Narrative methods text — from study_params.yaml report: section.
+    # NULL means the field was not set; report templates substitute a placeholder string.
+    report_study_title                   = p$report$study_title                   %||% NULL,
+    report_target_population_description = p$report$target_population_description %||% NULL,
+    report_outcome_description           = p$report$outcome_description           %||% NULL,
+    report_score_description             = p$report$score_description             %||% NULL
   )
 }
