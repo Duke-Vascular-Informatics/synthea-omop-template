@@ -3,7 +3,8 @@
 #
 # PURPOSE
 # -------
-# Validates the study Synthea GMF module (synthea/modules/study_template.json) and
+# Auto-detects and validates the study Synthea GMF module (any .json in synthea/modules/
+# other than study_template.json) and
 # regenerates the HTML state-diagram viewer. The HTML file is the primary artefact
 # for SME review — open it in any browser to inspect every state, its type, and its
 # clinical codes before data generation is finalised.
@@ -116,9 +117,30 @@ if (!requireNamespace("jsonlite", quietly = TRUE)) {
 # - Empty / malformed states collection: stop (cannot run coverage checks).
 # - Valid structure: proceed to concept coverage evaluation.
 # -----------------------------------------------------------------------------
-module_path <- "synthea/modules/study_template.json"
+# Auto-detect the study module JSON: scan synthea/modules/ for any .json file
+# that is not the placeholder study_template.json.  This lets researchers drop
+# their module file in without editing this script.
+module_candidates <- list.files("synthea/modules", pattern = "\\.json$", full.names = TRUE)
+module_candidates <- module_candidates[basename(module_candidates) != "study_template.json"]
+
+if (length(module_candidates) == 0L) {
+  stop(
+    "No study module JSON found in synthea/modules/. ",
+    "Copy your Synthea GMF module file there (e.g. synthea/modules/my_study.json) ",
+    "then re-run Step 3."
+  )
+}
+if (length(module_candidates) > 1L) {
+  warning(
+    "Multiple study module JSON files found in synthea/modules/; using the first: ",
+    module_candidates[1],
+    call. = FALSE
+  )
+}
+module_path <- module_candidates[1]
+
 if (!file.exists(module_path)) {
-  stop("Missing module file: ", module_path)
+  stop("Module file not found after detection: ", module_path)
 }
 
 module <- jsonlite::fromJSON(module_path, simplifyVector = FALSE)
@@ -155,12 +177,19 @@ for (candidate in modules_dir_candidates) {
 }
 
 if (is.na(target_modules_dir)) {
-  stop(
+  # Degrade to a warning rather than stop() — the module validation checks
+  # (concept coverage, state structure) above still ran and are useful even
+  # when the local Synthea checkout is absent.  Step 4 (CSV generation) will
+  # catch the missing runtime when it actually needs it.
+  warning(
     "Could not find a Synthea modules directory. Checked: ",
     paste(modules_dir_candidates, collapse = ", "),
-    ". Ensure your Synthea checkout exists or set SYNTHEA_HOME."
+    ". Module will NOT be copied to the runtime. ",
+    "Run: git submodule update --init external/synthea  before Step 4.",
+    call. = FALSE
   )
-}
+  cat("[SKIP] Synthea module copy skipped — no runtime directory found.\n")
+} else {
 
 target_module_path <- file.path(target_modules_dir, basename(module_path))
 
@@ -193,6 +222,8 @@ if (!identical(src_size, dst_size)) {
 }
 
 cat("Synthea module synced to: ", target_module_path, "\n", sep = "")
+
+} # end else (target_modules_dir found)
 
 # ---------------------------------------------------------------------------
 # REPLACE_ME READINESS CHECK
