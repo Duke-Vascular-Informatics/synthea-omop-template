@@ -340,19 +340,24 @@
   )
   df_yr <- df_yr[!is.na(df_yr$year), ]
 
-  # ggplot2 position_stack() draws the FIRST factor level on TOP and the LAST
-  # at the BOTTOM, so to get Superficial on top / Organ-space at the bottom
-  # the factor levels must be ordered Superficial → Deep → Organ-space.
-  ssi_levels <- c("Superficial", "Deep", "Organ-space")
+  # Factor levels determine stacking order: first level = bottom of stack.
+  # "Other/unclassified" anchors the bottom to capture outcome events with no
+  # recorded sub-type; named types stack above in ascending severity order.
+  ssi_levels <- c("Other/unclassified", "Superficial", "Deep", "Organ-space")
 
   # Aggregate individual SSI rate per year × SSI type.
   # Denominator = all procedures that year; numerator = events of that sub-type.
+  # "Other/unclassified" = outcome == 1 patients with no ssi_type sub-code.
   all_years <- sort(unique(df_yr$year))
   yr_type_tbl <- do.call(rbind, lapply(all_years, function(y) {
     sub_yr <- df_yr[df_yr$year == y, ]
     n_yr   <- nrow(sub_yr)
     do.call(rbind, lapply(ssi_levels, function(tp) {
-      events <- sum(sub_yr$ssi_type == tp, na.rm = TRUE)
+      events <- if (tp == "Other/unclassified") {
+        sum(sub_yr$outcome == 1 & is.na(sub_yr$ssi_type), na.rm = TRUE)
+      } else {
+        sum(sub_yr$ssi_type == tp, na.rm = TRUE)
+      }
       data.frame(
         year     = y,
         n        = n_yr,
@@ -372,16 +377,19 @@
   # Enforce stacking order — Superficial bottom, Organ-space top
   yr_type_tbl$ssi_type <- factor(yr_type_tbl$ssi_type, levels = ssi_levels)
 
-  # Fill colours (bottom to top): teal, navy, red
+  # Fill colours (bottom to top): warm gray, teal, navy, red
+  # "Other/unclassified" sits at the bottom (first factor level) in warm gray.
   fill_colours <- c(
-    "Superficial" = "#A8D5DC",   # light teal
-    "Deep"        = "#5B8DB8",   # mid blue
-    "Organ-space" = "#C0392B"    # red
+    "Other/unclassified" = "#B0A090",   # warm gray
+    "Superficial"        = "#A8D5DC",   # light teal
+    "Deep"               = "#5B8DB8",   # mid blue
+    "Organ-space"        = "#C0392B"    # red
   )
   line_colours <- c(
-    "Superficial" = "#2196A6",
-    "Deep"        = "#1F3864",
-    "Organ-space" = "#922B21"
+    "Other/unclassified" = "#6B5C50",
+    "Superficial"        = "#2196A6",
+    "Deep"               = "#1F3864",
+    "Organ-space"        = "#922B21"
   )
 
   total_procs <- sum(yr_type_tbl$n[!duplicated(yr_type_tbl[, c("year")])  ])
@@ -408,13 +416,13 @@
     ) +
     ggplot2::scale_fill_manual(
       values = fill_colours,
-      breaks = ssi_levels,   # legend: Superficial top, Organ-space bottom
-      name   = "SSI type"
+      breaks = ssi_levels,   # legend order matches factor levels
+      name   = "Outcome type"
     ) +
     ggplot2::scale_colour_manual(
       values = line_colours,
       breaks = ssi_levels,
-      name   = "SSI type"
+      name   = "Outcome type"
     ) +
     ggplot2::scale_x_continuous(breaks = sort(unique(yr_type_tbl$year))) +
     ggplot2::scale_y_continuous(
@@ -471,16 +479,27 @@
   )
   df_mo <- df_mo[!is.na(df_mo$month), ]
 
-  # Aggregate across all months 1–12 (keep all so x-axis is always Jan–Dec)
+  # Aggregate across all months 1–12 (keep all so x-axis is always Jan–Dec).
+  # Wilson score 95% CIs via prop.test(); suppressed when n < 5.
   mo_tbl <- do.call(rbind, lapply(1:12, function(m) {
     sub    <- df_mo[df_mo$month == m, ]
     n      <- nrow(sub)
     events <- sum(sub$outcome, na.rm = TRUE)
+    ci <- if (n >= 5) {
+      tryCatch({
+        bt <- stats::prop.test(events, n, conf.level = 0.95, correct = FALSE)
+        100 * c(bt$conf.int[1], bt$conf.int[2])
+      }, error = function(e) c(NA_real_, NA_real_))
+    } else {
+      c(NA_real_, NA_real_)
+    }
     data.frame(
       month    = m,
       n        = n,
       events   = events,
       ssi_rate = if (n >= 5) 100 * events / n else NA_real_,
+      ci_lower = ci[1],
+      ci_upper = ci[2],
       stringsAsFactors = FALSE
     )
   }))
@@ -499,21 +518,29 @@
 
   p <- ggplot2::ggplot(mo_tbl, ggplot2::aes(x = month_label, y = ssi_rate)) +
     ggplot2::geom_col(fill = "#1F3864", width = 0.7, na.rm = TRUE) +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(ymin = ci_lower, ymax = ci_upper),
+      width = 0.25, colour = "grey50", linewidth = 0.6, na.rm = TRUE
+    ) +
+    # Position n= label above the upper CI whisker so it does not overlap the bar.
     ggplot2::geom_text(
-      ggplot2::aes(label = ifelse(!is.na(ssi_rate), paste0("n=", n), "")),
+      ggplot2::aes(
+        y     = ifelse(!is.na(ci_upper), ci_upper, ssi_rate),
+        label = ifelse(!is.na(ssi_rate), paste0("n=", n), "")
+      ),
       vjust = -0.4, size = 2.8, colour = "grey30", na.rm = TRUE
     ) +
     ggplot2::scale_y_continuous(
       limits = c(0, NA),
-      expand = ggplot2::expansion(mult = c(0, 0.15)),
+      expand = ggplot2::expansion(mult = c(0, 0.20)),
       labels = function(x) paste0(round(x, 1), "%")
     ) +
     ggplot2::labs(
       title   = "Outcome Rate by Month of Procedure",
       x       = "Month of index procedure",
       y       = "Outcome rate (%)",
-      caption = paste0("Pooled across all study years (", min(df_mo$month, na.rm = TRUE),
-                       "\u2013", max(df_mo$month, na.rm = TRUE), "). ",
+      caption = paste0("Pooled across all study years. ",
+                       "Error bars = 95% Wilson score confidence intervals. ",
                        "Months with < 5 procedures suppressed.")
     ) +
     ggplot2::theme_minimal(base_size = 11) +
