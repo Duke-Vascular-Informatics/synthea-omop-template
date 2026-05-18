@@ -12,6 +12,7 @@ authors:
     family-names: "Johnson"
     name-suffix: "MD, MPH"
     affiliation: "Duke University School of Medicine, Department of Surgery"
+    orcid: "https://orcid.org/0000-0002-3014-6372"
   - given-names: "Sasank"
     family-names: "Kalipatnapu"
     name-suffix: "MD"
