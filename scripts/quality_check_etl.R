@@ -504,7 +504,7 @@ if (isTRUE(opts$enforce_thresholds)) {
 # tables in the results schema.  These tables are consumed by the OHDSI Atlas
 # Data Sources viewer and by the DQD layer below.
 #
-# Output folder: output/achilles/   (excluded from git via .gitignore)
+# Output folder: output/qc/achilles/   (excluded from git via .gitignore)
 # Runtime: typically 10-30 min on a synthetic CDM of ~5,000 persons.
 if (isTRUE(opts$run_achilles)) {
   if (!requireNamespace("Achilles", quietly = TRUE)) {
@@ -515,7 +515,7 @@ if (isTRUE(opts$run_achilles)) {
     )
   } else {
     message("[Step 6b] Running ACHILLES CDM profiling ...")
-    achilles_output <- file.path(getwd(), "output", "achilles")
+    achilles_output <- config$achilles_output_folder
     dir.create(achilles_output, recursive = TRUE, showWarnings = FALSE)
 
     achilles_result <- tryCatch(
@@ -569,8 +569,8 @@ if (isTRUE(opts$run_achilles)) {
 # CONCEPT levels and writes a JSON report + results table.  It is designed to
 # run after ACHILLES but does not strictly require it.
 #
-# Output folder: output/dqd/   (excluded from git via .gitignore)
-# Output file:   output/dqd/dqd_results.json
+# Output folder: output/qc/dqd/   (excluded from git via .gitignore)
+# Output file:   output/qc/dqd/dqd_results.json
 # Results table: <results_schema>.dqdashboard_results
 # Runtime: typically 20-60 min on a synthetic CDM of ~5,000 persons.
 if (isTRUE(opts$run_dqd)) {
@@ -582,7 +582,7 @@ if (isTRUE(opts$run_dqd)) {
     )
   } else {
     message("[Step 6c] Running OHDSI Data Quality Dashboard checks ...")
-    dqd_output <- file.path(getwd(), "output", "dqd")
+    dqd_output <- config$dqd_output_folder
     dir.create(dqd_output, recursive = TRUE, showWarnings = FALSE)
 
     tryCatch(

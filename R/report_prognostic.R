@@ -9,8 +9,8 @@
 # Do NOT source R/report_helpers.R here — the dispatcher handles that.
 #
 # Entry points:
-#   .report_prognostic(output_dir, score_output_dir, cleanup_old_outputs,
-#                      connection_details, config, citations)
+#   .report_prognostic(output_dir, score_output_dir, connection_details,
+#                      config, citations)
 #     — full manuscript-format Word report; called by generate_manuscript_report()
 #       in R/report_extended.R.
 #   .report_word_simple(output_dir, score_output_dir)
@@ -1550,7 +1550,6 @@
 # ===========================================================================
 .report_prognostic <- function(output_dir        = "output/risk_score_eval",
                                        score_output_dir   = "output/risk_score_eval",
-                                       cleanup_old_outputs = FALSE,
                                        connection_details = NULL,
                                        config             = NULL,
                                        citations          = NULL) {
@@ -3012,20 +3011,52 @@
     })
   }
 
+  # ---------------------------------------------------------------------------
+  # next_report_file()
+  #
+  # Returns the target .docx path for the new report.  archive_old_reports()
+  # always runs before this, so the dated filename is free to use directly.
+  # ---------------------------------------------------------------------------
   next_report_file <- function(output_dir, base_name) {
-    primary <- file.path(output_dir, paste0(base_name, ".docx"))
-    if (!file.exists(primary)) {
-      return(primary)
+    file.path(output_dir, paste0(base_name, ".docx"))
+  }
+
+  # ---------------------------------------------------------------------------
+  # archive_old_reports()
+  #
+  # Moves all existing .docx files in output_dir to output_dir/archive/ before
+  # each report run so only the latest report is visible at the top level.
+  # Files are renamed with an incrementing suffix (_2, _3 …) when an archive
+  # entry with the same name already exists (e.g. two runs on the same date).
+  # ---------------------------------------------------------------------------
+  archive_old_reports <- function(output_dir) {
+    existing <- list.files(output_dir, pattern = "\\.docx$",
+                           full.names = TRUE, all.files = FALSE)
+    if (length(existing) == 0L) return(invisible(NULL))
+
+    archive_dir <- file.path(output_dir, "archive")
+    dir.create(archive_dir, recursive = TRUE, showWarnings = FALSE)
+
+    for (f in existing) {
+      nm   <- basename(f)
+      dest <- file.path(archive_dir, nm)
+
+      # Avoid silently overwriting an existing archive entry on same-day re-runs.
+      if (file.exists(dest)) {
+        base <- tools::file_path_sans_ext(nm)
+        ext  <- tools::file_ext(nm)
+        i    <- 2L
+        repeat {
+          dest <- file.path(archive_dir, paste0(base, "_", i, ".", ext))
+          if (!file.exists(dest)) break
+          i <- i + 1L
+        }
+      }
+
+      file.rename(f, dest)
     }
 
-    i <- 2L
-    repeat {
-      candidate <- file.path(output_dir, paste0(base_name, "_", i, ".docx"))
-      if (!file.exists(candidate)) {
-        return(candidate)
-      }
-      i <- i + 1L
-    }
+    invisible(NULL)
   }
 
   roc_y <- person_level$outcome
@@ -3124,50 +3155,13 @@
     }
   }
 
-  cleanup_report_outputs <- function(output_dir, project_name) {
-    report_pattern <- paste0("^", project_name, "_report_[0-9]{8}(_[0-9]+)?\\.docx$")
-    files <- list.files(output_dir, full.names = TRUE, all.files = FALSE)
-    if (length(files) == 0) {
-      return(invisible(NULL))
-    }
-
-    for (f in files) {
-      nm <- basename(f)
-
-      # Keep iterative reports that match the naming convention.
-      if (grepl(report_pattern, nm)) {
-        next
-      }
-
-      # Keep core pipeline tabular outputs.
-      if (nm %in% c(
-        "person_level_scores.csv",
-        "covariate_summary.csv",
-        "metrics.csv",
-        "calibration_table_lookup.csv",
-        "calibration_table_recalibrated.csv"
-      )) {
-        next
-      }
-
-      # Remove legacy reports and standalone artifacts.
-      if (tolower(tools::file_ext(nm)) == "docx" ||
-          nm %in% c("roc_curve.png", "calibration_lookup.png", "calibration_recalibrated.png",
-                "ssi_rate_by_year.png", "subgroup_forest_plot.png", "pipeline_rerun.log")) {
-        unlink(f, force = TRUE)
-      }
-    }
-
-    invisible(NULL)
-  }
-
   project_name <- basename(normalizePath(getwd(), winslash = "/", mustWork = FALSE))
   project_name <- gsub("[^A-Za-z0-9_-]", "_", project_name)
   report_base_name <- paste(project_name, "report", format(Sys.Date(), "%Y%m%d"), sep = "_")
 
-  if (isTRUE(cleanup_old_outputs)) {
-    cleanup_report_outputs(output_dir, project_name)
-  }
+  # Move any existing .docx reports to output_dir/archive/ before writing the
+  # new report so only the latest version is visible at the top level.
+  archive_old_reports(output_dir)
 
   report_file <- next_report_file(output_dir, report_base_name)
 

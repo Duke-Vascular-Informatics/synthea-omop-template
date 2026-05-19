@@ -426,7 +426,7 @@ run_synthea_full_csv_builder_etl <- function(
         " (", paste(missing_tables, collapse = ", "), "); creating missing tables from DDL."
       )
 
-      ddl_dir <- file.path("output", "cdm_sql")
+      ddl_dir <- file.path("output", "etl", "cdm_sql")
       full_ddl_path <- file.path(ddl_dir, paste0("OMOPCDM_sql_server_", cdm_version, "_ddl.sql"))
       if (!file.exists(full_ddl_path)) {
         run_step_with_retry("ETLSyntheaBuilder::CreateCDMTables(sqlOnly)", ETLSyntheaBuilder::CreateCDMTables(
@@ -788,19 +788,22 @@ run_synthea_full_csv_builder_etl <- function(
   # a generated file to allow safe re-execution (IF OBJECT_ID ... DROP) and
   # to avoid hardcoded schema names in the generated output SQL.
   create_visit_rollup_tables_sql_server <- function() {
+    etl_sql_dir <- file.path(getwd(), "output", "etl")
+    dir.create(etl_sql_dir, recursive = TRUE, showWarnings = FALSE)
     run_step_with_retry("ETLSyntheaBuilder::CreateVisitRollupTables(sqlOnly)", ETLSyntheaBuilder::CreateVisitRollupTables(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema,
       syntheaSchema = synthea_schema,
       cdmVersion = cdm_version,
+      outputFolder = etl_sql_dir,
       sqlOnly = TRUE
     ))
 
     conn_rollup <- connect_with_retry(connection_details)
     on.exit(DatabaseConnector::disconnect(conn_rollup), add = TRUE)
 
-    execute_sql_file(conn_rollup, file.path("output", "AllVisitTable.sql"))
-    execute_sql_file(conn_rollup, file.path("output", "AAVITable.sql"))
+    execute_sql_file(conn_rollup, file.path("output", "etl", "AllVisitTable.sql"))
+    execute_sql_file(conn_rollup, file.path("output", "etl", "AAVITable.sql"))
 
     final_visit_sql <- render_sql(
       "IF OBJECT_ID('@cdm_schema.FINAL_VISIT_IDS', 'U') IS NOT NULL
@@ -949,12 +952,15 @@ run_synthea_full_csv_builder_etl <- function(
   # SQL Server-specific patches for insert_person and insert_drug_era.
   # Each file ticks the progress bar so the operator can track domain progress.
   load_event_tables_sql_server <- function(progress_tracker = NULL) {
+    etl_sql_dir <- file.path(getwd(), "output", "etl")
+    dir.create(etl_sql_dir, recursive = TRUE, showWarnings = FALSE)
     run_step_with_retry("ETLSyntheaBuilder::CreateMapAndRollupTables(sqlOnly)", ETLSyntheaBuilder::CreateMapAndRollupTables(
       connectionDetails = connection_details,
       cdmSchema = config$cdm_schema,
       syntheaSchema = synthea_schema,
       cdmVersion = cdm_version,
       syntheaVersion = synthea_version,
+      outputFolder = etl_sql_dir,
       sqlOnly = TRUE
     ))
 
@@ -965,6 +971,7 @@ run_synthea_full_csv_builder_etl <- function(
       cdmVersion = cdm_version,
       syntheaVersion = synthea_version,
       createIndices = FALSE,
+      outputFolder = etl_sql_dir,
       sqlOnly = TRUE
     ))
 
@@ -972,9 +979,9 @@ run_synthea_full_csv_builder_etl <- function(
     on.exit(DatabaseConnector::disconnect(conn_events), add = TRUE)
 
     map_sql_files <- c(
-      file.path("output", "create_source_to_standard_vocab_map.sql"),
-      file.path("output", "create_source_to_source_vocab_map.sql"),
-      file.path("output", "create_states_map.sql")
+      file.path("output", "etl", "create_source_to_standard_vocab_map.sql"),
+      file.path("output", "etl", "create_source_to_source_vocab_map.sql"),
+      file.path("output", "etl", "create_states_map.sql")
     )
     for (sql_file in map_sql_files) {
       execute_sql_file(conn_events, sql_file)
@@ -1031,25 +1038,25 @@ run_synthea_full_csv_builder_etl <- function(
     message("[PERF] Vocab map composite indexes ready.")
 
     event_sql_files <- c(
-      file.path("output", "insert_location.sql"),
-      file.path("output", "insert_care_site.sql"),
-      file.path("output", "insert_person.sql"),
-      file.path("output", "insert_observation_period.sql"),
-      file.path("output", "insert_provider.sql"),
-      file.path("output", "insert_visit_occurrence.sql"),
-      file.path("output", "insert_visit_detail.sql"),
-      file.path("output", "insert_condition_occurrence.sql"),
-      file.path("output", "insert_observation.sql"),
-      file.path("output", "insert_measurement.sql"),
-      file.path("output", "insert_procedure_occurrence.sql"),
-      file.path("output", "insert_drug_exposure.sql"),
-      file.path("output", "insert_condition_era.sql"),
-      file.path("output", "insert_drug_era.sql"),
-      file.path("output", "insert_cdm_source.sql"),
-      file.path("output", "insert_device_exposure.sql"),
-      file.path("output", "insert_death.sql"),
-      file.path("output", "insert_payer_plan_period.sql"),
-      file.path("output", "insert_cost_v300.sql")
+      file.path("output", "etl", "insert_location.sql"),
+      file.path("output", "etl", "insert_care_site.sql"),
+      file.path("output", "etl", "insert_person.sql"),
+      file.path("output", "etl", "insert_observation_period.sql"),
+      file.path("output", "etl", "insert_provider.sql"),
+      file.path("output", "etl", "insert_visit_occurrence.sql"),
+      file.path("output", "etl", "insert_visit_detail.sql"),
+      file.path("output", "etl", "insert_condition_occurrence.sql"),
+      file.path("output", "etl", "insert_observation.sql"),
+      file.path("output", "etl", "insert_measurement.sql"),
+      file.path("output", "etl", "insert_procedure_occurrence.sql"),
+      file.path("output", "etl", "insert_drug_exposure.sql"),
+      file.path("output", "etl", "insert_condition_era.sql"),
+      file.path("output", "etl", "insert_drug_era.sql"),
+      file.path("output", "etl", "insert_cdm_source.sql"),
+      file.path("output", "etl", "insert_device_exposure.sql"),
+      file.path("output", "etl", "insert_death.sql"),
+      file.path("output", "etl", "insert_payer_plan_period.sql"),
+      file.path("output", "etl", "insert_cost_v300.sql")
     )
     for (sql_file in event_sql_files) {
       execute_sql_file(conn_events, sql_file)

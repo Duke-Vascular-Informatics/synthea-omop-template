@@ -1995,7 +1995,7 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 #   connection_details — DatabaseConnector ConnectionDetails object
 #   output_folder      — directory for pipeline outputs (person_level_scores.csv,
 #                        covariate_summary.csv, metrics.csv, calibration_*.png).
-#                        Defaults to config$output_folder/risk_score_eval.
+#                        Defaults to config$output_folder.
 #   lookup_file        — optional path to a score → probability lookup CSV
 #                        (columns: score, risk). Pass NULL to use logistic
 #                        recalibration only.
@@ -2004,8 +2004,7 @@ save_calibration_plot <- function(calibration_table, model_name, output_folder) 
 # output files to output_folder.
 # =============================================================================
 run_integer_risk_score_pipeline <- function(config, connection_details,
-                                            output_folder = file.path(config$output_folder,
-                                                                      "risk_score_eval"),
+                                            output_folder = config$output_folder,
                                             lookup_file   = NULL) {
   dir.create(output_folder, recursive = TRUE, showWarnings = TRUE)
   if (!dir.exists(output_folder)) {
