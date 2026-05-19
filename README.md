@@ -219,3 +219,9 @@ Template project expectation for analyst workflows:
 - `drivers/mssql-jdbc-13.2.1.zip` is tracked so JDBC setup is reproducible offline.
 - `renv/library/` is intentionally not committed (restored from `renv.lock` on first run).
 - `output/` is gitignored — commit outputs separately if needed for reproducibility.
+
+---
+
+## Funding
+
+Research reported in this publication was supported by the National Center For Advancing Translational Sciences of the National Institutes of Health under Award Number K12TR005435. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
