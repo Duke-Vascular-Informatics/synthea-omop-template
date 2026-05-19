@@ -149,6 +149,163 @@ connection_details <- build_connection_details(config)
 
 
 # =============================================================================
+# 5b. Verify standard OMOP concept IDs
+# =============================================================================
+# Checks every concept ID used in this study against omop_vocab.concept at
+# runtime, before any cohort or analysis work begins.
+#
+# Concept IDs are collected from two sources:
+#   1. covariates/covariate_concepts.csv   — all covariate and risk score IDs
+#   2. study_params.yaml                   — cohort ancestor concept IDs
+#      (target index event, target washout, outcome, and comparator if enabled)
+#
+# For each concept the check confirms:
+#   (a) concept_id exists in the connected vocabulary
+#   (b) standard_concept is 'S' (Standard) or 'C' (Classification — acceptable
+#       for ATC drug-class ancestors used in drug rollup queries)
+#   (c) invalid_reason IS NULL (concept is not deprecated or replaced)
+#
+# A WARNING is emitted for any failing concept (not stop()) so that runs on
+# vocabularies with minor version differences still complete; the analyst is
+# alerted to review the flagged concept before publishing results.
+#
+# The function is silent and returns NULL when:
+#   - no concept IDs are found in either source (e.g. template placeholder run)
+#   - the database connection cannot be established
+#   - omop_vocab.concept returns no rows (vocabulary schema unavailable)
+verify_omop_concepts <- function(
+    connection_details,
+    study_params_path       = "study_params.yaml",
+    covariate_concepts_path = "covariates/covariate_concepts.csv"
+) {
+  message("[Step 8] Verifying OMOP concept IDs against omop_vocab ...")
+
+  concept_ids <- integer(0)
+
+  # ---- Source 1: covariates/covariate_concepts.csv ---------------------------
+  # comment.char = "#" strips header comment blocks written above the CSV header
+  # row (e.g. study description, verification notes). concept_id values of 0
+  # are placeholder rows and are excluded from the check.
+  if (file.exists(covariate_concepts_path)) {
+    csv_raw <- tryCatch(
+      read.csv(covariate_concepts_path, comment.char = "#",
+               stringsAsFactors = FALSE, na.strings = c("", "NA")),
+      error = function(e) NULL
+    )
+    if (!is.null(csv_raw) && "concept_id" %in% names(csv_raw)) {
+      ids <- suppressWarnings(as.integer(csv_raw$concept_id))
+      concept_ids <- c(concept_ids, ids[!is.na(ids) & ids > 0L])
+    }
+  }
+
+  # ---- Source 2: study_params.yaml cohort ancestor concept IDs ---------------
+  # Pulls all ancestor_concept_ids declared for the target index event, target
+  # washout, outcome cohort, and comparator (when enabled). These IDs drive the
+  # cohort SQL templates and are the most critical to verify.
+  if (file.exists(study_params_path)) {
+    p <- tryCatch(yaml::read_yaml(study_params_path), error = function(e) NULL)
+    if (!is.null(p)) {
+      yaml_ids <- c(
+        unlist(p$target$index_event$ancestor_concept_ids),
+        unlist(p$target$washout$ancestor_concept_ids),
+        unlist(p$outcome$ancestor_concept_ids),
+        # Include comparator only when it is enabled (cohort_id is not null/NA).
+        if (!is.null(p$comparator$cohort_id) && !is.na(p$comparator$cohort_id))
+          unlist(p$comparator$index_event$ancestor_concept_ids)
+      )
+      yaml_ids <- suppressWarnings(as.integer(yaml_ids))
+      concept_ids <- c(concept_ids, yaml_ids[!is.na(yaml_ids) & yaml_ids > 0L])
+    }
+  }
+
+  concept_ids <- unique(concept_ids)
+
+  if (length(concept_ids) == 0L) {
+    message("[Step 8] No concept IDs found to verify — skipping check.")
+    return(invisible(NULL))
+  }
+
+  # ---- Query omop_vocab -------------------------------------------------------
+  conn <- tryCatch(DatabaseConnector::connect(connection_details),
+                   error = function(e) NULL)
+  if (is.null(conn)) {
+    warning("[Step 8] Could not connect to verify concept IDs — skipping check.")
+    return(invisible(NULL))
+  }
+  on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
+
+  id_csv <- paste(concept_ids, collapse = ", ")
+  sql <- paste0(
+    "SELECT concept_id, concept_name, vocabulary_id, domain_id, ",
+    "       standard_concept, invalid_reason ",
+    "FROM omop_vocab.concept ",
+    "WHERE concept_id IN (", id_csv, ")"
+  )
+  vocab <- tryCatch(
+    DatabaseConnector::querySql(conn, sql, snakeCaseToCamelCase = TRUE),
+    error = function(e) NULL
+  )
+
+  if (is.null(vocab) || nrow(vocab) == 0L) {
+    warning("[Step 8] omop_vocab.concept returned no rows — concept check skipped.")
+    return(invisible(NULL))
+  }
+
+  # ---- Merge and evaluate -----------------------------------------------------
+  # All concept IDs from both sources are in the registry; left join so that IDs
+  # absent from the vocabulary appear as MISSING rows.
+  registry <- data.frame(concept_id = concept_ids, stringsAsFactors = FALSE)
+  result   <- merge(registry, vocab, by.x = "concept_id", by.y = "conceptId",
+                    all.x = TRUE)
+
+  result$status <- mapply(function(std_actual, invalid) {
+    if (is.na(std_actual))             return("MISSING")
+    if (!is.na(invalid))               return("DEPRECATED")
+    if (std_actual %in% c("S", "C"))   return("OK")
+    return("NOT_STANDARD")
+  }, result$standardConcept, result$invalidReason)
+
+  # ---- Print verification table -----------------------------------------------
+  message(sprintf("\n  OMOP Concept Verification (%d concepts)\n  %s",
+                  nrow(result), strrep("-", 90)))
+  for (i in seq_len(nrow(result))) {
+    r   <- result[i, ]
+    tag <- if (r$status == "OK") "  OK " else paste0(" !!! ", r$status)
+    message(sprintf("  [%s] %9d  %-14s  %-8s  %s",
+      tag,
+      r$concept_id,
+      ifelse(is.na(r$vocabularyId),    "NOT FOUND", r$vocabularyId),
+      ifelse(is.na(r$standardConcept), "?",         r$standardConcept),
+      ifelse(is.na(r$conceptName),     "(no match in vocab)", r$conceptName)
+    ))
+  }
+  message("  ", strrep("-", 90))
+
+  # ---- Warn on any failures ---------------------------------------------------
+  failures <- result[result$status != "OK", ]
+  if (nrow(failures) > 0L) {
+    warning(
+      "[Step 8] ", nrow(failures), " concept(s) failed the standard concept check:\n",
+      paste0(
+        sprintf("    concept_id %d (%s): %s",
+          failures$concept_id, failures$status,
+          ifelse(is.na(failures$conceptName), "NOT FOUND IN VOCAB", failures$conceptName)
+        ),
+        collapse = "\n"
+      ),
+      "\nReview these concept IDs before publishing results."
+    )
+  } else {
+    message("  All ", nrow(result), " concept IDs verified as standard and active.\n")
+  }
+
+  invisible(result)
+}
+
+verify_omop_concepts(connection_details)
+
+
+# =============================================================================
 # 6. Prepare results schema and instantiate cohorts
 # =============================================================================
 # ensure_results_schema() creates the results schema and cohort table if they
