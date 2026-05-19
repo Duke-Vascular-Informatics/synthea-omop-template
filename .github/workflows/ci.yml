@@ -1,5 +1,8 @@
 name: R CI
 
+# All jobs are gated by the ENABLE_R_CI repository variable.
+# Repos copied from this template have no variable set, so CI is disabled by default.
+# To opt in: GitHub → Settings → Variables → Actions → New → ENABLE_R_CI = true
 on:
   push:
     branches: [main]
@@ -15,6 +18,7 @@ jobs:
   docs-consistency:
     name: Validate docs command references
     runs-on: ubuntu-latest
+    if: vars.ENABLE_R_CI == 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +43,7 @@ jobs:
   docs-freeze:
     name: Strict docs freeze checks
     runs-on: ubuntu-latest
+    if: vars.ENABLE_R_CI == 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +71,7 @@ jobs:
   lint:
     name: Lint R source files
     runs-on: ubuntu-latest
+    if: vars.ENABLE_R_CI == 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +110,7 @@ jobs:
   test:
     name: Run unit tests
     runs-on: ubuntu-latest
+    if: vars.ENABLE_R_CI == 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -136,6 +143,7 @@ jobs:
   renv-validate:
     name: Validate renv.lock
     runs-on: ubuntu-latest
+    if: vars.ENABLE_R_CI == 'true'
 
     steps:
       - uses: actions/checkout@v4
