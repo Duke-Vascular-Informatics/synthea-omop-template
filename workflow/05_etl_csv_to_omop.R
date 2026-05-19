@@ -45,12 +45,27 @@
 # Path to Synthea CSV output directory produced by Step 4.
 # Priority:
 #  1) SYNTHEA_CSV_DIR env var (explicit override)
-#  2) <SYNTHEA_HOME>/output/csv (local Synthea checkout)
-#  3) legacy project-relative folder fallback
+#  2) SYNTHEA_HOME env var, joined with "output/csv"
+#  3) <repo_root>/external/synthea/output/csv — matches Step 4's default,
+#     resolves the synthea submodule path relative to this script's location
+#     so the default works regardless of the caller's cwd.
+#  4) legacy project-relative folder fallback
+default_synthea_home <- local({
+  # Parse `--file=` to find this script's directory; fall back to "workflow/"
+  # when sourced interactively. Mirrors the bootstrap_path pattern in Step 2.
+  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  script_dir <- if (length(file_arg) > 0) {
+    dirname(sub("^--file=", "", file_arg[1]))
+  } else {
+    "workflow"
+  }
+  normalizePath(file.path(script_dir, "..", "external", "synthea"),
+                winslash = "/", mustWork = FALSE)
+})
 csv_input_dir <- Sys.getenv(
   "SYNTHEA_CSV_DIR",
   unset = file.path(
-    Sys.getenv("SYNTHEA_HOME", unset = "C:/Users/rapiduser/source/repos/synthea"),
+    Sys.getenv("SYNTHEA_HOME", unset = default_synthea_home),
     "output",
     "csv"
   )
