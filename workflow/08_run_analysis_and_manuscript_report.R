@@ -77,7 +77,7 @@ if (length(loaded_java_ns) > 0) {
 # =============================================================================
 # 3. Activate renv, load config, and source helper modules
 # =============================================================================
-Sys.setenv(RENV_CONFIG_SYNCHRONIZED_CHECK = "FALSE")
+Sys.setenv(RENV_CONFIG_SYNCHRONIZED_CHECK = "FALSE") # suppress renv "not synchronized" warning during analysis runs
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 source("config.R")       # get_validation_config()
@@ -89,9 +89,12 @@ source("R/cohorts.R")    # ensure_results_schema(), build_cohorts()
 config <- get_validation_config()
 
 # Source analysis-specific helper modules for the analyses that are enabled.
+# Load order matters: risk_score_pipeline before plp_validation_pipeline
+# (both may export helpers used by report_extended), and report_extended last
+# so it can reference any function defined by the earlier pipelines.
 if (config$run_integer_risk_score)   source("R/risk_score_pipeline.R")
-if (config$run_word_report)          source("R/report_extended.R")
 if (config$run_plp_model_validation) source("R/plp_validation_pipeline.R")
+if (config$run_word_report)          source("R/report_extended.R")
 
 
 # =============================================================================
@@ -365,10 +368,11 @@ if (config$run_integer_risk_score) {
 if (config$run_word_report) {
   message("[Step 8] Generating Word report ...")
   generate_manuscript_report(
-    output_dir         = config$output_folder,
-    score_output_dir   = config$output_folder,
-    connection_details = connection_details,
-    config             = config
+    output_dir          = config$output_folder,
+    score_output_dir    = config$output_folder,
+    cleanup_old_outputs = FALSE,  # preserve previous report versions (_2, _3, ...) so no work is lost on re-run
+    connection_details  = connection_details,
+    config              = config
   )
   message("[Step 8] Word report complete.")
 }

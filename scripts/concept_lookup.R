@@ -173,6 +173,7 @@ if (nrow(results) < 3) {
     SqlRender::translate(sql_synonym, "sql server"),
     snakeCaseToCamelCase = FALSE
   )
+  names(syn_results) <- toupper(names(syn_results))
   # Combine, deduplicating by concept_id.
   results <- unique(rbind(results, syn_results))
 }
@@ -188,8 +189,12 @@ if (nrow(results) == 0) {
   quit(status = 0)
 }
 
+# Normalise column names to uppercase for consistent indexing regardless of
+# JDBC driver version (some drivers return lowercase, others uppercase).
+names(results) <- toupper(names(results))
+
 cat("--- Candidate standard concepts (", nrow(results), " found) ---\n", sep = "")
-print(results[, c("CONCEPT_ID", "CONCEPT_NAME", "DOMAIN_ID",
+print(results[, c("CONCEPT_ID", "CONCEPT_CODE", "CONCEPT_NAME", "DOMAIN_ID",
                    "VOCABULARY_ID", "CONCEPT_CLASS_ID")],
       row.names = FALSE)
 cat("\n")
@@ -243,11 +248,20 @@ cat("\n")
 # -----------------------------------------------------------------------------
 cat("Recommended concept_id : ", best_id, "\n", sep = "")
 cat("Concept name           : ", best_nm, "\n", sep = "")
+cat("Concept code           : ", results$CONCEPT_CODE[1], "\n", sep = "")
 cat("Domain                 : ", results$DOMAIN_ID[1], "\n", sep = "")
-cat("Vocabulary             : ", results$VOCABULARY_ID[1], "\n\n", sep = "")
+cat("Vocabulary             : ", results$VOCABULARY_ID[1], "\n", sep = "")
+cat("Concept class          : ", results$CONCEPT_CLASS_ID[1], "\n\n", sep = "")
 cat("[vocab query] Confirmed against", config$vocab_schema,
     "in this SQL Server instance.\n")
 cat("Safe to use in code and CSV files for this vocabulary version.\n\n")
 cat("To use in covariates/covariate_concepts.csv:\n")
 cat("  covariate_id,concept_id,include_descendants\n")
 cat("  <your_covariate_id>,", best_id, ",TRUE\n\n", sep = "")
+cat("To use in phenotype_library/catalog.yaml:\n")
+cat("  concept_id:", best_id, "\n")
+cat("  concept_name: \"", best_nm, "\"\n", sep = "")
+cat("  concept_code: \"", results$CONCEPT_CODE[1], "\"\n", sep = "")
+cat("  concept_class_id: \"", results$CONCEPT_CLASS_ID[1], "\"\n", sep = "")
+cat("  vocabulary:", results$VOCABULARY_ID[1], "\n")
+cat("  domain_id:", results$DOMAIN_ID[1], "\n\n")
