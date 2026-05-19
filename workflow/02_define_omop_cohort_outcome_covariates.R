@@ -78,6 +78,85 @@ comparator_enabled <- !is.na(config$comparator_cohort_id)
 # risk score analysis is enabled. Continuous PLP studies don't use it.
 require_points <- isTRUE(config$run_integer_risk_score)
 
+# Read the raw YAML once so read_model_reference() can access the full tree.
+study_params_raw <- yaml::read_yaml("study_params.yaml")
+
+
+# -----------------------------------------------------------------------------
+# Chunk 1b - Model reference reader
+# Purpose: surface metadata about the model or score being externally validated.
+# Two-tier approach:
+#   Tier 1 — YAML block: reads model_reference: from study_params.yaml (works
+#             for any model type: integer_risk_score, plp_*, logistic, etc.)
+#   Tier 2 — PLP .rds fallback: when model_reference: is absent but a model/
+#             folder contains PLP artefacts, extracts metadata from the .rds
+#             files produced by PatientLevelPrediction.
+# Returns a named list or NULL when no reference metadata is found.
+# -----------------------------------------------------------------------------
+
+`%||%` <- function(x, y) if (is.null(x)) y else x   # null-coalescing helper
+
+read_model_reference <- function(study_params_raw, model_dir = "model") {
+
+  # Tier 1: YAML-declared reference (type-agnostic — integer score, PLP, or any other)
+  if (!is.null(study_params_raw$model_reference)) {
+    ref <- study_params_raw$model_reference
+    ref[["source"]] <- "study_params.yaml"
+    return(ref)
+  }
+
+  # Tier 2: PLP .rds artefacts (legacy / supplemental fallback)
+  if (!dir.exists(model_dir)) return(NULL)
+
+  read_rds_safe <- function(path) tryCatch(readRDS(path), error = function(e) NULL)
+
+  pop_settings <- read_rds_safe(file.path(model_dir, "populationSettings.rds"))
+  meta_data    <- read_rds_safe(file.path(model_dir, "metaData.rds"))
+  var_imp      <- read_rds_safe(file.path(model_dir, "varImp.rds"))
+  cohort_id    <- read_rds_safe(file.path(model_dir, "cohortId.rds"))
+  outcome_id   <- read_rds_safe(file.path(model_dir, "outcomeId.rds"))
+
+  if (is.null(pop_settings) && is.null(meta_data) && is.null(var_imp)) return(NULL)
+
+  outcome_ids <- NULL
+  if (!is.null(meta_data) && !is.null(meta_data$call$outcomeIds)) {
+    outcome_ids <- as.integer(meta_data$call$outcomeIds)
+  } else if (!is.null(outcome_id)) {
+    outcome_ids <- as.integer(outcome_id)
+  }
+
+  total_covariates <- included_covariates <- NA_integer_
+  if (is.data.frame(var_imp)) {
+    total_covariates    <- nrow(var_imp)
+    included_covariates <- sum(var_imp$included == 1, na.rm = TRUE)
+  }
+
+  covariate_flags <- character(0)
+  if (!is.null(meta_data) && !is.null(meta_data$call$covariateSettings)) {
+    cs <- meta_data$call$covariateSettings
+    if (length(cs) >= 1)
+      covariate_flags <- names(cs[[1]])[vapply(cs[[1]], isTRUE, logical(1))]
+  }
+
+  list(
+    source                             = "plp_rds",
+    model_type                         = "plp",
+    source_folder                      = model_dir,
+    target_cohort_id                   = as.integer(cohort_id %||% pop_settings$cohortId),
+    outcome_ids                        = outcome_ids,
+    risk_window_start_day              = as.integer(pop_settings$riskWindowStart %||% NA_integer_),
+    risk_window_end_day                = as.integer(pop_settings$riskWindowEnd   %||% NA_integer_),
+    washout_period_days                = as.integer(pop_settings$washoutPeriod   %||% NA_integer_),
+    first_exposure_only                = isTRUE(pop_settings$firstExposureOnly),
+    remove_subjects_with_prior_outcome = isTRUE(pop_settings$removeSubjectsWithPriorOutcome),
+    total_covariates                   = total_covariates,
+    included_covariates                = included_covariates,
+    covariate_flags                    = covariate_flags
+  )
+}
+
+model_reference <- read_model_reference(study_params_raw)
+
 
 # -----------------------------------------------------------------------------
 # Chunk 2 - Resolve required vs. optional artifact list for this design
@@ -283,6 +362,30 @@ cat("  Min prior obs days : ",
 cat("  Covariate lookback : ",
     if (!is.null(covariate_lookback_days)) paste0(covariate_lookback_days, " days") else "not set",
     "\n", sep = "")
+if (!is.null(model_reference)) {
+  cat("\nModel reference (", model_reference$source, "):\n", sep = "")
+  if (!is.null(model_reference$model_type))
+    cat("  Type             : ", model_reference$model_type, "\n", sep = "")
+  if (!is.null(model_reference$score_name) && nzchar(model_reference$score_name %||% ""))
+    cat("  Score / model    : ", model_reference$score_name, "\n", sep = "")
+  if (!is.null(model_reference$source_paper) && nzchar(model_reference$source_paper %||% ""))
+    cat("  Source paper     : ", model_reference$source_paper, "\n", sep = "")
+  if (!is.null(model_reference$time_at_risk_days) && !is.na(model_reference$time_at_risk_days))
+    cat("  Time at risk     : ", model_reference$time_at_risk_days, " days\n", sep = "")
+  if (!is.null(model_reference$original_n) && !is.na(model_reference$original_n))
+    cat("  Original N       : ", model_reference$original_n, "\n", sep = "")
+  if (!is.null(model_reference$original_event_rate) && !is.na(model_reference$original_event_rate))
+    cat("  Original evt rate: ", model_reference$original_event_rate, "\n", sep = "")
+  if (!is.null(model_reference$original_c_statistic) && !is.na(model_reference$original_c_statistic))
+    cat("  C-statistic      : ", model_reference$original_c_statistic, "\n", sep = "")
+  # PLP .rds supplement fields
+  if (!is.null(model_reference$risk_window_end_day))
+    cat("  Risk window      : day ", model_reference$risk_window_start_day %||% 0,
+        " – ", model_reference$risk_window_end_day, "\n", sep = "")
+  if (!is.null(model_reference$total_covariates) && !is.na(model_reference$total_covariates))
+    cat("  Covariates       : ", model_reference$included_covariates, " of ",
+        model_reference$total_covariates, " in model\n", sep = "")
+}
 cat("\nNext step: Rscript workflow/03_generate_synthea_module_artifacts.R\n")
 cat("           (or skip to Step 7 if not using Synthea)\n")
 

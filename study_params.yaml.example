@@ -24,6 +24,27 @@ study_name:   "my_study"          # TODO [CONFIG]: lowercase, underscores only; 
 study_design: "prognostic_model"  # TODO [CONFIG]: cohort_characterization | prognostic_model | causal_inference | descriptive
 
 # =============================================================================
+# MODEL REFERENCE
+# Metadata for the model or score being externally validated.
+# Displayed by workflow/02 in the Step 2 manifest for quick verification.
+# All fields are optional — fill in what is known from the source paper.
+# =============================================================================
+model_reference:
+  model_type:   "integer_risk_score"  # TODO [CONFIG]: integer_risk_score | plp_random_forest | plp_lasso | plp_ridge | logistic_regression
+  score_name:   ""                    # TODO [CONFIG]: human-readable name (e.g. "Anderson SSI Risk Score")
+  source_paper: ""                    # TODO [CONFIG]: citation (e.g. "Anderson et al. 2022, J Vasc Surg")
+  doi:          ""                    # optional DOI
+
+  # Original development population characteristics (from the source paper).
+  # Leave as ~ (null) when not reported.
+  original_n:               ~   # N in the development cohort
+  original_event_rate:      ~   # outcome rate in the development cohort (0–1 or %)
+  original_c_statistic:     ~   # AUROC / C-statistic from the source paper
+  original_calibration_slope: ~ # calibration slope if reported
+
+  time_at_risk_days: ~          # TODO [CONFIG]: matches prediction_window_days (e.g. 30 | 90)
+
+# =============================================================================
 # STUDY DATE WINDOW
 # Index events outside this range are excluded from all cohorts.
 # =============================================================================
