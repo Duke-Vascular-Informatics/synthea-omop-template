@@ -214,9 +214,24 @@ if (!is.null(covariate_concepts_path) && file.exists(covariate_concepts_path)) {
   if (!is.null(covariate_definitions)) {
     unknown_ids <- setdiff(unique(covariate_concepts$covariate_id),
                            unique(covariate_definitions$covariate_id))
-    if (length(unknown_ids) > 0)
-      stop("Covariate concepts file references unknown covariate_id values: ",
-           paste(unknown_ids, collapse = ", "))
+    if (length(unknown_ids) > 0) {
+      # Detect whether template placeholder rows (covariate_1, covariate_2, …) are
+      # still present.  When they are, a mismatch between the two CSVs is expected
+      # and should not halt execution — emit a warning so the analyst can proceed
+      # with setup before Step 8.
+      placeholder_mode <- any(grepl("^covariate_[0-9]+$", covariate_definitions$covariate_id))
+      if (placeholder_mode) {
+        warning(
+          "[Step 2] Covariate concepts file references unknown covariate_id values: ",
+          paste(unknown_ids, collapse = ", "), ".\n",
+          "  Template placeholder rows are still present, so this is reported as a warning.\n",
+          "  Replace template rows in both covariate files before Step 8."
+        )
+      } else {
+        stop("Covariate concepts file references unknown covariate_id values: ",
+             paste(unknown_ids, collapse = ", "))
+      }
+    }
   }
 
   placeholder_concepts <- sum(covariate_concepts$concept_id %in% c(0, "0"), na.rm = TRUE)

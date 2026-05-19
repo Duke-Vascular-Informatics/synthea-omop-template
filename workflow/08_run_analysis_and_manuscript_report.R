@@ -367,9 +367,12 @@ if (config$run_integer_risk_score) {
 # -----------------------------------------------------------------------------
 if (config$run_word_report) {
   message("[Step 8] Generating Word report ...")
+  # score_output_dir must match where run_integer_risk_score_pipeline() wrote its
+  # CSVs.  The pipeline defaults to config$output_folder/risk_score_eval/ — pass
+  # the same path here so the report function can find person_level_scores.csv etc.
   generate_manuscript_report(
     output_dir          = config$output_folder,
-    score_output_dir    = config$output_folder,
+    score_output_dir    = file.path(config$output_folder, "risk_score_eval"),
     cleanup_old_outputs = FALSE,  # preserve previous report versions (_2, _3, ...) so no work is lost on re-run
     connection_details  = connection_details,
     config              = config
