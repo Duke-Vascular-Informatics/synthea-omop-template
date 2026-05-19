@@ -11,8 +11,8 @@
 #   3. Add the else-if branch in generate_manuscript_report() below.
 #
 # Entry points (called by workflow/08):
-#   generate_manuscript_report(output_dir, score_output_dir, cleanup_old_outputs,
-#                              connection_details, config, citations)
+#   generate_manuscript_report(output_dir, score_output_dir, connection_details,
+#                              config, citations)
 #   generate_word_report(output_dir, score_output_dir)  — backwards-compatible simple report
 # =============================================================================
 
@@ -31,30 +31,28 @@ source("R/report_prognostic.R")
 # Routes to the appropriate template based on config$study_design.
 #
 # Parameters:
-#   output_dir           — directory for the output .docx file
-#   score_output_dir     — directory containing pipeline output CSVs (default: output_dir)
-#   cleanup_old_outputs  — if TRUE, delete existing .docx files before writing
-#   connection_details   — DatabaseConnector connection details for live CDM queries
-#   config               — named list from get_validation_config(); drives all routing
-#   citations            — optional character vector of citation strings
+#   output_dir         — directory for the output .docx file; previous reports
+#                        are automatically moved to output_dir/archive/ on each run
+#   score_output_dir   — directory containing pipeline output CSVs (default: output_dir)
+#   connection_details — DatabaseConnector connection details for live CDM queries
+#   config             — named list from get_validation_config(); drives all routing
+#   citations          — optional character vector of citation strings
 # -----------------------------------------------------------------------------
-generate_manuscript_report <- function(output_dir          = "output",
-                                       score_output_dir    = output_dir,
-                                       cleanup_old_outputs = FALSE,
-                                       connection_details  = NULL,
-                                       config              = NULL,
-                                       citations           = NULL) {
+generate_manuscript_report <- function(output_dir         = "output",
+                                       score_output_dir   = output_dir,
+                                       connection_details = NULL,
+                                       config             = NULL,
+                                       citations          = NULL) {
 
   design <- config$study_design %||% "prognostic_model"
 
   if (design == "prognostic_model") {
     .report_prognostic(
-      output_dir          = output_dir,
-      score_output_dir    = score_output_dir,
-      cleanup_old_outputs = cleanup_old_outputs,
-      connection_details  = connection_details,
-      config              = config,
-      citations           = citations
+      output_dir         = output_dir,
+      score_output_dir   = score_output_dir,
+      connection_details = connection_details,
+      config             = config,
+      citations          = citations
     )
 
   } else if (design %in% c("descriptive", "cohort_characterization")) {

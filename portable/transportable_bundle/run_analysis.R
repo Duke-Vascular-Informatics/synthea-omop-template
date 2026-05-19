@@ -177,11 +177,10 @@ if (has_officer) {
   message("\n[run_analysis] Generating manuscript Word report ...")
   tryCatch({
     report_path <- generate_manuscript_report(
-      output_dir          = config$risk_score_output_folder,
-      score_output_dir    = config$risk_score_output_folder,
-      cleanup_old_outputs = FALSE,
-      connection_details  = connection_details,
-      config              = config
+      output_dir         = config$risk_score_output_folder,
+      score_output_dir   = config$risk_score_output_folder,
+      connection_details = connection_details,
+      config             = config
     )
     message("[run_analysis] Report written to: ", report_path)
   }, error = function(e) {

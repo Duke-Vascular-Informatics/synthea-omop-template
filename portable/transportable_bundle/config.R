@@ -126,13 +126,13 @@ get_validation_config <- function() {
     # ---------------------------------------------------------------------------
     model_name                 = "my_study",   # TODO: set to your study identifier
     risk_score_lookup_file     = file.path(getwd(), "risk_score", "risk_lookup.csv"),
-    risk_score_output_folder   = file.path(getwd(), "output", "risk_score_eval"),
+    risk_score_output_folder   = file.path(getwd(), "output"),
 
     # Keys used internally by risk_score_pipeline.R — point to the covariate
     # definition CSVs copied into risk_score/ by workflow/09.
     covariate_definitions_file = file.path(getwd(), "risk_score", "covariates.csv"),
     covariate_concepts_file    = file.path(getwd(), "risk_score", "covariate_concepts.csv"),
-    output_folder              = file.path(getwd(), "output", "risk_score_eval"),
+    output_folder              = file.path(getwd(), "output"),
 
     # SSI attribution window in days after the index procedure date.
     # 90 days matches the HPC cluster validation study design.

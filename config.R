@@ -208,11 +208,18 @@ get_validation_config <- function() {
     study_end_date   = p$study_end_date   %||% "2025-12-31",
 
     # -------------------------------------------------------------------------
-    # Output folder — from study_params.yaml.
-    # Auto-derives to output/<study_slug> when omitted.
+    # Output folders — from study_params.yaml.
+    # output_folder:          study analysis results (Step 8)
+    # achilles_output_folder: CDM-level ACHILLES profiling (Step 6b)
+    # dqd_output_folder:      CDM-level Data Quality Dashboard (Step 6c)
+    #
+    # All three are runtime-only and excluded from git via .gitignore (output/).
+    # QC outputs are nested under output/qc/ to keep them separate from study
+    # deliverables while avoiding a new root-level directory.
     # -------------------------------------------------------------------------
-    output_folder = file.path(getwd(),
-                              p$output_folder %||% file.path("output", study_slug)),
+    output_folder          = file.path(getwd(), p$output_folder %||% "output"),
+    achilles_output_folder = file.path(getwd(), "output", "qc", "achilles"),
+    dqd_output_folder      = file.path(getwd(), "output", "qc", "dqd"),
 
     # -------------------------------------------------------------------------
     # Database metadata — from study_params.yaml

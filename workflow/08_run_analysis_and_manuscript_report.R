@@ -517,22 +517,16 @@ if (config$run_integer_risk_score) {
 # -----------------------------------------------------------------------------
 # Word report — requires a pipeline above to have written its outputs first.
 # Reads person_level_scores.csv, covariate_summary.csv, and metrics.csv from
-# config$output_folder.
-# generate_manuscript_report() dispatches to the appropriate report format
-# based on config flags; supply score_output_dir when a pipeline writes its
-# CSVs to a subdirectory (e.g. "risk_score_eval/").
+# config$output_folder.  All pipeline outputs and the report are written to
+# config$output_folder; previous reports are moved to output/archive/ automatically.
 # -----------------------------------------------------------------------------
 if (config$run_word_report) {
   message("[Step 8] Generating Word report ...")
-  # score_output_dir must match where run_integer_risk_score_pipeline() wrote its
-  # CSVs.  The pipeline defaults to config$output_folder/risk_score_eval/ — pass
-  # the same path here so the report function can find person_level_scores.csv etc.
   generate_manuscript_report(
-    output_dir          = config$output_folder,
-    score_output_dir    = file.path(config$output_folder, "risk_score_eval"),
-    cleanup_old_outputs = FALSE,  # preserve previous report versions (_2, _3, ...) so no work is lost on re-run
-    connection_details  = connection_details,
-    config              = config
+    output_dir         = config$output_folder,
+    score_output_dir   = config$output_folder,
+    connection_details = connection_details,
+    config             = config
   )
   message("[Step 8] Word report complete.")
 }
