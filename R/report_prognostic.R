@@ -668,7 +668,7 @@
 #
 # Builds a combined covariate table for LASSO score_type studies (PLP mode).
 # Shows top predictors by |coefficient| with prevalence counts.
-# Copied verbatim from pad_oler_macce_val/R/report_extended.R.
+# Copied verbatim from pad-oler-macce-val/R/report_extended.R.
 # -----------------------------------------------------------------------------
 .build_combined_covariate_table <- function(covariate_summary_df) {
   # Build combined covariate table with definitions and prevalence.
@@ -873,7 +873,7 @@
 #
 # Single-line trend of annual outcome rate (%) by procedure year.
 # Used for lasso score_type studies (e.g. MACCE outcome).
-# Copied verbatim from pad_oler_macce_val/R/report_extended.R.
+# Copied verbatim from pad-oler-macce-val/R/report_extended.R.
 # -----------------------------------------------------------------------------
 .save_macce_rate_by_year_plot <- function(person_level_df, output_folder) {
   if (!all(c("index_date", "outcome") %in% names(person_level_df))) {
@@ -955,7 +955,7 @@
 #
 # Bar chart of monthly outcome rate (%) by calendar month.
 # Used for lasso score_type studies.
-# Copied verbatim from pad_oler_macce_val/R/report_extended.R.
+# Copied verbatim from pad-oler-macce-val/R/report_extended.R.
 # -----------------------------------------------------------------------------
 .save_macce_rate_by_month_plot <- function(person_level_df, output_folder) {
   if (!all(c("index_date", "outcome") %in% names(person_level_df))) {
