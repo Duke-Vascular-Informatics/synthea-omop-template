@@ -160,7 +160,7 @@ source("config.R")
 cfg <- get_validation_config()
 
 # Derive target CDM schema from study name unless overridden above.
-# Produces e.g. "omop_synth_pad_oler_macce_val" for study_name = "pad_oler_macce_val".
+# Produces e.g. "omop_synth_pad_oler_macce_val" for study_name = "pad-oler-macce-val".
 if (is.null(target_cdm_schema_base)) {
   target_cdm_schema_base <- paste0("omop_synth_", cfg$study_name)
 }
