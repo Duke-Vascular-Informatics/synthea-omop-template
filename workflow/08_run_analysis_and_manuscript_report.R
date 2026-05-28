@@ -312,6 +312,8 @@ verify_omop_concepts <- function(
   invisible(result)
 }
 
+# Verify all OMOP concept IDs (covariate_concepts.csv + study_params.yaml
+# cohort ancestors) before any cohort or analysis work.
 verify_omop_concepts(connection_details)
 
 
