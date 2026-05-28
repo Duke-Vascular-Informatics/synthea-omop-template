@@ -22,7 +22,7 @@ When a command changes:
 | Run Docker + vocab setup (macOS/Linux) | `bash ../infrastructure/setup/setup_docker_and_vocab.sh` | [Step 7](GETTING_STARTED.md#step-7-complete-machine-setup-if-needed-20-60-minutes) |
 | Run Docker + vocab setup (PowerShell) | `powershell -ExecutionPolicy Bypass -File ..\infrastructure\setup\setup_docker_and_vocab.ps1` | [Step 7](GETTING_STARTED.md#step-7-complete-machine-setup-if-needed-20-60-minutes) |
 | Check vocabulary table presence | `Rscript -e "...SELECT COUNT(*) AS n FROM omop_vocab.concept..."` | [Step 9](GETTING_STARTED.md#step-9-check-whether-omop-vocabulary-is-already-loaded-2-minutes) |
-| Load OMOP vocabulary schema | `Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .` | [Step 10](GETTING_STARTED.md#step-10-load-omop-vocabulary-into-sql-server-3060-minutes) |
+| Load OMOP vocabulary schema | `Rscript infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template` | [Step 10](GETTING_STARTED.md#step-10-load-omop-vocabulary-into-sql-server-3060-minutes) |
 | Validate customization status | `Rscript scripts/check_setup.R` | [Step 11](GETTING_STARTED.md#step-11-define-your-cohort-outcome-and-covariates-3060-minutes) |
 | Look up OMOP concepts | `Rscript scripts/concept_lookup.R "<clinical term>" <Domain>` | [Step 11](GETTING_STARTED.md#step-11-define-your-cohort-outcome-and-covariates-3060-minutes) |
 | Generate Synthea CSV (bash) | `bash workflow/04_generate_synthea_csv.sh` | [Step 13](GETTING_STARTED.md#step-13-generate-synthetic-data-and-run-etl-60-minutes) |

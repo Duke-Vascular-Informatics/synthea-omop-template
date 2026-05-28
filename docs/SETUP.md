@@ -329,7 +329,7 @@ studies on this machine share the same vocabulary schema — you never reload it
 studies or between Synthea runs.
 
 ```bash
-Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
+Rscript infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template
 ```
 
 What the script does:

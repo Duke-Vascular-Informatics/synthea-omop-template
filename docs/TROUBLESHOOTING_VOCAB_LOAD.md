@@ -23,7 +23,7 @@ ls -la /omop_vocab/
 ## Retry Loader
 
 ```bash
-Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
+Rscript infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template
 ```
 
 ## Verify Load
