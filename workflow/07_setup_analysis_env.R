@@ -2,13 +2,14 @@
 # =============================================================================
 # workflow/07_setup_analysis_env.R
 #
-# Step 7: Verify that all R packages required by Step 8 are installed.
+# Step 7: Verify the analysis environment before running Step 8.
 #
 # PURPOSE
 # -------
-# Checks that all HADES analysis packages and general utilities are present in
-# the renv library. Fails fast with an actionable message if anything is
-# missing, so you discover installation gaps before running the full analysis.
+# Confirms that every R package required by Step 8 is installed and that the
+# SQL Server JDBC driver bundle is present in the project-local drivers/
+# folder.  Fails fast with an actionable message so you discover any gaps
+# before running the full analysis.
 # No editing required — the package list covers all study designs.
 #
 # This step does NOT install packages. Run setup/install_packages.R first.
@@ -17,18 +18,20 @@
 # -------------
 #   - renv has been initialised (setup/setup_renv.R run once).
 #   - Project packages have been installed (setup/install_packages.R run once).
-#   - Java >= 11 is installed and JAVA_HOME is set (required for
-#     DatabaseConnector regardless of analysis type).
+#   - Java >= 11 is installed and JAVA_HOME is configured in config.R.
 #
 # EXECUTION
 # ---------
 #   Rscript workflow/07_setup_analysis_env.R
+#   (Run from the project root, or source interactively from RStudio.)
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# 1. Workflow bootstrap
+# 1. Locate and source the workflow bootstrap
 # -----------------------------------------------------------------------------
+# Resolves the project root from the --file= argument when called via Rscript,
+# and falls back to the conventional relative path when sourced interactively.
 bootstrap_path <- local({
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(file_arg) > 0) {
@@ -48,6 +51,9 @@ set_workflow_root()
 # -----------------------------------------------------------------------------
 # 2. Activate renv
 # -----------------------------------------------------------------------------
+# Pins every package to the version recorded in renv.lock, ensuring the same
+# library state as when the project was last snapshotted.  Safe to call on
+# every run — renv is a no-op if already active.
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 
@@ -59,7 +65,8 @@ if (file.exists("renv/activate.R")) source("renv/activate.R")
 # you discover any installation gaps before running Step 8.
 #
 # Packages are grouped by role; all are checked regardless of study design.
-# If a package is not yet installed, re-run setup/install_packages.R first.
+# If a package is not yet installed, run setup/install_packages.R in a fresh
+# R session first.
 
 required <- c(
   # --- OMOP database access (always required) ---
@@ -93,13 +100,8 @@ required <- c(
   "officer",                    # Word (.docx) report generation
   "flextable",                  # formatted tables for Word / HTML output
   "openxlsx",                   # Excel (.xlsx) output with formatting
-  "knitr",                      # R Markdown report rendering
-
-  NULL  # trailing NULL so every line above can end with a comma safely
+  "knitr"                       # R Markdown report rendering
 )
-
-# Remove any NULLs (from the trailing NULL above).
-required <- required[!vapply(required, is.null, logical(1L))]
 
 
 # -----------------------------------------------------------------------------
@@ -113,14 +115,17 @@ if (length(missing_pkgs) > 0) {
   stop(
     "The following packages required by Step 8 are not installed:\n",
     paste0("  - ", missing_pkgs, collapse = "\n"),
-    "\n\nAdd them to setup/install_packages.R and re-run that script,",
+    "\n\nRun setup/install_packages.R in a fresh R session to install them,",
     "\nthen re-run Step 7."
   )
 }
 
-message("Package check passed. ", length(required), " package(s) verified:")
+message("Package check passed. All ", length(required), " required packages are installed:")
 for (pkg in required) {
-  ver <- tryCatch(as.character(utils::packageVersion(pkg)), error = function(e) "?")
+  ver <- tryCatch(
+    as.character(utils::packageVersion(pkg)),
+    error = function(e) "?"
+  )
   message(sprintf("  %-35s %s", pkg, ver))
 }
 
@@ -128,15 +133,18 @@ for (pkg in required) {
 # -----------------------------------------------------------------------------
 # 5. Verify JDBC driver bundle
 # -----------------------------------------------------------------------------
-# DatabaseConnector requires a JDBC driver regardless of analysis type.
-# ensure_jdbc_bundle() downloads it once if not already present.
+# ensure_jdbc_bundle() (R/drivers.R) checks whether the mssql-jdbc runtime jar
+# exists in drivers/jdbc-runtime/.  If it does not, it downloads and extracts
+# the official Microsoft JDBC zip (once) — subsequent calls are instant.
+# This step must succeed before Step 8 can open any database connection.
 source("config.R")
 source("R/drivers.R")
 config <- get_validation_config()
 ensure_jdbc_bundle(config)
 message("JDBC driver verified: ",
         file.path(config$jdbc_runtime_dir,
-                  paste0("mssql-jdbc-", config$sql_server_jdbc_version, ".jre11.jar")))
+                  paste0("mssql-jdbc-", config$sql_server_jdbc_version,
+                         ".jre11.jar")))
 
 
 # -----------------------------------------------------------------------------
