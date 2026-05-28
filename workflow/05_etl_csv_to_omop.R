@@ -94,11 +94,11 @@ verbose <- TRUE
 # use_shared_vocab_schema = TRUE  (recommended after first-time setup)
 #   Wires SQL Server synonyms pointing to the shared omop_vocab schema.
 #   No data is copied; setup takes ~1 second.
-#   Prerequisite: run ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . once on this instance.
+#   Prerequisite: run infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template once on this instance.
 #
 # use_shared_vocab_schema = FALSE + reload_vocab_from_csv = TRUE
 #   Loads vocabulary fresh from CSV on every run (~30-60 min, ~25 GB log).
-#   Use only on a new instance before ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . has been run.
+#   Use only on a new instance before infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template has been run.
 #
 # use_shared_vocab_schema = FALSE + reload_vocab_from_csv = FALSE
 #   Bootstraps vocab via INSERT...SELECT from vocabulary_source_schema.

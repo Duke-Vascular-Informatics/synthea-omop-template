@@ -1220,7 +1220,7 @@ run_synthea_full_csv_builder_etl <- function(
   # Path A (use_shared_vocab_schema = TRUE):
   #   Wire SQL Server synonyms in the target schema pointing to the shared
   #   omop_vocab schema.  No data is copied; vocab is available instantly.
-  #   Requires ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir . to have been run once.
+  #   Requires infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template to have been run once.
   #
   # Path B (reload_vocab_from_csv = TRUE):
   #   Call ETLSyntheaBuilder::LoadVocabFromCsv with the OHDSI vocabulary CSV

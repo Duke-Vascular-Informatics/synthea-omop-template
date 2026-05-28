@@ -109,7 +109,7 @@ get_validation_config <- function() {
     sql_server_port  = 1433L,
 
     # Shared vocabulary schema — loaded once via
-    # ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
+    # infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template
     vocab_schema     = "omop_vocab",
 
     # -------------------------------------------------------------------------

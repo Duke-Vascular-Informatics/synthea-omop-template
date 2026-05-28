@@ -534,7 +534,7 @@ Do this only if Step 9 showed the vocabulary is not already loaded.
 
 ```bash
 # Run from the study root (inside the container)
-Rscript ../infrastructure/scripts/setup_omop_vocab_schema.R --study-dir .
+Rscript infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template
 ```
 
 This script:
