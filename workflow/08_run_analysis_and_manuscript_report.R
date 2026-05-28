@@ -133,6 +133,16 @@ if (config$run_integer_risk_score || config$run_word_report) {
   library(officer)
   library(flextable)
 }
+if (config$run_plp_model_validation) {
+  library(PatientLevelPrediction)
+  library(FeatureExtraction)
+  library(Andromeda)
+  library(reticulate)
+  library(jsonlite)
+  library(Matrix)  # sparseMatrix() for feature alignment
+  library(pROC)    # AUROC computation in pipeline metrics
+  library(PRROC)   # AUPRC computation in pipeline metrics
+}
 library(dplyr)   # data wrangling — broadly useful
 library(readr)   # CSV I/O
 
