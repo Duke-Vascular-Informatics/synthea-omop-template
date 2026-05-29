@@ -95,6 +95,7 @@ config <- get_validation_config()
 if (config$run_integer_risk_score)   source("R/risk_score_pipeline.R")
 if (config$run_plp_model_validation) source("R/plp_validation_pipeline.R")
 if (config$run_word_report)          source("R/report_extended.R")
+if (config$run_cohort_diagnostics)   library(CohortDiagnostics)
 
 
 # =============================================================================
@@ -111,13 +112,13 @@ library(SqlRender)
 # Load analysis packages based on the flags in study_params.yaml.
 # FeatureExtraction is a shared dependency for PLP, CohortMethod, and
 # CohortDiagnostics and is loaded once when any of those are enabled.
+if (config$run_cohort_diagnostics) {
+  library(CohortDiagnostics)
+}
 if (config$run_cohort_characterization ||
     config$run_prognostic_model        ||
     config$run_causal_inference) {
   library(FeatureExtraction)
-}
-if (config$run_cohort_characterization) {
-  library(CohortDiagnostics)
 }
 if (config$run_prognostic_model) {
   library(PatientLevelPrediction)
@@ -345,6 +346,90 @@ message("[Step 8] Cohorts instantiated.")
 dir.create(config$output_folder, recursive = TRUE, showWarnings = FALSE)
 
 # -----------------------------------------------------------------------------
+# Cohort diagnostics — CohortDiagnostics phenotype QA
+#
+# Run this before any primary analysis to validate cohort phenotypes.
+# Produces incidence rates, concept set breakdowns, orphan concepts, and
+# cohort overlap — the same outputs Strategus requires before running HADES
+# analyses in a network study.
+#
+# Output: a SQLite results file written to config$output_folder/cohort_diagnostics/
+# View results with: CohortDiagnostics::launchDiagnosticsExplorer(
+#   sqliteDbPath = file.path(config$output_folder, "cohort_diagnostics",
+#                            "MergedCohortDiagnosticsData.sqlite"))
+#
+# NOTE: CohortDiagnostics expects cohorts to be already instantiated in the
+# cohort table (Step 6 above). runInclusionStatistics requires the cohort
+# attrition table populated by CohortGenerator; set to FALSE when using the
+# custom SQL instantiation path (build_cohorts).
+# -----------------------------------------------------------------------------
+if (config$run_cohort_diagnostics) {
+  message("[Step 8] Running cohort diagnostics (CohortDiagnostics) ...")
+
+  diag_output_folder <- file.path(config$output_folder, "cohort_diagnostics")
+  dir.create(diag_output_folder, recursive = TRUE, showWarnings = FALSE)
+
+  # Build the cohort reference table that CohortDiagnostics expects:
+  # one row per cohort, with cohortId and cohortName columns.
+  cohort_ids <- c(config$target_cohort_id)
+  cohort_names <- c("Target")
+  if (!is.na(config$comparator_cohort_id)) {
+    cohort_ids   <- c(cohort_ids,   config$comparator_cohort_id)
+    cohort_names <- c(cohort_names, "Comparator")
+  }
+  if (!is.na(config$outcome_cohort_id)) {
+    cohort_ids   <- c(cohort_ids,   config$outcome_cohort_id)
+    cohort_names <- c(cohort_names, "Outcome")
+  }
+  cohort_ref <- data.frame(
+    cohortId   = cohort_ids,
+    cohortName = cohort_names,
+    stringsAsFactors = FALSE
+  )
+
+  # executeDiagnostics() connects, extracts diagnostics, and writes an
+  # exportFolder of CSV files.  exportToCsv = TRUE, then merge into SQLite
+  # for the Shiny explorer.  runInclusionStatistics is FALSE here because we
+  # instantiate cohorts via custom SQL (no CohortGenerator attrition table).
+  CohortDiagnostics::executeDiagnostics(
+    cohortDefinitionSet    = cohort_ref,
+    connectionDetails      = connection_details,
+    cdmDatabaseSchema      = config$cdm_schema,
+    cohortDatabaseSchema   = config$results_schema,
+    cohortTable            = config$cohort_table,
+    exportFolder           = diag_output_folder,
+    databaseId             = config$cdm_database_id,
+    databaseName           = config$cdm_database_name,
+    databaseDescription    = config$cdm_database_description,
+    runInclusionStatistics = FALSE,  # requires CohortGenerator attrition table
+    runIncludedSourceConcepts  = TRUE,
+    runOrphanConcepts          = TRUE,
+    runTimeSeries              = FALSE,  # slow on large CDMs; enable when needed
+    runVisitContext            = TRUE,
+    runBreakdownIndexEvents    = TRUE,
+    runIncidenceRate           = TRUE,
+    runCohortRelationship      = TRUE,
+    runTemporalCohortCharacterization = FALSE,  # very slow; enable selectively
+    minCellCount               = 5L
+  )
+
+  # Merge CSV exports into a single SQLite file for the Shiny explorer.
+  CohortDiagnostics::createMergedResultsFile(
+    dataFolder   = diag_output_folder,
+    sqliteDbPath = file.path(diag_output_folder, "MergedCohortDiagnosticsData.sqlite")
+  )
+
+  message(
+    "[Step 8] Cohort diagnostics complete.\n",
+    "  Launch explorer: CohortDiagnostics::launchDiagnosticsExplorer(\n",
+    "    sqliteDbPath = '",
+    file.path(diag_output_folder, "MergedCohortDiagnosticsData.sqlite"),
+    "')"
+  )
+}
+
+
+# -----------------------------------------------------------------------------
 # Cohort characterization — FeatureExtraction default covariate summary
 # -----------------------------------------------------------------------------
 if (config$run_cohort_characterization) {
@@ -501,6 +586,120 @@ if (config$run_causal_inference) {
     saveRDS(outcome_model,
             file.path(config$output_folder, "outcome_model.rds"))
 
+    # ---- Empirical calibration via negative control outcomes -----------------
+    # Follows the Strategus pattern: estimate the log(HR) for each negative
+    # control outcome, fit a systematic error model from those null estimates,
+    # then apply it to the primary outcome HR to produce a calibrated p-value
+    # and calibrated confidence interval.
+    #
+    # Requires negative_controls.ancestor_concept_ids in study_params.yaml.
+    # Skips silently when no negative control concept IDs are defined (the
+    # template default) so the causal inference block runs without modification
+    # for studies that have not yet specified controls.
+    nco_ids <- config$negative_control_concept_ids
+    if (length(nco_ids) > 0L) {
+      message("[Step 8] Running empirical calibration (",
+              length(nco_ids), " negative controls) ...")
+
+      # Fit one outcome model per negative control using the same matched
+      # population, study window, and Cox model as the primary analysis.
+      nco_estimates <- lapply(nco_ids, function(nco_id) {
+        tryCatch({
+          nco_pop   <- CohortMethod::createStudyPopulation(
+            cohortMethodData = cm_data,
+            outcomeId        = nco_id,
+            riskWindowStart  = 1L,
+            startAnchor      = "cohort start",
+            riskWindowEnd    = config$prediction_window_days,
+            endAnchor        = "cohort start"
+          )
+          nco_ps_pop <- CohortMethod::matchOnPs(
+            CohortMethod::createPs(cm_data, nco_pop),
+            caliper      = 0.2,
+            caliperScale = "standardized logit"
+          )
+          nco_model <- CohortMethod::fitOutcomeModel(
+            population = nco_ps_pop,
+            modelType  = "cox"
+          )
+          coef_row <- coef(summary(nco_model$outcomeModelTreatmentEstimate))
+          data.frame(
+            nco_concept_id  = nco_id,
+            log_rr          = coef_row[1, "coef"],
+            se_log_rr       = coef_row[1, "se(coef)"],
+            stringsAsFactors = FALSE
+          )
+        }, error = function(e) {
+          warning("[Step 8] NCO ", nco_id, " failed: ", conditionMessage(e))
+          NULL
+        })
+      })
+
+      nco_estimates <- do.call(rbind, Filter(Negate(is.null), nco_estimates))
+
+      if (!is.null(nco_estimates) && nrow(nco_estimates) >= 5L) {
+        # Fit a null distribution from the NCO log(HR) estimates.
+        null_dist <- EmpiricalCalibration::fitNull(
+          logRr   = nco_estimates$log_rr,
+          seLogRr = nco_estimates$se_log_rr
+        )
+
+        # Calibrated p-value for the primary outcome.
+        primary_coef <- coef(summary(outcome_model$outcomeModelTreatmentEstimate))
+        primary_log_rr  <- primary_coef[1, "coef"]
+        primary_se      <- primary_coef[1, "se(coef)"]
+
+        cal_p <- EmpiricalCalibration::calibrateP(
+          null    = null_dist,
+          logRr   = primary_log_rr,
+          seLogRr = primary_se
+        )
+
+        # Calibrated 95 % CI using the systematic-error model.
+        error_model <- EmpiricalCalibration::convertNullToErrorModel(null_dist)
+        cal_ci <- EmpiricalCalibration::calibrateConfidenceInterval(
+          logRr      = primary_log_rr,
+          seLogRr    = primary_se,
+          errorModel = error_model
+        )
+
+        calibration_results <- list(
+          null_distribution    = null_dist,
+          error_model          = error_model,
+          nco_estimates        = nco_estimates,
+          calibrated_p_value   = cal_p,
+          calibrated_ci_lower  = exp(cal_ci$logLb95Rr),
+          calibrated_ci_upper  = exp(cal_ci$logUb95Rr),
+          uncalibrated_hr      = exp(primary_log_rr),
+          uncalibrated_ci_lower = exp(primary_log_rr - 1.96 * primary_se),
+          uncalibrated_ci_upper = exp(primary_log_rr + 1.96 * primary_se)
+        )
+
+        saveRDS(calibration_results,
+                file.path(config$output_folder, "calibration_results.rds"))
+
+        message(sprintf(
+          "[Step 8] Empirical calibration complete.\n",
+          "  Uncalibrated HR: %.2f (%.2f–%.2f)\n",
+          "  Calibrated   HR: %.2f (%.2f–%.2f)  p = %.3f",
+          calibration_results$uncalibrated_hr,
+          calibration_results$uncalibrated_ci_lower,
+          calibration_results$uncalibrated_ci_upper,
+          exp((cal_ci$logLb95Rr + cal_ci$logUb95Rr) / 2),
+          calibration_results$calibrated_ci_lower,
+          calibration_results$calibrated_ci_upper,
+          cal_p
+        ))
+      } else {
+        warning(
+          "[Step 8] Empirical calibration skipped: fewer than 5 NCO estimates ",
+          "converged (", if (is.null(nco_estimates)) 0L else nrow(nco_estimates),
+          " of ", length(nco_ids), " controls produced estimates). ",
+          "Add more negative controls in study_params.yaml."
+        )
+      }
+    }
+
     message("[Step 8] Causal inference complete. ",
             "Results saved to: ", config$output_folder)
   }
@@ -566,6 +765,7 @@ if (config$run_plp_model_validation) {
 # 8. DONE
 # =============================================================================
 enabled <- Filter(isTRUE, list(
+  cohort_diagnostics      = config$run_cohort_diagnostics,
   cohort_characterization = config$run_cohort_characterization,
   prognostic_model        = config$run_prognostic_model,
   causal_inference        = config$run_causal_inference,

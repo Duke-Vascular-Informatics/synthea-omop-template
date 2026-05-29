@@ -280,6 +280,7 @@ if (is.null(analyses)) {
 } else {
   any_enabled <- FALSE
   flag_names <- c(
+    cohort_diagnostics      = "cohort_diagnostics",
     cohort_characterization = "cohort_characterization",
     prognostic_model        = "prognostic_model",
     causal_inference        = "causal_inference",
@@ -303,6 +304,22 @@ if (is.null(analyses)) {
   if (isTRUE(analyses$causal_inference)) {
     if (is.null(p$comparator$cohort_id) || is.na(p$comparator$cohort_id)) {
       flag_fail("causal_inference = true but comparator.cohort_id is not set in study_params.yaml")
+    }
+    # Negative controls are not required but strongly recommended for calibration
+    nco_ids <- unlist(p$negative_controls$ancestor_concept_ids)
+    nco_ids <- nco_ids[!is.na(nco_ids) & nco_ids != 0]
+    if (is.null(nco_ids) || length(nco_ids) == 0) {
+      flag_warn(paste0(
+        "causal_inference = true but negative_controls.ancestor_concept_ids is empty. ",
+        "Add >= 5 negative control concept IDs for empirical calibration."
+      ))
+    } else if (length(nco_ids) < 5L) {
+      flag_warn(paste0(
+        "Only ", length(nco_ids), " negative control(s) defined. ",
+        "EmpiricalCalibration requires >= 5 for a reliable null distribution."
+      ))
+    } else {
+      PASS(paste0("negative_controls: ", length(nco_ids), " concept ID(s) defined"))
     }
   }
 
