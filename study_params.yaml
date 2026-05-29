@@ -114,6 +114,31 @@ comparator:
     lookback_days: 365
 
 # =============================================================================
+# NEGATIVE CONTROL OUTCOMES (causal inference only)
+# Used for empirical calibration of the outcome model via EmpiricalCalibration.
+# List OMOP standard condition concept IDs representing outcomes that are
+# clinically implausible consequences of the exposure — i.e., outcomes where
+# the true hazard ratio is 1.0 by assumption.
+#
+# How to choose negative controls:
+#   1. Select conditions unrelated to the mechanism of action of your exposure.
+#   2. Verify each concept ID with /concept-lookup before adding it here.
+#   3. Aim for 20–50 negative controls; fewer than 5 produces unreliable calibration.
+#   4. Leave the list empty ([]) to skip empirical calibration even when
+#      causal_inference is enabled.
+#
+# Example:
+#   ancestor_concept_ids:
+#     - 4112343   # [vocab query] Ingrown nail
+#     - 440417    # [vocab query] Fracture of wrist
+#
+# TODO [CAUSAL INFERENCE]: populate before running causal_inference analysis.
+# =============================================================================
+negative_controls:
+  ancestor_concept_ids: []   # TODO [CAUSAL INFERENCE]: add verified negative control concept IDs
+
+
+# =============================================================================
 # ANALYSIS PARAMETERS
 # =============================================================================
 # Days after index date during which the outcome is counted.
@@ -134,7 +159,8 @@ covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 # No editing of workflow/08 is needed — these flags drive everything.
 # =============================================================================
 analyses:
-  cohort_characterization: false  # FeatureExtraction default covariate summary of the target cohort
+  cohort_diagnostics:       false  # CohortDiagnostics phenotype QA — run before any primary analysis
+  cohort_characterization:  false  # FeatureExtraction default covariate summary of the target cohort
   prognostic_model:         false  # PatientLevelPrediction LASSO (default; swap model in workflow/08)
   causal_inference:         false  # CohortMethod PS matching (requires comparator cohort in config)
   integer_risk_score:       false  # custom integer score pipeline (R/risk_score_pipeline.R)

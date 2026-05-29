@@ -230,9 +230,17 @@ get_validation_config <- function() {
                                  "Brief description of the patient population.",
 
     # -------------------------------------------------------------------------
+    # Negative control outcomes — from study_params.yaml negative_controls: section.
+    # Used for empirical calibration in the causal inference block.
+    # Returns integer(0) when the list is empty or the key is absent.
+    # -------------------------------------------------------------------------
+    negative_control_concept_ids = as_int_vec(p$negative_controls$ancestor_concept_ids),
+
+    # -------------------------------------------------------------------------
     # Analysis flags — from study_params.yaml analyses: section.
     # These drive workflow/08 — no code editing in that script is needed.
     # -------------------------------------------------------------------------
+    run_cohort_diagnostics      = isTRUE(p$analyses$cohort_diagnostics),
     run_cohort_characterization = isTRUE(p$analyses$cohort_characterization),
     run_prognostic_model        = isTRUE(p$analyses$prognostic_model),
     run_causal_inference        = isTRUE(p$analyses$causal_inference),
