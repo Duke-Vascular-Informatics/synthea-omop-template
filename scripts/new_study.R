@@ -38,10 +38,11 @@ if (!file.exists(template)) {
 
 lines <- readLines(template, warn = FALSE)
 
-# Pre-fill study_name and output_folder with the supplied value.
-# results_schema and cohort_table auto-derive from study_name in config.R when omitted.
-lines <- gsub('"my_study"',        paste0('"', study_name, '"'),          lines, fixed = TRUE)
-lines <- gsub('"output/my_study"', paste0('"output/', study_name, '"'),   lines, fixed = TRUE)
+# Pre-fill study_name with the supplied value.
+# results_schema, cohort_table, and output_folder all auto-derive from study_name
+# in config.R via .slugify(), so pre-filling output_folder here is redundant and
+# would create a stale literal if study_name is later changed.
+lines <- gsub('"my_study"', paste0('"', study_name, '"'), lines, fixed = TRUE)
 
 writeLines(lines, dest)
 
@@ -57,7 +58,6 @@ message("Created study_params.yaml for study: ", study_name)
 study_branch <- gsub("_", "-", study_name)
 synthea_url  <- "https://github.com/adam-mdmph/synthea-pad.git"
 synthea_dir  <- file.path(getwd(), "external", "synthea")
-synthea_tmp  <- file.path(getwd(), "external", ".synthea_init_tmp")
 
 message("")
 message("Setting up synthea-pad submodule for branch: ", study_branch)
