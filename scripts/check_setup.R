@@ -280,11 +280,11 @@ if (is.null(analyses)) {
 } else {
   any_enabled <- FALSE
   flag_names <- c(
-    cohort_diagnostics      = "cohort_diagnostics",
     cohort_characterization = "cohort_characterization",
     prognostic_model        = "prognostic_model",
     causal_inference        = "causal_inference",
     integer_risk_score      = "integer_risk_score",
+    plp_model_validation    = "plp_model_validation",
     word_report             = "word_report"
   )
   for (flag in names(flag_names)) {
