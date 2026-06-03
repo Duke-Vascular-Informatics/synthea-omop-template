@@ -100,8 +100,11 @@ required <- c(
   "officer",                    # Word (.docx) report generation
   "flextable",                  # formatted tables for Word / HTML output
   "openxlsx",                   # Excel (.xlsx) output with formatting
-  "knitr"                       # R Markdown report rendering
+  "knitr",                      # R Markdown report rendering
+  NULL                          # trailing sentinel — allows every line above to
+                                # end with a comma safely; filtered out below
 )
+required <- required[!vapply(required, is.null, logical(1L))]
 
 
 # -----------------------------------------------------------------------------

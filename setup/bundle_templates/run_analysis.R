@@ -178,8 +178,8 @@ if (has_officer) {
   message("\n[run_analysis] Generating manuscript Word report ...")
   tryCatch({
     report_path <- generate_manuscript_report(
-      output_dir         = config$output_folder,            # .docx written here
-      score_output_dir   = config$risk_score_output_folder, # pipeline CSVs are here
+      output_dir         = config$output_folder,
+      score_output_dir   = config$risk_score_output_folder,
       connection_details = connection_details,
       config             = config
     )

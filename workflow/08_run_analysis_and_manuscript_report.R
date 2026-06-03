@@ -77,7 +77,9 @@ if (length(loaded_java_ns) > 0) {
 # =============================================================================
 # 3. Activate renv, load config, and source helper modules
 # =============================================================================
-Sys.setenv(RENV_CONFIG_SYNCHRONIZED_CHECK = "FALSE") # suppress renv "not synchronized" warning during analysis runs
+# Suppress the renv "project has not been synchronized" diagnostic that fires
+# when the lockfile differs from the library — expected during analysis runs.
+Sys.setenv(RENV_CONFIG_SYNCHRONIZED_CHECK = "FALSE")
 if (file.exists("renv/activate.R")) source("renv/activate.R")
 
 source("config.R")       # get_validation_config()
@@ -95,7 +97,7 @@ config <- get_validation_config()
 if (config$run_integer_risk_score)   source("R/risk_score_pipeline.R")
 if (config$run_plp_model_validation) source("R/plp_validation_pipeline.R")
 if (config$run_word_report)          source("R/report_extended.R")
-if (config$run_cohort_diagnostics)   library(CohortDiagnostics)
+if (config$run_cohort_characterization) library(CohortDiagnostics)
 
 
 # =============================================================================
@@ -112,7 +114,9 @@ library(SqlRender)
 # Load analysis packages based on the flags in study_params.yaml.
 # FeatureExtraction is a shared dependency for PLP, CohortMethod, and
 # CohortDiagnostics and is loaded once when any of those are enabled.
-if (config$run_cohort_diagnostics) {
+# CohortDiagnostics is gated on run_cohort_characterization because it is
+# used in the Section 5 characterization block (not the separate diagnostics block).
+if (config$run_cohort_characterization) {
   library(CohortDiagnostics)
 }
 if (config$run_cohort_characterization ||
@@ -716,10 +720,14 @@ if (config$run_causal_inference) {
 if (config$run_integer_risk_score) {
   message("[Step 8] Running integer risk score pipeline ...")
   lookup_path <- file.path("covariates", "risk_lookup.csv")
+  # Route pipeline outputs to a named subfolder to keep the top-level output
+  # directory clean; absent on a fresh checkout (before Step 6), falls back
+  # to logistic recalibration rather than crash.
   run_integer_risk_score_pipeline(
     config,
     connection_details,
-    lookup_file = if (file.exists(lookup_path)) lookup_path else NULL
+    lookup_file    = if (file.exists(lookup_path)) lookup_path else NULL,
+    output_folder  = file.path(config$output_folder, "risk_score")
   )
   message("[Step 8] Integer risk score pipeline complete.")
 }
@@ -735,7 +743,7 @@ if (config$run_word_report) {
   message("[Step 8] Generating Word report ...")
   generate_manuscript_report(
     output_dir         = config$output_folder,
-    score_output_dir   = config$output_folder,
+    score_output_dir   = file.path(config$output_folder, "risk_score"),
     connection_details = connection_details,
     config             = config
   )
