@@ -20,10 +20,10 @@ and other formats automatically.
 
 ## Contributions
 
-Contributions are welcome via pull request against the `adam-mdmph` branch.
-Please open an issue first for substantive changes to cohort definitions,
-covariate mappings, or analysis parameters so the clinical rationale can be
-discussed before code is written.
+Contributions are welcome via pull request from your working branch (named after
+your GitHub username) into `main`. Please open an issue first for substantive
+changes to cohort definitions, covariate mappings, or analysis parameters so the
+clinical rationale can be discussed before code is written.
 
 ## License
 
