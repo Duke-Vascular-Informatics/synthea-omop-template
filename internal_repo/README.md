@@ -10,25 +10,28 @@ mirror when `USE_INTERNAL_REPO=true`.
 |---------|---------------|-------------------|--------|
 | ETLSyntheaBuilder | 2.1 | 2.1 | ✅ Current |
 | CohortGenerator | 0.9.0 | — | ⚠️ Not in lockfile — may be unused |
-| FeatureExtraction | 3.6.0 | 3.13.0 | ❌ Stale — rebuild needed |
-| PatientLevelPrediction | 6.4.0 | 6.6.0 | ❌ Stale — rebuild needed |
+| FeatureExtraction | 3.6.0 | 3.13.0 | ❌ Stale — update needed |
+| PatientLevelPrediction | 6.4.0 | 6.6.0 | ❌ Stale — update needed |
 
-## Rebuilding stale binaries
+## Updating binaries
 
-Stale binaries must be rebuilt on a Windows machine with R 4.5 and internet
-access, then committed here. To rebuild:
+Run the following from any machine (macOS, Linux, or Windows) with internet
+access. `download.packages()` fetches pre-built Windows `.zip` binaries
+directly from CRAN regardless of the host OS:
 
 ```r
-# On a Windows machine with R 4.5 and internet access
 options(repos = c(CRAN = "https://cloud.r-project.org"))
-install.packages("pkgbuild")
+dest <- "internal_repo/bin/windows/contrib/4.5"
+dir.create(dest, recursive = TRUE, showWarnings = FALSE)
 
-# Build binary for a specific package version
-pkgbuild::build(binary = TRUE)
+download.packages(
+  c("FeatureExtraction", "PatientLevelPrediction"),
+  destdir = dest,
+  type    = "win.binary"
+)
 ```
 
-Or download pre-built binaries from the OHDSI HADES releases and place the
-`.zip` files in `internal_repo/bin/windows/contrib/4.5/`.
+After downloading, delete the stale `.zip` files and commit the new ones.
 
 ## ⚠️ Warning
 
