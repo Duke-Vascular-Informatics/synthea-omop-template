@@ -30,11 +30,11 @@ jobs:
 
       - name: Validate documentation commands and paths
         run: |
-          Rscript scripts/validate_docs_commands.R
+          Rscript scripts/maintainer/validate_docs_commands.R
 
       - name: Verify generated checklist step index
         run: |
-          Rscript scripts/generate_checklist_step_index.R --check
+          Rscript scripts/maintainer/generate_checklist_step_index.R --check
 
   # ---------------------------------------------------------------------------
   # Job 0b: Strict docs freeze checks for release-quality merges/tags.
@@ -57,11 +57,11 @@ jobs:
         env:
           DOCS_STRICT: '1'
         run: |
-          Rscript scripts/validate_docs_commands.R
+          Rscript scripts/maintainer/validate_docs_commands.R
 
       - name: Verify generated checklist step index (strict)
         run: |
-          Rscript scripts/generate_checklist_step_index.R --check
+          Rscript scripts/maintainer/generate_checklist_step_index.R --check
 
   # ---------------------------------------------------------------------------
   # Job 1: Lint all R source files with lintr.

@@ -101,19 +101,19 @@ Bundle contents include: redacted `study_params.yaml`, setup check report, git b
 1. Validate docs consistency:
 
 ```bash
-Rscript scripts/validate_docs_commands.R
+Rscript scripts/maintainer/validate_docs_commands.R
 ```
 
 2. Verify checklist step index is synchronized:
 
 ```bash
-Rscript scripts/generate_checklist_step_index.R --check
+Rscript scripts/maintainer/generate_checklist_step_index.R --check
 ```
 
 3. If step titles changed, regenerate checklist index:
 
 ```bash
-Rscript scripts/generate_checklist_step_index.R
+Rscript scripts/maintainer/generate_checklist_step_index.R
 ```
 
 ### Canonical Source Rules
@@ -128,8 +128,8 @@ Rscript scripts/generate_checklist_step_index.R
 Run strict docs checks before tagging or high-impact merges:
 
 ```bash
-DOCS_STRICT=1 Rscript scripts/validate_docs_commands.R
-Rscript scripts/generate_checklist_step_index.R --check
+DOCS_STRICT=1 Rscript scripts/maintainer/validate_docs_commands.R
+Rscript scripts/maintainer/generate_checklist_step_index.R --check
 ```
 
 Strict mode enforces:
