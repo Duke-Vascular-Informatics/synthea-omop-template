@@ -34,7 +34,7 @@ When a command changes:
 | Run analyses | `Rscript workflow/08_run_analysis_and_manuscript_report.R` | [Step 14](GETTING_STARTED.md#step-14-create-and-test-analysis-code-3060-minutes) |
 | Build portable bundle (bash) | `bash workflow/09_build_portable_analysis_bundle.sh` | [Step 15](GETTING_STARTED.md#step-15-create-transportable-code-packet-5-minutes) |
 | Build portable bundle (PowerShell) | `powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1` | [Step 15](GETTING_STARTED.md#step-15-create-transportable-code-packet-5-minutes) |
-| Create support bundle | `Rscript scripts/create_support_bundle.R` | [Analyst Playbook](ANALYST_PLAYBOOK.md) |
+| Create support bundle | `Rscript scripts/create_support_bundle.R` | [Playbooks](PLAYBOOKS.md) |
 
 ---
 

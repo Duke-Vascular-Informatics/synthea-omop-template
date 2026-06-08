@@ -1,31 +1,32 @@
 # dist/
 
-Distributable portable validation bundles. This directory is excluded from git
-(see `.gitignore` — `dist/*.zip` entry).
+Dated zip archives of the portable analysis bundle, written here by
+`workflow/09_build_portable_analysis_bundle.sh` as a local fallback
+(e.g. for offline transfer via scp when the GitLab remote is unreachable).
 
-## Contents
-
-Zip archives named `risk_score_validation_bundle_<YYYYMMDD_HHMMSS>.zip`, each containing
-a self-contained copy of the risk score pipeline that can be run at any OMOP CDM site
-without access to this repository.
+This directory is excluded from git (see `.gitignore`).
 
 ## Building a bundle
 
-```powershell
-# Build and zip the bundle
+```bash
+# bash
+bash workflow/09_build_portable_analysis_bundle.sh
+
+# PowerShell
 powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
 ```
 
-The bundle is created by `scripts/bundle/build_portable_risk_score_bundle.ps1` and
-written here as `dist/risk_score_validation_bundle_<timestamp>.zip`.
+The primary delivery mechanism is a push to the institutional GitLab remote
+configured in `.env` (`BUNDLE_GITLAB_REMOTE`). The zip written here is a
+secondary fallback only.
 
 ## Bundle contents
 
-| Path in zip | Description |
-|-------------|-------------|
-| `R/` | Helper functions (connection, cohorts, pipeline, reporting) |
+| Path | Description |
+|------|-------------|
+| `R/` | Analysis pipeline helpers (connection, cohorts, reporting) |
 | `cohorts/` | Target and outcome cohort SQL definitions |
-| `risk_score/` | Component, concept, and lookup CSVs |
+| `covariates/` | Covariate and concept CSVs |
 | `config.R` | Connection parameter template (recipient fills in credentials) |
-| `workflow/08_run_analysis_and_manuscript_report.R` | Analysis entry point |
-| `portable/` | Pre-built R package binaries for offline install |
+| `run_analysis.R` | Analysis entry point |
+| `drivers/` | MSSQL JDBC JAR for offline SQL Server connectivity |
