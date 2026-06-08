@@ -4,36 +4,36 @@ Pre-built Windows R package binaries for air-gapped HPC environments where
 CRAN is not accessible. Used by `setup/install_packages.R` as a local CRAN
 mirror when `USE_INTERNAL_REPO=true`.
 
+**Only packages unavailable on CRAN belong here.** CRAN-available packages
+(including most HADES packages) are handled directly by renv — do not
+duplicate them here.
+
 ## Current binaries (R 4.5, Windows)
 
-| Package | Binary version | renv.lock version | Status |
-|---------|---------------|-------------------|--------|
-| ETLSyntheaBuilder | 2.1 | 2.1 | ✅ Current |
-| CohortGenerator | 0.9.0 | — | ⚠️ Not in lockfile — may be unused |
-| FeatureExtraction | 3.6.0 | 3.13.0 | ❌ Stale — update needed |
-| PatientLevelPrediction | 6.4.0 | 6.6.0 | ❌ Stale — update needed |
+| Package | Version | Why it's here |
+|---------|---------|---------------|
+| ETLSyntheaBuilder | 2.1 | Not on CRAN — OHDSI GitHub only |
 
-## Updating binaries
+## Adding a package
 
-Run the following from any machine (macOS, Linux, or Windows) with internet
-access. `download.packages()` fetches pre-built Windows `.zip` binaries
-directly from CRAN regardless of the host OS:
+Before adding a binary, verify the package is not on CRAN:
+
+```r
+available.packages(repos = "https://cloud.r-project.org")["MyPackage", ]
+# Returns NA row → not on CRAN → add binary here
+# Returns valid row → on CRAN → let renv handle it, do not add here
+```
+
+If the package is genuinely not on CRAN, download the Windows binary from
+any OS:
 
 ```r
 options(repos = c(CRAN = "https://cloud.r-project.org"))
-dest <- "internal_repo/bin/windows/contrib/4.5"
-dir.create(dest, recursive = TRUE, showWarnings = FALSE)
-
 download.packages(
-  c("FeatureExtraction", "PatientLevelPrediction"),
-  destdir = dest,
+  "PackageName",
+  destdir = "internal_repo/bin/windows/contrib/4.5",
   type    = "win.binary"
 )
 ```
 
-After downloading, delete the stale `.zip` files and commit the new ones.
-
-## ⚠️ Warning
-
-Using stale binaries in air-gapped installs will produce version mismatches
-with `renv.lock`. Update binaries before deploying to a new HPC site.
+Then commit the `.zip` and update this README.
