@@ -87,6 +87,7 @@ cran_packages <- c(
   "flextable",           # Formatted tables for Word / HTML output
   "openxlsx",            # Excel (.xlsx) output
   "knitr",               # R Markdown report rendering
+  "yaml",                # YAML config parsing for study_params.yaml
   # Dev / housekeeping
   "remotes",
   "languageserver",
