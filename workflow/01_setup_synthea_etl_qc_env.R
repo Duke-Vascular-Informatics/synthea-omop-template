@@ -159,9 +159,79 @@ run_db_preflight(
 )
 
 # -----------------------------------------------------------------------------
+# Chunk 7b: Shared vocabulary reachability check.
+# Purpose:
+# - Confirm the connection can see the shared OMOP vocabulary schema (omop_vocab)
+#   and that it is populated. The vocabulary is the one hard prerequisite that
+#   must exist before any cohort or covariate work; downstream steps query it.
+# - Crucially, this does NOT require the study CDM (cdm_schema) to contain any
+#   synthetic data yet. Step 1 runs on a freshly created study before the
+#   Synthea ETL (Steps 4-5) has populated the CDM, so we report CDM status as
+#   informational only and never fail on an empty CDM.
+# Outcome:
+# - Clear [OK]/[WARN] status for both the vocabulary and the study CDM.
+# - A populated vocabulary is required: a clear, actionable error (pointing at
+#   the vocabulary loader) if it is missing, instead of a cryptic SQL failure
+#   three steps later.
+# -----------------------------------------------------------------------------
+
+conn <- DatabaseConnector::connect(connection_details)
+on.exit(try(DatabaseConnector::disconnect(conn), silent = TRUE), add = TRUE)
+
+# Vocabulary: must exist AND be populated.
+vocab_rows <- tryCatch(
+  {
+    sql <- SqlRender::render(
+      "SELECT COUNT_BIG(*) AS n FROM @vocab_schema.concept;",
+      vocab_schema = config$vocab_schema
+    )
+    sql <- SqlRender::translate(sql, targetDialect = config$dbms)
+    r <- DatabaseConnector::querySql(conn, sql)
+    as.numeric(r[[1]][[1]])
+  },
+  error = function(e) NA_real_
+)
+
+if (is.na(vocab_rows) || vocab_rows <= 0) {
+  stop(
+    "Shared OMOP vocabulary not found or empty in schema '", config$vocab_schema, "'.\n",
+    "The vocabulary is a one-time, workspace-wide prerequisite. Load it from the\n",
+    "workspace root with:\n",
+    "  Rscript infrastructure/scripts/setup_omop_vocab_schema.R --study-dir synthea-omop-template\n",
+    "See docs/GETTING_STARTED.md (Step 9) for details."
+  )
+}
+cat(sprintf("[OK]   Shared vocabulary reachable: %s.concept has %s concepts.\n",
+            config$vocab_schema, format(vocab_rows, big.mark = ",", scientific = FALSE)))
+
+# Study CDM: informational only — empty is expected before the Synthea ETL runs.
+cdm_status <- tryCatch(
+  {
+    sql <- SqlRender::render(
+      "SELECT COUNT_BIG(*) AS n FROM @cdm_schema.person;",
+      cdm_schema = config$cdm_schema
+    )
+    sql <- SqlRender::translate(sql, targetDialect = config$dbms)
+    r <- DatabaseConnector::querySql(conn, sql)
+    as.numeric(r[[1]][[1]])
+  },
+  error = function(e) NA_real_
+)
+if (is.na(cdm_status)) {
+  cat(sprintf("[WARN] Study CDM schema '%s' not populated yet (no person table). This is\n",
+              config$cdm_schema))
+  cat("       expected before the Synthea ETL — run Steps 4-5 to generate and load data.\n")
+} else {
+  cat(sprintf("[OK]   Study CDM '%s' has %s persons.\n",
+              config$cdm_schema, format(cdm_status, big.mark = ",", scientific = FALSE)))
+}
+
+DatabaseConnector::disconnect(conn)
+
+# -----------------------------------------------------------------------------
 # Chunk 8: Final completion message.
 # Purpose:
 # - Provide an explicit success signal for automation logs and interactive users.
 # -----------------------------------------------------------------------------
 
-cat("Step 1 complete: environment and packages are ready, and database connectivity preflight passed.\n")
+cat("Step 1 complete: environment and packages are ready, database connectivity preflight passed, and the shared vocabulary is reachable.\n")
