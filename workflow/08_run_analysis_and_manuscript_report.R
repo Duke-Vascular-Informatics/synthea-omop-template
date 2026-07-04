@@ -191,25 +191,30 @@ connection_details <- build_connection_details(config)
 verify_omop_concepts <- function(
     connection_details,
     study_params_path       = "study_params.yaml",
-    covariate_concepts_path = "covariates/covariate_concepts.csv"
+    covariate_concepts_path = "covariates/covariate_concepts.csv",
+    extra_concept_paths     = character(0)
 ) {
   message("[Step 8] Verifying OMOP concept IDs against omop_vocab ...")
 
   concept_ids <- integer(0)
 
-  # ---- Source 1: covariates/covariate_concepts.csv ---------------------------
+  # ---- Source 1: covariate concept CSV(s) ------------------------------------
   # comment.char = "#" strips header comment blocks written above the CSV header
   # row (e.g. study description, verification notes). concept_id values of 0
   # are placeholder rows and are excluded from the check.
-  if (file.exists(covariate_concepts_path)) {
-    csv_raw <- tryCatch(
-      read.csv(covariate_concepts_path, comment.char = "#",
-               stringsAsFactors = FALSE, na.strings = c("", "NA")),
-      error = function(e) NULL
-    )
-    if (!is.null(csv_raw) && "concept_id" %in% names(csv_raw)) {
-      ids <- suppressWarnings(as.integer(csv_raw$concept_id))
-      concept_ids <- c(concept_ids, ids[!is.na(ids) & ids > 0L])
+  # extra_concept_paths lets comparator-model specs (e.g. covariates/vqi_cri/
+  # concepts.csv) be verified alongside the primary covariate_concepts.csv.
+  for (path in c(covariate_concepts_path, extra_concept_paths)) {
+    if (file.exists(path)) {
+      csv_raw <- tryCatch(
+        read.csv(path, comment.char = "#",
+                 stringsAsFactors = FALSE, na.strings = c("", "NA")),
+        error = function(e) NULL
+      )
+      if (!is.null(csv_raw) && "concept_id" %in% names(csv_raw)) {
+        ids <- suppressWarnings(as.integer(csv_raw$concept_id))
+        concept_ids <- c(concept_ids, ids[!is.na(ids) & ids > 0L])
+      }
     }
   }
 
