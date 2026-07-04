@@ -975,6 +975,128 @@ run_synthea_full_csv_builder_etl <- function(
       sqlOnly = TRUE
     ))
 
+    # -------------------------------------------------------------------------
+    # Patch insert_observation.sql to add SNOMED and HCPCS blocks from
+    # synthea.observations. ETLSyntheaBuilder only generates a LOINC block for
+    # observations.csv; SNOMED- and HCPCS-coded Observation states (e.g.
+    # walking aid use, palliative care consult, geriatric assessment) map to
+    # Observation-domain OMOP concepts via those vocabularies and would be
+    # silently dropped without this patch.
+    # -------------------------------------------------------------------------
+    obs_sql_path <- file.path("output", "etl", "insert_observation.sql")
+    if (file.exists(obs_sql_path)) {
+      obs_sql <- readLines(obs_sql_path, warn = FALSE)
+      cdm     <- config$cdm_schema
+
+      snomed_block <- c(
+        "",
+        "union all",
+        "",
+        "select",
+        "p.person_id                                person_id,",
+        "srctostdvm.target_concept_id               observation_concept_id,",
+        "o.date                                     observation_date,",
+        "o.date                                     observation_datetime,",
+        "38000280                                   observation_type_concept_id,",
+        "TRY_CAST(o.value AS float)                 value_as_number,",
+        "cast(null as varchar)                      value_as_string,",
+        "0                                          value_as_concept_id,",
+        "0                                          qualifier_concept_id,",
+        "0                                          unit_concept_id,",
+        "pr.provider_id                             provider_id,",
+        "fv.visit_occurrence_id_new                 visit_occurrence_id,",
+        "fv.visit_occurrence_id_new + 1000000       visit_detail_id,",
+        "o.code                                     observation_source_value,",
+        "srctosrcvm.source_concept_id               observation_source_concept_id,",
+        "left(o.units,50)                           unit_source_value,",
+        "cast(null as varchar)                      qualifier_source_value,",
+        "left(o.value,50)                           value_source_value,",
+        "cast(null as bigint)                       observation_event_id,",
+        "cast(null as int)                          obs_event_field_concept_id",
+        "",
+        paste0("from synthea.observations o"),
+        paste0("join ", cdm, ".source_to_standard_vocab_map srctostdvm"),
+        "  on srctostdvm.source_code             = CAST(o.code as VARCHAR)",
+        " and srctostdvm.target_domain_id        = 'Observation'",
+        " and srctostdvm.target_vocabulary_id    = 'SNOMED'",
+        " and srctostdvm.target_standard_concept = 'S'",
+        " and srctostdvm.target_invalid_reason is null",
+        paste0("join ", cdm, ".source_to_source_vocab_map srctosrcvm"),
+        "  on srctosrcvm.source_code              = CAST(o.code as VARCHAR)",
+        " and srctosrcvm.source_vocabulary_id     = 'SNOMED'",
+        " and srctosrcvm.source_domain_id         = 'Observation'",
+        paste0("left join ", cdm, ".final_visit_ids fv"),
+        "  on fv.encounter_id                     = o.encounter",
+        "left join synthea.encounters e",
+        "  on o.encounter                         = e.id",
+        " and o.patient                           = e.patient",
+        paste0("left join ", cdm, ".provider pr"),
+        "  on e.provider                          = pr.provider_source_value",
+        paste0("join ", cdm, ".person p"),
+        "  on p.person_source_value               = o.patient"
+      )
+
+      hcpcs_block <- c(
+        "",
+        "union all",
+        "",
+        "select",
+        "p.person_id                                person_id,",
+        "srctostdvm.target_concept_id               observation_concept_id,",
+        "o.date                                     observation_date,",
+        "o.date                                     observation_datetime,",
+        "38000280                                   observation_type_concept_id,",
+        "TRY_CAST(o.value AS float)                 value_as_number,",
+        "cast(null as varchar)                      value_as_string,",
+        "0                                          value_as_concept_id,",
+        "0                                          qualifier_concept_id,",
+        "0                                          unit_concept_id,",
+        "pr.provider_id                             provider_id,",
+        "fv.visit_occurrence_id_new                 visit_occurrence_id,",
+        "fv.visit_occurrence_id_new + 1000000       visit_detail_id,",
+        "o.code                                     observation_source_value,",
+        "srctosrcvm.source_concept_id               observation_source_concept_id,",
+        "left(o.units,50)                           unit_source_value,",
+        "cast(null as varchar)                      qualifier_source_value,",
+        "left(o.value,50)                           value_source_value,",
+        "cast(null as bigint)                       observation_event_id,",
+        "cast(null as int)                          obs_event_field_concept_id",
+        "",
+        paste0("from synthea.observations o"),
+        paste0("join ", cdm, ".source_to_standard_vocab_map srctostdvm"),
+        "  on srctostdvm.source_code             = CAST(o.code as VARCHAR)",
+        " and srctostdvm.target_domain_id        = 'Observation'",
+        " and srctostdvm.target_vocabulary_id    = 'HCPCS'",
+        " and srctostdvm.target_standard_concept = 'S'",
+        " and srctostdvm.target_invalid_reason is null",
+        paste0("join ", cdm, ".source_to_source_vocab_map srctosrcvm"),
+        "  on srctosrcvm.source_code              = CAST(o.code as VARCHAR)",
+        " and srctosrcvm.source_vocabulary_id     = 'HCPCS'",
+        " and srctosrcvm.source_domain_id         = 'Observation'",
+        paste0("left join ", cdm, ".final_visit_ids fv"),
+        "  on fv.encounter_id                     = o.encounter",
+        "left join synthea.encounters e",
+        "  on o.encounter                         = e.id",
+        " and o.patient                           = e.patient",
+        paste0("left join ", cdm, ".provider pr"),
+        "  on e.provider                          = pr.provider_source_value",
+        paste0("join ", cdm, ".person p"),
+        "  on p.person_source_value               = o.patient"
+      )
+
+      # Insert new blocks before the closing `) tmp` line
+      close_idx <- tail(which(trimws(obs_sql) == ") tmp"), 1)
+      if (length(close_idx) == 1) {
+        obs_sql <- c(obs_sql[seq_len(close_idx - 1)],
+                     snomed_block, hcpcs_block,
+                     obs_sql[close_idx:length(obs_sql)])
+        writeLines(obs_sql, obs_sql_path)
+        message("[ETL patch] insert_observation.sql extended with SNOMED + HCPCS observation blocks.")
+      } else {
+        warning("[ETL patch] Could not locate ') tmp' in insert_observation.sql — patch skipped.")
+      }
+    }
+
     conn_events <- connect_with_retry(connection_details)
     on.exit(DatabaseConnector::disconnect(conn_events), add = TRUE)
 

@@ -382,6 +382,29 @@ build_cohorts <- function(connection, config) {
     }
   }
 
+  # ---- Outcome subtype cohorts -----------------------------------------------
+  # Build each subtype cohort listed in config$outcome_subtypes, if the study
+  # defines any. These are used only for breakdown figures and supplemental
+  # tables; they do NOT drive score validation metrics (that uses the
+  # aggregate outcome cohort). Subtype SQL files accept the same render_params
+  # as the outcome cohort but use the subtype cohort_id in place of
+  # outcome_cohort_id.
+  if (length(config$outcome_subtypes) > 0) {
+    for (st in config$outcome_subtypes) {
+      instantiate_cohort(
+        connection    = connection,
+        sql_file      = st$sql_file,
+        render_params = c(common_params,
+                          list(
+                            target_cohort_id  = config$target_cohort_id,
+                            outcome_cohort_id = st$cohort_id
+                          )),
+        label = paste0("Outcome subtype '", st$label,
+                       "' (id ", st$cohort_id, ")")
+      )
+    }
+  }
+
   # ---- Row counts ------------------------------------------------------------
   target_n <- count_cohort(connection, config, config$target_cohort_id,
                             "Target cohort")
@@ -406,6 +429,18 @@ build_cohorts <- function(connection, config) {
   comparator_n <- if (has_comparator)
     count_cohort(connection, config, config$comparator_cohort_id, "Comparator cohort")
   else NA_integer_
+
+  # Subtype counts (logged but not returned individually; zero count triggers warning).
+  if (length(config$outcome_subtypes) > 0) {
+    for (st in config$outcome_subtypes) {
+      n_st <- count_cohort(connection, config, st$cohort_id,
+                           paste0("Subtype '", st$label, "'"))
+      if (n_st == 0) {
+        warning("Outcome subtype cohort '", st$label,
+                "' (id ", st$cohort_id, ") is EMPTY.")
+      }
+    }
+  }
 
   invisible(list(
     target_n     = target_n,
