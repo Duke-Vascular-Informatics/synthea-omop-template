@@ -415,9 +415,12 @@ if (!file.exists(registry_path)) {
   study_dir <- basename(getwd())
 
   # Check for an existing entry by scanning raw text — avoids a hard yaml dep.
+  # NOTE: entries are list items ("  - dir: <name>"), so the match must allow
+  # for the "- " list marker between the leading whitespace and "dir:", and
+  # must anchor on the line end so a prefix (e.g. "foo") can't match "foo-bar".
   registry_text <- paste(readLines(registry_path, warn = FALSE), collapse = "\n")
   already_registered <- grepl(
-    paste0("(^|\\n)\\s+dir:\\s+['\"]?", study_dir, "['\"]?"),
+    paste0("(^|\\n)\\s*-\\s*dir:\\s+['\"]?", study_dir, "['\"]?\\s*(\\n|$)"),
     registry_text,
     perl = TRUE
   )
