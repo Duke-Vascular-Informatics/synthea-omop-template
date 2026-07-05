@@ -469,6 +469,57 @@ print(signal_df)
 cat("\n")
 
 # -----------------------------------------------------------------------------
+# Visit-based outcome check: discharge disposition breakdown.
+#
+# Enabled when config$outcome_domain == "visit_discharge" — for outcomes
+# recorded as a visit-level attribute (e.g. non-home discharge) rather than
+# a condition_occurrence diagnosis code. Verifies that:
+#   - NUBC source codes were loaded (discharged_to_source_value populated)
+#   - OMOP concept IDs were mapped (discharged_to_concept_id non-zero)
+#   - The expected disposition categories are present
+# Home discharge (NUBC 01 — the fixed National Uniform Billing Committee
+# code for "discharged to home") is reported separately as a reference row;
+# every other code counts toward the non-home outcome signal.
+# -----------------------------------------------------------------------------
+if (identical(config$outcome_domain, "visit_discharge")) {
+  visit_outcome_sql <- SqlRender::translate(SqlRender::render(
+    paste0(
+      "SELECT\n",
+      "  discharged_to_source_value                        AS nubc_code,\n",
+      "  MAX(c.concept_name)                               AS disposition_label,\n",
+      "  MAX(discharged_to_concept_id)                     AS omop_concept_id,\n",
+      "  COUNT(*)                                          AS visit_count,\n",
+      "  COUNT(DISTINCT vo.person_id)                      AS person_count,\n",
+      "  CASE WHEN discharged_to_source_value = '01'\n",
+      "       THEN 'home (reference)'\n",
+      "       ELSE 'non-home' END                            AS disposition_flag\n",
+      "FROM @cdm_schema.visit_occurrence vo\n",
+      "LEFT JOIN @cdm_schema.concept c\n",
+      "  ON c.concept_id = vo.discharged_to_concept_id\n",
+      "WHERE discharged_to_source_value IS NOT NULL\n",
+      "GROUP BY discharged_to_source_value,\n",
+      "         CASE WHEN discharged_to_source_value = '01'\n",
+      "              THEN 'home (reference)' ELSE 'non-home' END\n",
+      "ORDER BY visit_count DESC;"
+    ),
+    cdm_schema = cdm_schema_active
+  ), targetDialect = config$dbms)
+
+  visit_outcome_df <- run_query(visit_outcome_sql)
+
+  non_home_visits  <- sum(visit_outcome_df$visitCount[visit_outcome_df$dispositionFlag == "non-home"], na.rm = TRUE)
+  home_visits      <- sum(visit_outcome_df$visitCount[visit_outcome_df$dispositionFlag == "home (reference)"], na.rm = TRUE)
+  non_home_persons <- sum(visit_outcome_df$personCount[visit_outcome_df$dispositionFlag == "non-home"], na.rm = TRUE)
+
+  cat("Visit-based outcome check (discharge disposition)\n")
+  print(visit_outcome_df)
+  cat(sprintf(
+    "\nDisposition summary: %d non-home discharge visits across %d persons | %d home-discharge visits\n\n",
+    non_home_visits, non_home_persons, home_visits
+  ))
+}
+
+# -----------------------------------------------------------------------------
 # Optional threshold gate for automated pipeline enforcement.
 # -----------------------------------------------------------------------------
 if (isTRUE(opts$enforce_thresholds)) {

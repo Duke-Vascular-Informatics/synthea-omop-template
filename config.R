@@ -174,6 +174,16 @@ get_validation_config <- function() {
     # -------------------------------------------------------------------------
     outcome_concept_ids = as_int_vec(p$outcome$ancestor_concept_ids),
 
+    # outcome_domain selects which QA check quality_check_etl.R runs for the
+    # outcome signal:
+    #   "condition"      (default) — a diagnosis code in condition_occurrence,
+    #                       verified via the concept_ancestor rollup check.
+    #   "visit_discharge" — a visit-level attribute recorded on
+    #                       visit_occurrence.discharged_to_concept_id (e.g.
+    #                       non-home discharge), verified via a NUBC
+    #                       discharge-disposition breakdown instead.
+    outcome_domain = p$outcome$domain %||% "condition",
+
     # -------------------------------------------------------------------------
     # Existing ATLAS cohorts (optional).
     # If use_atlas_cohorts = TRUE the target cohort is copied from ATLAS.
