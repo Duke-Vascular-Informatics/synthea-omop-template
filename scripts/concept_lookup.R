@@ -173,6 +173,7 @@ if (nrow(results) < 3) {
     SqlRender::translate(sql_synonym, "sql server"),
     snakeCaseToCamelCase = FALSE
   )
+  names(results)     <- toupper(names(results))
   names(syn_results) <- toupper(names(syn_results))
   # Combine, deduplicating by concept_id.
   results <- unique(rbind(results, syn_results))
