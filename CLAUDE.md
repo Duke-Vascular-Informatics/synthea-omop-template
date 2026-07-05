@@ -25,27 +25,19 @@ git commit -m "chore: update synthea-omop-template submodule pointer"
 git push origin main
 ```
 
-### Daily Sync Routine
+### Template Sync Workflow
 
-When running the repository sync agent (comparing analysis repos against this template), **do not use a hardcoded repo list**. Instead, auto-discover repos at runtime:
+Comparing analysis repos against this template is a **manual, on-demand step** — run the
+`/sync-template` skill from the workspace root when you want to check for infrastructure
+improvements to back-port. There is no automatic/scheduled routine; the previous every-3-day
+scheduled routine was removed because it generated unnecessary GitHub issues on a fixed
+cadence regardless of whether anything had actually changed.
 
-1. Locate the workspace root — the parent directory of this repo:
-   ```bash
-   WORKSPACE_ROOT="$(git -C . rev-parse --show-toplevel)/.."
-   ```
-2. Find all sibling directories whose names match `pad-*`:
-   ```bash
-   find "$WORKSPACE_ROOT" -maxdepth 1 -type d -name 'pad-*' | sort
-   ```
-   Or use the helper script:
-   ```bash
-   bash scripts/list_analysis_repos.sh
-   ```
-3. For each discovered directory, read its GitHub remote from git:
-   ```bash
-   git -C "$REPO_DIR" remote get-url origin
-   ```
-4. Compare the `main` branch of each discovered repo against this template's `main` branch.
-5. Apply the file-scope rules (PROPAGATE / SKIP paths) defined in the sync agent prompt.
-
-**Naming convention:** analysis repos follow `pad-{study-name-kebab-case}` (e.g. `pad-oler-ssi-val`, `pad-amp-nhd-val`). Any new repo added to the workspace root matching this pattern is automatically included in the next sync run — no prompt editing required.
+**Repo list source — always `studies.yaml`, never an ad hoc list.** `/sync-template` reads
+`<workspace_root>/studies.yaml` for the authoritative list of studies, ETLs, and templates.
+Do not hardcode a repo list and do not auto-discover repos by globbing directory names
+(e.g. `find ... -name 'pad-*'`) — `studies.yaml` is the single source of truth and already
+covers repos that aren't physically present in the workspace folder (via GitHub API) and
+repos that don't follow the `pad-*` naming convention (e.g. ETLs, `tbad-tevar-rupture-val`).
+Register new studies there (workflow/02 does this automatically on first successful run)
+rather than relying on any naming pattern.
