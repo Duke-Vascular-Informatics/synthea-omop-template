@@ -228,6 +228,108 @@ count_cohort <- function(connection, config, cohort_id, label) {
   n
 }
 
+# Instantiate every outcome cohort in config$additional_outcomes and classify
+# each as this study's primary or secondary outcome.
+#
+# Primary vs. secondary rule:
+# - When has_primary_outcome is TRUE (config$outcome_cohort_id is set), that
+#   single cohort is always the primary outcome and every entry here is
+#   secondary — any is_primary flags in additional_outcomes are ignored.
+# - When has_primary_outcome is FALSE (pure descriptive designs that define
+#   every outcome via additional_outcomes), set is_primary: true on exactly
+#   one entry to designate it primary; all others are secondary. If no entry
+#   sets is_primary, every outcome here is secondary and the study has no
+#   single declared primary outcome.
+#
+# Outcomes with ancestor_concept_ids still containing placeholder 0 are
+# SKIPPED with a clear message (rather than stopping the entire run) so that
+# already-verified outcomes continue to build while concept queries are
+# still pending.
+#
+# Composite outcomes (domain = "composite") self-join the cohort table on
+# composite_cohort_ids — those component cohorts must already be built.
+#
+# Returns a data.frame (one row per configured outcome) with columns:
+#   name, label, cohort_id, role ("primary"/"secondary"), n, skipped.
+instantiate_additional_outcomes <- function(connection, config, has_primary_outcome) {
+  if (length(config$additional_outcomes) == 0) {
+    message("No additional_outcomes configured in study_params.yaml — skipping.")
+    return(invisible(NULL))
+  }
+
+  fmt_ids <- function(ids) {
+    if (is.null(ids) || length(ids) == 0L) "" else paste(as.integer(ids), collapse = ", ")
+  }
+
+  common_params <- list(
+    cdm_database_schema    = config$cdm_schema,
+    target_database_schema = results_schema_prefix(config),
+    target_cohort_table    = config$cohort_table,
+    study_start_date       = config$study_start_date,
+    study_end_date         = config$study_end_date
+  )
+
+  skipped <- character(0)
+  rows <- list()
+
+  for (o in config$additional_outcomes) {
+    is_primary <- !has_primary_outcome && isTRUE(o$is_primary)
+    role       <- if (is_primary) "primary" else "secondary"
+    role_label <- if (is_primary) "Primary" else "Secondary"
+
+    # Skip outcomes whose concept IDs have not yet been filled in.
+    # The SQL guard would catch this too, but we skip early for a friendlier message.
+    if (length(o$ancestor_concept_ids) > 0 && any(o$ancestor_concept_ids == 0L)) {
+      message(sprintf("  [SKIP] %s outcome %-40s — ancestor_concept_ids = 0 (vocab query pending).",
+                      role_label, o$label))
+      skipped <- c(skipped, o$name)
+      rows[[length(rows) + 1]] <- data.frame(
+        name = o$name, label = o$label, cohort_id = o$cohort_id,
+        role = role, n = NA_integer_, skipped = TRUE,
+        stringsAsFactors = FALSE
+      )
+      next
+    }
+
+    render_params <- c(
+      common_params,
+      list(
+        outcome_cohort_id    = o$cohort_id,
+        outcome_concept_ids  = fmt_ids(o$ancestor_concept_ids),
+        component_cohort_ids = fmt_ids(o$composite_cohort_ids)
+      )
+    )
+
+    instantiate_cohort(
+      connection    = connection,
+      sql_file      = o$sql_file,
+      render_params = render_params,
+      label         = paste0(role_label, " outcome: ", o$label, " (id ", o$cohort_id, ")")
+    )
+
+    n <- count_cohort(connection, config, o$cohort_id,
+                      paste0(role_label, " outcome '", o$label, "'"))
+    if (n == 0) {
+      warning(role_label, " outcome '", o$label, "' (id ", o$cohort_id, ") is EMPTY.")
+    }
+
+    rows[[length(rows) + 1]] <- data.frame(
+      name = o$name, label = o$label, cohort_id = o$cohort_id,
+      role = role, n = n, skipped = FALSE,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  if (length(skipped) > 0) {
+    message("\nOutcomes skipped (concept IDs pending vocab query): ",
+            paste(skipped, collapse = ", "))
+    message("Run: Rscript scripts/concept_lookup.R \"<term>\" [domain]",
+            " then set ancestor_concept_ids in study_params.yaml additional_outcomes.")
+  }
+
+  do.call(rbind, rows)
+}
+
 # Main entry point: validate concept IDs, create schema + table, instantiate
 # all cohorts, print row counts.
 build_cohorts <- function(connection, config) {
@@ -442,9 +544,53 @@ build_cohorts <- function(connection, config) {
     }
   }
 
+  # ---- Additional outcomes (secondary, unless flagged is_primary) -----------
+  # See instantiate_additional_outcomes() for the primary/secondary rule: the
+  # single config$outcome_cohort_id above is always primary when set; when it
+  # is NULL, at most one additional_outcomes entry may set is_primary: true.
+  additional_outcomes_result <- NULL
+  if (length(config$additional_outcomes) > 0) {
+    message("\n--- Building additional outcomes ---")
+    additional_outcomes_result <- instantiate_additional_outcomes(
+      connection, config, has_primary_outcome = has_outcome
+    )
+  }
+
+  # ---- Study outcome summary --------------------------------------------------
+  # Prints a single, unambiguous PRIMARY vs. SECONDARY outcome summary so
+  # anyone reviewing the Step 2 log can see at a glance which outcome drives
+  # score validation / causal estimates vs. which are supplemental.
+  fmt_n <- function(n) if (is.na(n)) "skipped" else format(n, big.mark = ",")
+  cat("\nStudy outcome summary:\n")
+  if (has_outcome) {
+    cat(sprintf("  PRIMARY:   %s (id %s, n=%s)\n",
+                config$outcome_label %||% "Outcome cohort",
+                config$outcome_cohort_id, fmt_n(outcome_n)))
+  } else if (!is.null(additional_outcomes_result) &&
+             any(additional_outcomes_result$role == "primary")) {
+    p <- additional_outcomes_result[additional_outcomes_result$role == "primary", , drop = FALSE][1, ]
+    cat(sprintf("  PRIMARY:   %s (id %s, n=%s)\n", p$label, p$cohort_id, fmt_n(p$n)))
+  } else {
+    cat("  PRIMARY:   none declared (set outcome.cohort_id, or is_primary: true on one additional_outcomes entry)\n")
+  }
+  secondary <- if (!is.null(additional_outcomes_result))
+    additional_outcomes_result[additional_outcomes_result$role == "secondary", , drop = FALSE]
+  else
+    NULL
+  if (!is.null(secondary) && nrow(secondary) > 0) {
+    cat("  SECONDARY:\n")
+    for (i in seq_len(nrow(secondary))) {
+      s <- secondary[i, ]
+      cat(sprintf("    - %s (id %s, n=%s)\n", s$label, s$cohort_id, fmt_n(s$n)))
+    }
+  } else {
+    cat("  SECONDARY: none\n")
+  }
+
   invisible(list(
-    target_n     = target_n,
-    comparator_n = comparator_n,
-    outcome_n    = outcome_n
+    target_n           = target_n,
+    comparator_n       = comparator_n,
+    outcome_n          = outcome_n,
+    additional_outcomes = additional_outcomes_result
   ))
 }
