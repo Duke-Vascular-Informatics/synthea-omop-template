@@ -50,7 +50,7 @@ get_validation_config <- function() {
   hpc_jar_default <- file.path(
     dirname(normalizePath(getwd(), mustWork = FALSE)),
     "drivers",
-    "prcc-jdbc-mssql-1.0-SNAPSHOT.jar"
+    "hpc-jdbc-wrapper.jar"
   )
   hpc_jar <- Sys.getenv("OMOP_HPC_JAR", unset = hpc_jar_default)
 

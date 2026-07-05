@@ -114,6 +114,16 @@ outcome:
   # TODO [OUTCOME COHORT]: Replace 0 with your verified outcome concept ID.
   ancestor_concept_ids: [0]   # TODO [OUTCOME COHORT]: replace 0 — use /concept-lookup [REQUIRES vocab query]
 
+  # domain selects which QA check scripts/quality_check_etl.R runs for the
+  # outcome signal:
+  #   "condition"       (default) — a diagnosis code in condition_occurrence.
+  #   "visit_discharge" — a visit-level attribute on
+  #                       visit_occurrence.discharged_to_concept_id (e.g. a
+  #                       non-home discharge outcome). Runs a NUBC discharge
+  #                       disposition breakdown instead of the concept_ancestor
+  #                       rollup check.
+  domain: "condition"
+
 # =============================================================================
 # COMPARATOR COHORT (causal inference only)
 # Set cohort_id to ~ (null) to disable for all other study designs.
