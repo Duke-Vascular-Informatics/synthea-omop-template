@@ -12,7 +12,13 @@ local({
       key <- trimws(substr(line, 1L, eq - 1L))
       val <- trimws(substr(line, eq + 1L, nchar(line)))
       val <- gsub('^["\']|["\']$', "", val)  # strip optional surrounding quotes
-      do.call(Sys.setenv, setNames(list(val), key))
+      # setNames() lives in the stats package, not base -- at this point in
+      # .Rprofile's startup sequence stats may not be attached yet in some R
+      # builds, causing "could not find function setNames". `names<-` is a
+      # base primitive, so build the named list without setNames().
+      args <- list(val)
+      names(args) <- key
+      do.call(Sys.setenv, args)
     }
   }
 })
