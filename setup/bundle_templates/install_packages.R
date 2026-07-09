@@ -21,7 +21,7 @@
 #
 # WHAT IS INSTALLED:
 #   Core pipeline  : DatabaseConnector, SqlRender, dplyr, ggplot2, pROC,
-#                    PRROC, readr
+#                    PRROC, readr, scales
 #   Report support : officer, flextable, writexl
 #
 # WHAT IS *NOT* INSTALLED (and why):
@@ -97,7 +97,8 @@ core_packages <- c(
   "ggplot2",             # calibration and ROC plots
   "pROC",                # AUROC computation
   "PRROC",               # AUPRC computation
-  "readr"                # CSV I/O
+  "readr",               # CSV I/O
+  "scales"               # axis/label formatting (percent scales, pretty breaks)
 )
 
 report_packages <- c(
