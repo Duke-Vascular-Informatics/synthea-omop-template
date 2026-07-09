@@ -91,11 +91,11 @@ get_validation_config <- function() {
     outcome_cohort_id = 2L,
 
     # SQL templates for cohort instantiation (read by cohorts.R / build_cohorts)
-    target_cohort_sql  = file.path(getwd(), "cohorts", "target_surgery.sql"),
+    target_cohort_sql  = file.path(getwd(), "cohorts", "__TARGET_SQL_FILE__"),
     outcome_cohort_sql = file.path(getwd(), "cohorts", "__OUTCOME_SQL_FILE__"),
 
     # ---------------------------------------------------------------------------
-    # Target cohort parameters — injected into target_surgery.sql by SqlRender.
+    # Target cohort parameters — injected into the target SQL file by SqlRender.
     # Verify all concept IDs against the live vocabulary before use.
     # ---------------------------------------------------------------------------
     # Visit type filter. c(9201L) = Inpatient only. integer(0) = all visit types.
@@ -128,7 +128,7 @@ get_validation_config <- function() {
     # Study identity — used by the report template for routing and file naming.
     # ---------------------------------------------------------------------------
     study_name   = "__STUDY_NAME__",
-    study_design = "prognostic_model",
+    study_design = "__STUDY_DESIGN__",
 
     # ---------------------------------------------------------------------------
     # Risk score pipeline settings

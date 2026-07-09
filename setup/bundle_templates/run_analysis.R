@@ -62,12 +62,25 @@ local({
 
 # -----------------------------------------------------------------------------
 # Source project modules
+#
+# R/risk_score_pipeline.R and any custom scripts under scripts/analysis/ are
+# both sourced unconditionally (harmless — they only define functions), and
+# the correct one is invoked below based on config$study_design. A
+# study_design == "descriptive" study is expected to define a
+# run_descriptive_ed_analysis(connection_details, config) function in one of
+# its scripts/analysis/*.R files (by convention, matching the name used for
+# the report dispatch in R/report_descriptive.R).
 # -----------------------------------------------------------------------------
 source("config.R")
 source("R/drivers.R")
 source("R/connection.R")
 source("R/cohorts.R")
 source("R/risk_score_pipeline.R")
+if (dir.exists("scripts/analysis")) {
+  for (f in list.files("scripts/analysis", pattern = "\\.R$", full.names = TRUE)) {
+    source(f)
+  }
+}
 
 # Load report module only if officer is available (optional for pipeline-only runs)
 has_officer <- requireNamespace("officer",   quietly = TRUE) &&
@@ -163,13 +176,28 @@ build_cohorts(cohort_conn, config)
 DatabaseConnector::disconnect(cohort_conn)
 
 # -----------------------------------------------------------------------------
-# Risk score validation pipeline
+# Analysis pipeline — branches on config$study_design.
+#
+#   "descriptive" -> run_descriptive_ed_analysis() (must be defined by a
+#                    script under scripts/analysis/; see the Source project
+#                    modules comment above)
+#   anything else  -> run_integer_risk_score_pipeline() (the original
+#                    risk-score external validation pipeline)
 # -----------------------------------------------------------------------------
-message("\n[run_analysis] Running risk score validation pipeline ...")
-# Pipeline CSVs go to risk_score_output_folder (output/risk_score_eval/).
-results <- run_integer_risk_score_pipeline(config, connection_details,
-                                           output_folder = config$risk_score_output_folder)
-print(results$metrics)
+is_descriptive <- identical(config$study_design, "descriptive")
+
+if (is_descriptive) {
+  message("\n[run_analysis] Running descriptive analysis pipeline ...")
+  score_output_dir <- file.path(config$output_folder, "descriptive")
+  results <- run_descriptive_ed_analysis(connection_details, config)
+} else {
+  message("\n[run_analysis] Running risk score validation pipeline ...")
+  # Pipeline CSVs go to risk_score_output_folder (output/risk_score_eval/).
+  score_output_dir <- config$risk_score_output_folder
+  results <- run_integer_risk_score_pipeline(config, connection_details,
+                                             output_folder = score_output_dir)
+  print(results$metrics)
+}
 
 # -----------------------------------------------------------------------------
 # Manuscript report (optional — requires officer + flextable)
@@ -179,7 +207,7 @@ if (has_officer) {
   tryCatch({
     report_path <- generate_manuscript_report(
       output_dir         = config$output_folder,
-      score_output_dir   = config$risk_score_output_folder,
+      score_output_dir   = score_output_dir,
       connection_details = connection_details,
       config             = config
     )
@@ -193,6 +221,6 @@ if (has_officer) {
 
 message("\n[run_analysis] All done.")
 message("Pipeline outputs: ",
-        normalizePath(config$risk_score_output_folder, mustWork = FALSE))
+        normalizePath(score_output_dir, mustWork = FALSE))
 message("Report:           ",
         normalizePath(config$output_folder, mustWork = FALSE))
