@@ -14,7 +14,7 @@ This repo is a **git submodule** of the workspace root (`omop-dev-workspace`). I
 
 | Remote | URL | What to push |
 |--------|-----|-------------|
-| `origin` | `https://github.com/adam-mdmph/synthea-omop-template.git` | Full repository (`git push origin main`) |
+| `origin` | `https://github.com/Duke-Vascular-Informatics/synthea-omop-template.git` | Full repository (`git push origin main`) |
 
 **Submodule rule:** after committing and pushing changes here, also update the submodule pointer in the workspace root repo:
 
