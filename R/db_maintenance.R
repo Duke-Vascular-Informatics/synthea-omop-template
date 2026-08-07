@@ -448,6 +448,30 @@ create_vocab_synonyms <- function(cfg, target_schema, shared_vocab_schema = "omo
   "source_to_source_vocab_map"
 )
 
+# Version of the map-building logic in this file.
+#
+# WHY THIS EXISTS. omop_etl_maps is a single object shared by every repo on the
+# instance, but the code that builds it is vendored into each repo's own copy of
+# this file and those copies drift (measured 2026-08-07: the runner had drifted
+# ~125 lines between the template and pad-amp-dispo-synth). Keying rebuilds on
+# the vocabulary version alone is therefore not enough — two repos can hold
+# different builder logic while the vocabulary sits still, and whichever runs
+# first would silently impose its maps on the other.
+#
+# BUMP THIS whenever a change here alters the SHAPE or CONTENT of the maps:
+# different columns, different indexes, a different template set, or different
+# filtering. Do NOT bump for comments, logging, or refactors that leave the
+# resulting tables byte-identical.
+#
+# Semantics, enforced in build_shared_vocab_maps():
+#   recorded <  current  -> this repo is newer; rebuild and take ownership.
+#   recorded == current  -> agree; reuse.
+#   recorded >  current  -> this repo is OLDER than whoever built the maps.
+#                           Refuse the shared path and fall back to per-schema
+#                           maps rather than downgrade a shared object another
+#                           repo depends on. Fix by syncing this repo.
+.SHARED_VOCAB_MAP_BUILDER_VERSION <- 1L
+
 # -----------------------------------------------------------------------------
 # .db_maintenance_connection_details
 #
@@ -558,7 +582,11 @@ create_vocab_synonyms <- function(cfg, target_schema, shared_vocab_schema = "omo
 #   force                Rebuild even when the recorded vocabulary version
 #                        matches (default FALSE).
 #
-# Returns: invisibly list(rebuilt = <logical>, vocab_version = <character>).
+# Returns: invisibly list(rebuilt, usable, vocab_version).
+#   usable = FALSE means the shared maps exist but were built by a NEWER
+#   builder version than this repo carries, so this repo must not use or
+#   rebuild them — the caller should fall back to per-schema maps. Every other
+#   outcome returns usable = TRUE.
 #
 # Side effects: creates shared_map_schema, its vocabulary synonyms, the two map
 #   tables, two composite indexes, and the map_build_info stamp table.
@@ -609,9 +637,15 @@ build_shared_vocab_maps <- function(cfg,
   # Decide whether a rebuild is needed.
   #
   # Rebuild when any of: the stamp table is missing, either map table is
-  # missing, the recorded version differs from the live one, or force = TRUE.
+  # missing, the recorded vocabulary version differs from the live one, the
+  # recorded builder version is older than this file's, or force = TRUE.
   # An unknown live version (NA) is treated as "cannot prove fresh" and forces a
   # rebuild rather than silently trusting a possibly stale map.
+  #
+  # The one case that is NOT a rebuild is a recorded builder version NEWER than
+  # this file's — see .SHARED_VOCAB_MAP_BUILDER_VERSION. Rebuilding there would
+  # downgrade a shared object another repo is relying on, so the caller is told
+  # the shared path is unusable and falls back to per-schema maps instead.
   # ---------------------------------------------------------------------------
   stamp_exists <- .shared_map_object_count(
     conn, "sys.tables", shared_map_schema, "map_build_info") > 0L
@@ -621,13 +655,43 @@ build_shared_vocab_maps <- function(cfg,
   }, logical(1))
 
   recorded_version <- NA_character_
+  recorded_builder <- NA_integer_
   if (stamp_exists) {
+    # builder_version was added after the first release of this helper, so a
+    # stamp table written by the earlier version will not have the column.
+    # Probe for it rather than letting the SELECT fail; a missing column reads
+    # as NA, which forces a rebuild below and re-creates the table with it.
+    has_builder_col <- as.integer(DatabaseConnector::querySql(conn, paste0(
+      "SELECT COUNT(*) AS n FROM sys.columns ",
+      "WHERE object_id = OBJECT_ID('", shared_map_schema, ".map_build_info') ",
+      "  AND name = 'builder_version';"
+    ))[[1]]) > 0L
+
     rec <- DatabaseConnector::querySql(conn, paste0(
-      "SELECT TOP 1 vocab_version AS v FROM [", shared_map_schema,
-      "].[map_build_info] ORDER BY built_at DESC;"
+      "SELECT TOP 1 vocab_version AS v, ",
+      if (has_builder_col) "builder_version AS b " else "CAST(NULL AS INT) AS b ",
+      "FROM [", shared_map_schema, "].[map_build_info] ORDER BY built_at DESC;"
     ))
     colnames(rec) <- tolower(colnames(rec))
-    if (nrow(rec) > 0L) recorded_version <- as.character(rec$v[[1]])
+    if (nrow(rec) > 0L) {
+      recorded_version <- as.character(rec$v[[1]])
+      if (!is.na(rec$b[[1]])) recorded_builder <- as.integer(rec$b[[1]])
+    }
+  }
+
+  # Someone else built these maps with newer logic than this repo carries.
+  # Do not touch them; tell the caller to use per-schema maps for this run.
+  if (!is.na(recorded_builder) &&
+      recorded_builder > .SHARED_VOCAB_MAP_BUILDER_VERSION) {
+    warning("[maps] '", shared_map_schema, "' was built by builder version ",
+            recorded_builder, " but this repo carries version ",
+            .SHARED_VOCAB_MAP_BUILDER_VERSION,
+            ". Refusing to downgrade a shared object. Sync this repo ",
+            "(/sync-template) to use the shared maps; falling back to ",
+            "per-schema maps for now.", call. = FALSE)
+    cat("[maps] ──────────────────────────────────────────────\n\n")
+    return(invisible(list(rebuilt = FALSE, usable = FALSE,
+                          vocab_version = vocab_version)))
   }
 
   needs_rebuild <- isTRUE(force) ||
@@ -635,18 +699,28 @@ build_shared_vocab_maps <- function(cfg,
     !all(maps_present) ||
     is.na(vocab_version) ||
     is.na(recorded_version) ||
-    !identical(recorded_version, vocab_version)
+    !identical(recorded_version, vocab_version) ||
+    is.na(recorded_builder) ||
+    recorded_builder < .SHARED_VOCAB_MAP_BUILDER_VERSION
 
   if (!needs_rebuild) {
     cat("[maps] ✓ Shared maps are current for this vocabulary — nothing to do.\n")
     cat("[maps] ──────────────────────────────────────────────\n\n")
-    return(invisible(list(rebuilt = FALSE, vocab_version = vocab_version)))
+    return(invisible(list(rebuilt = FALSE, usable = TRUE,
+                          vocab_version = vocab_version)))
   }
 
   if (stamp_exists && !identical(recorded_version, vocab_version)) {
     cat("[maps] ! Vocabulary changed since last build (was '",
         ifelse(is.na(recorded_version), "<none>", recorded_version),
         "') — rebuilding.\n", sep = "")
+  }
+  if (stamp_exists && identical(recorded_version, vocab_version) &&
+      (is.na(recorded_builder) ||
+       recorded_builder < .SHARED_VOCAB_MAP_BUILDER_VERSION)) {
+    cat("[maps] ! Builder logic changed since last build (was ",
+        ifelse(is.na(recorded_builder), "<unversioned>", recorded_builder),
+        ", now ", .SHARED_VOCAB_MAP_BUILDER_VERSION, ") — rebuilding.\n", sep = "")
   }
 
   # ---------------------------------------------------------------------------
@@ -718,10 +792,19 @@ build_shared_vocab_maps <- function(cfg,
   # ---------------------------------------------------------------------------
   # Stamp the build so the next caller can prove freshness without rebuilding.
   # ---------------------------------------------------------------------------
+  # Dropped and recreated rather than created-if-missing, so a stamp table
+  # written by an earlier helper version (no builder_version column) is
+  # migrated in place instead of needing an ALTER path. It holds exactly one
+  # row, so there is nothing to preserve.
   DatabaseConnector::executeSql(conn, paste0(
-    "IF OBJECT_ID('", shared_map_schema, ".map_build_info', 'U') IS NULL ",
+    "IF OBJECT_ID('", shared_map_schema, ".map_build_info', 'U') IS NOT NULL ",
+    "DROP TABLE [", shared_map_schema, "].[map_build_info];"
+  ), progressBar = FALSE, reportOverallTime = FALSE)
+
+  DatabaseConnector::executeSql(conn, paste0(
     "CREATE TABLE [", shared_map_schema, "].[map_build_info] (",
     "  vocab_version   VARCHAR(255) NULL,",
+    "  builder_version INT          NULL,",
     "  built_at        DATETIME2    NOT NULL,",
     "  cdm_version     VARCHAR(10)  NULL,",
     "  s2std_row_count BIGINT       NULL,",
@@ -729,15 +812,13 @@ build_shared_vocab_maps <- function(cfg,
   ), progressBar = FALSE, reportOverallTime = FALSE)
 
   DatabaseConnector::executeSql(conn, paste0(
-    "DELETE FROM [", shared_map_schema, "].[map_build_info];"
-  ), progressBar = FALSE, reportOverallTime = FALSE)
-
-  DatabaseConnector::executeSql(conn, paste0(
     "INSERT INTO [", shared_map_schema, "].[map_build_info] ",
-    "(vocab_version, built_at, cdm_version, s2std_row_count, s2src_row_count) ",
+    "(vocab_version, builder_version, built_at, cdm_version, ",
+    " s2std_row_count, s2src_row_count) ",
     "SELECT ",
     ifelse(is.na(vocab_version), "NULL",
            paste0("'", gsub("'", "''", vocab_version), "'")), ", ",
+    as.integer(.SHARED_VOCAB_MAP_BUILDER_VERSION), ", ",
     "SYSUTCDATETIME(), '", gsub("'", "''", cdm_version), "', ",
     "(SELECT COUNT_BIG(*) FROM [", shared_map_schema, "].[source_to_standard_vocab_map]), ",
     "(SELECT COUNT_BIG(*) FROM [", shared_map_schema, "].[source_to_source_vocab_map]);"
@@ -752,10 +833,11 @@ build_shared_vocab_maps <- function(cfg,
       format(counts$a[[1]], big.mark = ","), "\n")
   cat("[maps] ✓ source_to_source_vocab_map   rows:",
       format(counts$b[[1]], big.mark = ","), "\n")
-  cat("[maps] ✓ Shared maps built and stamped.\n")
+  cat("[maps] ✓ Shared maps built and stamped (builder v",
+      .SHARED_VOCAB_MAP_BUILDER_VERSION, ").\n", sep = "")
   cat("[maps] ──────────────────────────────────────────────\n\n")
 
-  invisible(list(rebuilt = TRUE, vocab_version = vocab_version))
+  invisible(list(rebuilt = TRUE, usable = TRUE, vocab_version = vocab_version))
 }
 
 # -----------------------------------------------------------------------------
@@ -866,4 +948,59 @@ create_vocab_map_synonyms <- function(cfg,
     cat("[maps] ✓", target_schema, "uses the shared vocabulary maps.\n")
   }
   invisible(all_wired)
+}
+
+# -----------------------------------------------------------------------------
+# remove_vocab_map_synonyms
+#
+# Purpose:
+#   Un-wire a CDM schema from the shared vocab maps by dropping the two
+#   synonyms, so the per-schema map SQL can build real tables there again.
+#
+# Why this is needed:
+#   The properties that make the shared path safe also make the fallback path
+#   fail without this. SELECT * INTO is rejected against a synonym name, so a
+#   run that decides mid-flight to fall back to per-schema maps — because the
+#   shared maps were built by a newer builder version, or because this schema
+#   turned out to carry custom source_to_concept_map rows — would hit that
+#   error on a schema wired by an EARLIER run. Dropping the synonyms first
+#   turns a hard failure into a clean, if more expensive, per-schema build.
+#
+#   Only synonyms are dropped. If the object is a real table this is a no-op:
+#   that table is the per-schema map already, and it is the fallback's target.
+#
+# Arguments:
+#   cfg            List returned by get_validation_config().
+#   target_schema  CDM schema to un-wire.
+#
+# Returns: invisibly the number of synonyms dropped.
+# -----------------------------------------------------------------------------
+remove_vocab_map_synonyms <- function(cfg, target_schema) {
+
+  connection_details <- .db_maintenance_connection_details(cfg)
+  conn <- tryCatch(
+    DatabaseConnector::connect(connection_details),
+    error = function(e) {
+      stop("[maps] Could not connect to SQL Server: ", conditionMessage(e), call. = FALSE)
+    }
+  )
+  on.exit(DatabaseConnector::disconnect(conn), add = TRUE)
+
+  dropped <- 0L
+  for (tbl in .SHARED_VOCAB_MAP_TABLES) {
+    if (.shared_map_object_count(conn, "sys.synonyms", target_schema, tbl) > 0L) {
+      DatabaseConnector::executeSql(
+        conn,
+        paste0("DROP SYNONYM [", target_schema, "].[", tbl, "];"),
+        progressBar = FALSE, reportOverallTime = FALSE
+      )
+      dropped <- dropped + 1L
+    }
+  }
+
+  if (dropped > 0L) {
+    cat("[maps] Un-wired", target_schema, "from the shared maps (",
+        dropped, "synonyms dropped ) — per-schema maps will be rebuilt.\n")
+  }
+  invisible(dropped)
 }

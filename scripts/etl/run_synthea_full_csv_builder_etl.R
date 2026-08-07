@@ -1389,30 +1389,53 @@ run_synthea_full_csv_builder_etl <- function(
   # replace_existing_tables = TRUE mirrors what the map-creation SQL being
   # skipped did anyway: create_source_to_*_vocab_map.sql opens with its own
   # unconditional DROP TABLE of exactly these objects.
+  #
+  # Two things can send this back to per-schema maps mid-run:
+  #   - build returns usable = FALSE: the shared maps were built by a NEWER
+  #     builder version than this repo carries, so this repo must neither use
+  #     nor rebuild them (see .SHARED_VOCAB_MAP_BUILDER_VERSION).
+  #   - wiring is refused: this schema carries custom source_to_concept_map
+  #     rows the shared maps do not reflect.
+  # Both fall back to a correct-but-larger per-schema build. The fallback MUST
+  # drop any synonyms an earlier run left behind first, because SELECT * INTO
+  # is rejected against a synonym name — without that, the per-schema map SQL
+  # would fail instead of rebuilding.
   # ---------------------------------------------------------------------------
   if (use_shared_maps) {
     log_msg("Vocab map path: shared maps in '", shared_map_schema, "'")
     source("R/db_maintenance.R")
-    build_shared_vocab_maps(
+
+    map_build <- build_shared_vocab_maps(
       cfg                 = config,
       shared_map_schema   = shared_map_schema,
       shared_vocab_schema = shared_vocab_schema,
       cdm_version         = cdm_version
     )
-    wired <- create_vocab_map_synonyms(
-      cfg                     = config,
-      target_schema           = config$cdm_schema,
-      shared_map_schema       = shared_map_schema,
-      replace_existing_tables = TRUE
-    )
-    # If wiring was refused (e.g. the schema carries custom source_to_concept_map
-    # rows), fall back to the per-schema build so the ETL still produces correct
-    # data — it just costs the disk it always used to.
-    if (!isTRUE(wired)) {
-      log_msg("Shared vocab maps not wired for '", config$cdm_schema,
-              "'; falling back to per-schema maps for this run.", level = "WARN")
+
+    if (!isTRUE(map_build$usable)) {
+      log_msg("Shared vocab maps in '", shared_map_schema, "' were built by a ",
+              "newer builder version than this repo carries; falling back to ",
+              "per-schema maps for this run. Run /sync-template to catch up.",
+              level = "WARN")
       use_shared_maps <- FALSE
+    } else {
+      wired <- create_vocab_map_synonyms(
+        cfg                     = config,
+        target_schema           = config$cdm_schema,
+        shared_map_schema       = shared_map_schema,
+        replace_existing_tables = TRUE
+      )
+      if (!isTRUE(wired)) {
+        log_msg("Shared vocab maps not wired for '", config$cdm_schema,
+                "'; falling back to per-schema maps for this run.", level = "WARN")
+        use_shared_maps <- FALSE
+      }
     }
+
+    if (!use_shared_maps) {
+      remove_vocab_map_synonyms(config, config$cdm_schema)
+    }
+
     progress$tick("Vocabulary maps wired to shared schema")
   }
 
