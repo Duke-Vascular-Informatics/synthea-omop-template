@@ -259,13 +259,35 @@ message("Run name               : ", run_name)
 
 # ---------------------------------------------------------------------------
 # Pre-flight: check and prepare the SQL Server transaction log.
-# The vocabulary CSV load (CONCEPT_ANCESTOR: 75 M rows) requires a large
-# log headroom even in SIMPLE recovery.  This call shrinks any space left
-# over from prior runs and pre-grows the log to 25 GB before touching any
-# OMOP tables, preventing mid-ETL "transaction log full" failures.
+# This call shrinks space left over from prior runs and pre-grows the log
+# before touching any OMOP tables, preventing mid-ETL "transaction log full"
+# failures.
+#
+# HOW BIG. The 25 GB default was sized for two things: a vocabulary CSV load
+# (CONCEPT_ANCESTOR, 75 M rows) and create_source_to_standard_vocab_map, which
+# built the whole source->standard map from the ~6.3 M-concept vocabulary in a
+# single transaction.
+#
+#   - Loading vocabulary from CSV still needs the full 25 GB.
+#   - Using shared vocab maps, neither statement runs: vocabulary comes from
+#     synonyms and the map is built once in shared_map_schema. Measured, the
+#     remaining domain INSERTs never pushed the log past ~1.6 GB.
+#
+# Pre-growing to 25 GB regardless is not free — on a small VM disk it starves
+# the data file and the ETL dies at 99% full mid-load, which is a failure this
+# workspace has hit repeatedly. Size the request to the path actually taken.
 # ---------------------------------------------------------------------------
 source("R/db_maintenance.R")
-prepare_txlog_for_bulk_etl(cfg)
+
+txlog_target_mb <- if (isTRUE(reload_vocab_from_csv)) {
+  25600L   # full vocabulary CSV load — needs the original headroom
+} else if (isTRUE(use_shared_vocab_maps) && isTRUE(use_shared_vocab_schema)) {
+  4096L    # shared vocab + shared maps — only domain INSERTs are logged here
+} else {
+  16384L   # per-schema vocab maps still build in this database
+}
+message("Transaction log target : ", txlog_target_mb, " MB")
+prepare_txlog_for_bulk_etl(cfg, target_min_mb = txlog_target_mb)
 
 # Delegate actual ETL execution to the main ETLBuilder orchestration script.
 source("scripts/etl/run_synthea_full_csv_builder_etl.R")
