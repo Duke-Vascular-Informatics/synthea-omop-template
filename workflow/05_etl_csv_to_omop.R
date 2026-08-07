@@ -105,6 +105,22 @@ verbose <- TRUE
 use_shared_vocab_schema <- TRUE
 shared_vocab_schema     <- "omop_vocab"
 
+# Vocabulary MAP strategy.
+#
+# ETLSyntheaBuilder materializes source_to_standard_vocab_map (~4.5M rows) and
+# source_to_source_vocab_map (~6.3M rows) — together ~3.9 GB — into the CDM
+# schema on every run. Both are a pure function of the vocabulary, so when the
+# vocabulary is shared every CDM schema was building a byte-identical copy.
+#
+# TRUE  = build them once in shared_map_schema and reach them via synonyms.
+#         Rebuilt automatically when the OMOP vocabulary release changes.
+# FALSE = per-schema copies (the original ETLSyntheaBuilder behaviour).
+#
+# Ignored unless use_shared_vocab_schema is also TRUE — maps may only be shared
+# by schemas that share the vocabulary they are derived from.
+use_shared_vocab_maps <- TRUE
+shared_map_schema     <- "omop_etl_maps"
+
 # TRUE  = reload vocab into target CDM schema from CSV folder.
 # FALSE = do not use CSV vocab load path (helper script may use fallback logic).
 reload_vocab_from_csv <- FALSE
@@ -266,6 +282,8 @@ run_synthea_full_csv_builder_etl(
   synthea_bulk_load        = synthea_bulk_load,
   use_shared_vocab_schema  = use_shared_vocab_schema,
   shared_vocab_schema      = shared_vocab_schema,
+  use_shared_vocab_maps    = use_shared_vocab_maps,
+  shared_map_schema        = shared_map_schema,
   verbose                  = verbose
 )
 
