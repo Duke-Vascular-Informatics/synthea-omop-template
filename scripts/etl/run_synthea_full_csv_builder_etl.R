@@ -649,6 +649,75 @@ run_synthea_full_csv_builder_etl <- function(
       }
     }
 
+    # insert_death.sql: recover module-driven deaths.
+    #
+    # Upstream reads deaths ONLY from synthea.encounters where code =
+    # '308646001' (the SNOMED death-certification encounter). It never reads
+    # patients.deathdate. Synthea emits that certification encounter from its
+    # own LIFECYCLE mortality; a Death state fired by a workspace-authored
+    # module sets the patient's death date but generates no such encounter, so
+    # every module-driven death is structurally invisible to the CDM.
+    #
+    # Measured on the pad_amp v2 reference CSVs: 676 patients carry a
+    # DEATHDATE but only 540 have a certification encounter. The loss is
+    # concentrated exactly where a module drives mortality — in the amputation
+    # cohort, 229 patients died but only 102 had a certification encounter, so
+    # 55% were dropped. Observed 1-year mortality after index amputation was
+    # 29.6% in the Synthea CSVs but 2.5% in the CDM, which read as a broken
+    # module hazard when it was in fact a lossy ETL. Every synthetic dataset in
+    # this workspace whose module drives death is affected.
+    #
+    # The patch appends a UNION ALL that recovers deaths from synthea.patients
+    # for patients with a deathdate and NO certification encounter. The
+    # encounter-derived branch is left untouched, so deaths that do carry a
+    # certified cause keep their cause_concept_id; recovered rows get cause 0,
+    # which is honest — Synthea records no cause for them anywhere.
+    #
+    # death_type_concept_id reuses upstream's 32817 rather than introducing a
+    # provenance-specific id, deliberately: that value is already in the
+    # generated SQL, so no unverified concept ID enters the pipeline (Rule 1).
+    #
+    # Idempotent via an explicit marker check. The trailing-semicolon regex on
+    # its own is NOT idempotent — the rewritten SQL still ends in ";", so a
+    # second pass would append the block again. execute_sql_file() re-reads
+    # from disk and never writes back, so that cannot happen in the normal
+    # flow, but the guard makes the property hold regardless of caller.
+    if (tolower(basename(file_path)) == "insert_death.sql" &&
+        !grepl("DEATH_RECOVERY_PATCH", sql, fixed = TRUE)) {
+      cdm <- config$cdm_schema
+      recovery_sql <- paste0(
+        "\n-- DEATH_RECOVERY_PATCH (workspace): module-driven deaths, which have\n",
+        "-- no '308646001' certification encounter and are therefore invisible to\n",
+        "-- the upstream insert above.\n",
+        "union all\n",
+        "select p.person_id                     person_id,\n",
+        "       cast(pat.deathdate as date)     death_date,\n",
+        "       cast(pat.deathdate as date)     death_datetime,\n",
+        "       32817                           death_type_concept_id,\n",
+        "       0                               cause_concept_id,\n",
+        "       cast(null as varchar(50))       cause_source_value,\n",
+        "       0                               cause_source_concept_id\n",
+        "  from ", synthea_schema, ".patients pat\n",
+        "  join ", cdm, ".person p\n",
+        "    on pat.id = p.person_source_value\n",
+        " where pat.deathdate is not null\n",
+        "   and ltrim(rtrim(pat.deathdate)) <> ''\n",
+        "   and not exists (select 1 from ", synthea_schema, ".encounters e2\n",
+        "                    where e2.patient = pat.id\n",
+        "                      and e2.code    = '308646001')\n"
+      )
+      # Attach before the final statement terminator.
+      pat_end <- "(?s)^(.*);\\s*$"
+      if (grepl(pat_end, sql, perl = TRUE)) {
+        sql <- sub(pat_end, paste0("\\1", recovery_sql, ";"), sql, perl = TRUE)
+        message("[ETL patch] insert_death.sql extended to recover module-driven deaths.")
+      } else {
+        warning("[ETL patch] insert_death.sql did not match the expected ",
+                "single-statement shape; module-driven deaths will be LOST. ",
+                "Check upstream ETLSyntheaBuilder for a changed death insert.")
+      }
+    }
+
     # AllVisitTable.sql: make the surrogate visit_occurrence_id deterministic.
     # Rewrites the single defective window clause
     #     row_number()over(order by patient)
