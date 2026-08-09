@@ -685,14 +685,37 @@ run_synthea_full_csv_builder_etl <- function(
     if (tolower(basename(file_path)) == "insert_death.sql" &&
         !grepl("DEATH_RECOVERY_PATCH", sql, fixed = TRUE)) {
       cdm <- config$cdm_schema
+      # synthea.patients date columns are not reliably ISO strings. The staging
+      # pre-flight ALTERs them to VARCHAR(32), and data.table::fread has already
+      # auto-typed BIRTHDATE/DEATHDATE as Date, so the loader can write the
+      # underlying epoch-day integer instead: '1935-07-12' arrives as '-12592'
+      # and '2001-11-28' as '11654' (verified against the source CSV).
+      # encounters.start is unaffected and stays ISO, which is why only the
+      # patients-derived branch needs this.
+      #
+      # Discriminated explicitly rather than COALESCE-ing two TRY_CASTs. Tested
+      # both: on the real values they agree ('11654' -> 2001-11-28 either way,
+      # matching the source CSV), because SQL Server rejects a bare '11654' as a
+      # date rather than reading it as a year. They diverge only on an empty
+      # string, which the WHERE clause already excludes. The explicit form is
+      # kept anyway because it states the intent -- two dashes means ISO,
+      # digits-and-minus only means epoch days -- instead of relying on the
+      # order of two silent coercions.
+      dd_expr <- paste0(
+        "case when pat.deathdate like '%-%-%' then try_cast(pat.deathdate as date)",
+        " when ltrim(rtrim(pat.deathdate)) = '' then null",
+        " when pat.deathdate not like '%[^0-9-]%'",
+        " then dateadd(day, try_cast(pat.deathdate as int), '1970-01-01')",
+        " else null end"
+      )
       recovery_sql <- paste0(
         "\n-- DEATH_RECOVERY_PATCH (workspace): module-driven deaths, which have\n",
         "-- no '308646001' certification encounter and are therefore invisible to\n",
         "-- the upstream insert above.\n",
         "union all\n",
         "select p.person_id                     person_id,\n",
-        "       cast(pat.deathdate as date)     death_date,\n",
-        "       cast(pat.deathdate as date)     death_datetime,\n",
+        "       ", dd_expr, "  death_date,\n",
+        "       ", dd_expr, "  death_datetime,\n",
         "       32817                           death_type_concept_id,\n",
         "       0                               cause_concept_id,\n",
         "       cast(null as varchar(50))       cause_source_value,\n",
@@ -702,6 +725,7 @@ run_synthea_full_csv_builder_etl <- function(
         "    on pat.id = p.person_source_value\n",
         " where pat.deathdate is not null\n",
         "   and ltrim(rtrim(pat.deathdate)) <> ''\n",
+        "   and ", dd_expr, " is not null\n",
         "   and not exists (select 1 from ", synthea_schema, ".encounters e2\n",
         "                    where e2.patient = pat.id\n",
         "                      and e2.code    = '308646001')\n"
