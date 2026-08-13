@@ -199,8 +199,28 @@ target_cdm_schema <- target_cdm_schema_base
 # SCOPE, AND ITS LIMITS.  This can only protect a version block declaring BOTH
 # physical_schema and a non-empty pinned_consumers.  Legacy single-block registry
 # entries record no physical schema at all, so they cannot be matched — they are
-# reported as unprotected rather than silently treated as safe.  Add a
-# physical_schema field to such an entry to bring it under the interlock.
+# reported as unprotected rather than silently treated as safe.
+#
+# TO BRING A LEGACY ENTRY UNDER THE INTERLOCK, GIVE IT A `versions:` LIST whose
+# member carries physical_schema plus a non-empty pinned_consumers:
+#
+#   - id: my_dataset
+#     status: verified            # keep this at the top level too — lookup_dataset.R's
+#                                 # `--status` filter reads entry$status and a dataset
+#                                 # carrying status only inside versions: drops out of it
+#     versions:
+#       - version: v1
+#         status: verified
+#         physical_schema: omop_synth_my_dataset
+#         pinned_consumers: [some-consuming-repo]
+#
+# Adding a TOP-LEVEL physical_schema does NOT work, and this comment used to say
+# it did.  assert_target_schema_not_pinned() below iterates dataset$versions and
+# does `if (is.null(dataset$versions)) next`, so an entry with no versions: list
+# is skipped BEFORE any of its fields are read — a top-level physical_schema is
+# never looked at, and the entry stays silently overwritable.  Corrected
+# 2026-08-13, when pad_oler_aki and pad_ler_ldl were converted; both had been
+# unprotected for exactly this reason.
 #
 # A version whose status is `needs_regeneration` is deliberately EXEMPT: the
 # registry is stating that this schema is meant to be rebuilt in place, and
