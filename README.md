@@ -13,6 +13,29 @@ restricted-network environments.
 
 ---
 
+## Legacy notice — read this before starting a new study
+
+**For a new study's analysis core, use
+[`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template)
+instead**, unless you specifically need the numbered `workflow/01–09` scaffold
+in the same repo as the analysis (Synthea generation + ETL + QC alongside the
+analysis code) or you are building a `-synth` data-generation-only repo. This
+template is still the correct, current choice for both of those cases — it
+is not being removed — but for a new observational study's analysis it has
+been superseded. See `omop-dev-workspace`'s README ("Multi-Repo Analysis
+Pipeline") and `docs/MIGRATION_PLAN_REPO_SPLIT.md` for the full picture, and
+`strategus-study-template`'s own README for the two-path decision (and for
+converting an existing study built on this template — its `CHECKLIST.md`
+Path B).
+
+**Regardless of which analysis-core template you use, create a separate
+report repo from [`omop-report-template`](https://github.com/Duke-Vascular-Informatics/omop-report-template)**
+rather than relying on this template's Step 8 to produce the manuscript
+report in-repo (see Workflow Reference below) — Step 8's report generation is
+the legacy, pre-split behavior kept for studies that have not yet migrated.
+
+---
+
 ## Start Here (Canonical Setup Guide)
 
 To avoid duplicated or conflicting instructions, this README is intentionally high-level.
@@ -82,7 +105,7 @@ from one-time workspace infrastructure setup.
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM (skip for real CDM data) |
 | 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks |
 | 7 | `workflow/07_setup_analysis_env.R` | Verify analysis packages are installed |
-| 8 | `workflow/08_run_analysis_and_manuscript_report.R` | **Your analysis and outputs** |
+| 8 | `workflow/08_run_analysis_and_manuscript_report.R` | **Your analysis and outputs.** Legacy: also generates the Word manuscript report in-repo. For a new study, prefer splitting this — write result CSVs only here, and generate the report from a sibling `<your-study>-report` repo built from `omop-report-template` (see the Legacy notice above) |
 | 9 | `workflow/09_build_portable_analysis_bundle.ps1` / `.sh` | Package bundle for deployment to external sites |
 
 Each step script is standalone and resolves the project root automatically, so it can be
