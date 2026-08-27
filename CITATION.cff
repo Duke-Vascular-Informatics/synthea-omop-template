@@ -28,7 +28,7 @@ date-released: "2026-04-27"
 repository-code: "https://github.com/Duke-Vascular-Informatics/synthea-omop-template"
 url: "https://github.com/Duke-Vascular-Informatics/synthea-omop-template"
 
-license: GPL-3.0
+license: GPL-2.0-only
 
 abstract: >
   A GitHub Template Repository providing an end-to-end pipeline for observational
