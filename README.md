@@ -235,6 +235,18 @@ Template project expectation for analyst workflows:
 > This section is a practical summary for analysts and developers, not legal advice.
 > For legal interpretation, consult your organization's counsel.
 
+### Third-party software: Synthea
+
+This template vendors [Synthea](https://github.com/synthetichealth/synthea)
+(Copyright 2017-2025 The MITRE Corporation) at `external/synthea/`, an independently
+developed, open-source synthetic patient generator distributed under its own
+**Apache License 2.0** — a separate license from this repository's GPL v2, not a
+GPL v2 dependency. Synthea's own `LICENSE` and `NOTICE` files are preserved unmodified
+in `external/synthea/`; the `NOTICE` file documents Synthea's own third-party content
+(RxNorm, LOINC, SNOMED CT terminology, and the SBSCL library). Synthea is not
+affiliated with Duke University; see the upstream project for its own terms,
+attribution requirements, and citation.
+
 ---
 
 ## Notes
