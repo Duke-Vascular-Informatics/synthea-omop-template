@@ -13,7 +13,8 @@
 #   • Which covariates / features are extracted (covariate definitions, if any)
 #
 # It does NOT connect to a database. It reads files, validates their structure,
-# and prints a manifest so you can confirm the artifacts before running Step 8.
+# and prints a manifest so you can confirm the artifacts before generating
+# synthetic data (Steps 3-6).
 #
 # This step supports any OMOP-based study design:
 #   • Cohort characterization  — target cohort only

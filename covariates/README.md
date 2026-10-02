@@ -1,8 +1,9 @@
 # covariates/
 
-CSV specification files that define the covariates (patient features) used in your study.
-These files are validated by Step 2 and consumed by whichever analysis pipeline you wire
-up in `workflow/08`.
+CSV specification files that define the covariates (patient features) your synthetic
+dataset needs to support. These files are validated by Step 2; the downstream analysis
+repo (built from `strategus-study-template`) that actually consumes the dataset reads
+the same specification to decide what to extract.
 
 They support any study design — prognostic models, causal inference, cohort characterization —
 wherever you need a structured, version-controlled covariate specification rather than
@@ -26,8 +27,8 @@ defining covariates inline in R code.
 - You want automated, data-driven covariate extraction across all OMOP domains.
 - You are running PatientLevelPrediction or CohortMethod with a broad feature set.
 
-Set both file paths to `NULL` in workflow/08 to skip this CSV pipeline and pass a
-`FeatureExtraction` settings object directly.
+A downstream analysis can set both file paths to `NULL` to skip this CSV pipeline and
+pass a `FeatureExtraction` settings object directly instead.
 
 ---
 

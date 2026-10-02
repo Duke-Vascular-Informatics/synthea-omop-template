@@ -24,7 +24,7 @@ follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 - Step 1: [Install VS Code](../docs/GETTING_STARTED.md#step-1-install-vs-code-5-minutes)
 - Step 2: [Set Up Git and Version Control](../docs/GETTING_STARTED.md#step-2-set-up-git-and-version-control-10-minutes)
 - Step 3: [Install Your AI Coding Assistant](../docs/GETTING_STARTED.md#step-3-install-your-ai-coding-assistant-10-minutes)
-- Step 4: [Prepare Your Workspace Folder](../docs/GETTING_STARTED.md#step-4-prepare-your-workspace-folder-5-minutes)
+- Step 4: [Create Your Parent Development Folder](../docs/GETTING_STARTED.md#step-4-create-your-parent-development-folder-5-minutes)
 - Step 5: [Create Your Study Repository from Template](../docs/GETTING_STARTED.md#step-5-create-your-study-repository-from-template-5-minutes)
 - Step 6: [Check Whether Shared Local Setup Already Exists](../docs/GETTING_STARTED.md#step-6-check-whether-shared-local-setup-already-exists-2-minutes)
 - Step 7: [Complete Machine Setup If Needed](../docs/GETTING_STARTED.md#step-7-complete-machine-setup-if-needed-20-60-minutes)
@@ -34,8 +34,7 @@ follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 - Step 11: [Define Your Cohort, Outcome, and Covariates](../docs/GETTING_STARTED.md#step-11-define-your-cohort-outcome-and-covariates-3060-minutes)
 - Step 12: [Design Analysis-Specific Synthea Module](../docs/GETTING_STARTED.md#step-12-design-analysis-specific-synthea-module-optional-30-minutes)
 - Step 13: [Generate Synthetic Data and Run ETL](../docs/GETTING_STARTED.md#step-13-generate-synthetic-data-and-run-etl-60-minutes)
-- Step 14: [Create and Test Analysis Code](../docs/GETTING_STARTED.md#step-14-create-and-test-analysis-code-3060-minutes)
-- Step 15: [Create Transportable Code Packet](../docs/GETTING_STARTED.md#step-15-create-transportable-code-packet-5-minutes)
+- Step 14: [Register Your Synthetic Dataset](../docs/GETTING_STARTED.md#step-14-register-your-synthetic-dataset-10-minutes)
 <!-- END:STEP_INDEX -->
 
 ---
@@ -86,7 +85,7 @@ follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
   - [ ] `cdm_schema`, `results_schema`, `cohort_table`
   - [ ] `study_start_date`, `study_end_date`
   - [ ] `output_folder`
-  - [ ] Set `analyses:` flags
+  - [ ] Leave `analyses:` flags `false` — no analysis runs in this repo
 
 - [ ] **Step 11.3:** Look up all concept IDs (`Rscript scripts/concept_lookup.R "<term>" <Domain>`)
 
@@ -115,23 +114,13 @@ follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 
 ---
 
-## Phase 7: Build Cohorts & Run Analyses (Per study, ~30–60 minutes)
+## Phase 7: Register Your Synthetic Dataset (Per dataset, ~10 minutes)
 
-- [ ] **Step 14.1:** Build cohorts (`Rscript workflow/02_define_omop_cohort_outcome_covariates.R`)
-- [ ] **Step 14.2:** Run analyses (`Rscript workflow/07_setup_analysis_env.R`, then `Rscript workflow/08_run_analysis_and_manuscript_report.R`)
-- [ ] **Step 14.3:** Review outputs in `output/<your-study>/`
+- [ ] **Step 14.1:** Add an entry to `synthetic_data/registry.yaml` at the workspace root
+- [ ] **Step 14.2:** Commit and push; open a PR against `main`
 
----
-
-## Phase 8: Create Transportable Code Packet (Per study, ~5 minutes)
-
-- [ ] **Step 15:** Generate bundle:
-  ```bash
-  bash workflow/09_build_portable_analysis_bundle.sh
-  # OR (Windows PowerShell):
-  powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
-  ```
-- [ ] **Share or archive** `portable/transportable_bundle/`
+This repo's job ends here. Analysis, manuscript reports, and transportable bundles
+belong in a separate analysis-core repo built from `strategus-study-template`.
 
 ---
 

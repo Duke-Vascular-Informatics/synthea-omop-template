@@ -9,7 +9,7 @@
 # -------
 # Scans study_params.yaml, cohort SQL files, and covariate CSVs for incomplete
 # placeholders and prints a checklist report showing what is done and what
-# still needs attention before running Step 8.
+# still needs attention before generating synthetic data.
 #
 # No database connection is required — all checks are file-based.
 #
@@ -28,7 +28,7 @@
 #   6. Summary           — pass / warnings / failures
 #
 # Exit codes:
-#   0  — all checks passed (ready for Step 8)
+#   0  — all checks passed (ready to generate synthetic data)
 #   1  — one or more items require attention
 #
 # PREREQUISITES
@@ -276,7 +276,7 @@ cat("\n--- 5. analyses flags (study_params.yaml) ---\n")
 
 analyses <- p$analyses
 if (is.null(analyses)) {
-  flag_warn("analyses: section missing from study_params.yaml — no analyses will run in Step 8")
+  PASS("analyses: section missing from study_params.yaml — fine, this repo generates synthetic data only")
 } else {
   any_enabled <- FALSE
   flag_names <- c(
@@ -290,14 +290,14 @@ if (is.null(analyses)) {
   for (flag in names(flag_names)) {
     val <- isTRUE(analyses[[flag]])
     if (val) {
-      PASS(paste0(flag, ": true"))
+      flag_warn(paste0(flag, ": true — this repo does not act on it; leave false unless a downstream consumer needs it set"))
       any_enabled <- TRUE
     } else {
       cat("  [----] ", flag, ": false\n", sep = "")
     }
   }
   if (!any_enabled) {
-    flag_warn("All analyses flags are false — set at least one to true before running Step 8")
+    PASS("All analyses flags are false — expected, this repo generates synthetic data only")
   }
 
   # Causal inference requires a comparator cohort
@@ -339,13 +339,13 @@ if (is.null(analyses)) {
 cat("\n--- Summary ---\n")
 total_checks <- issues + warnings
 if (issues == 0 && warnings == 0) {
-  cat("  ALL CHECKS PASSED — ready to run Step 8.\n")
-  cat("  Next: Rscript workflow/07_setup_analysis_env.R\n")
-  cat("        Rscript workflow/08_run_analysis_and_manuscript_report.R\n\n")
+  cat("  ALL CHECKS PASSED — ready to generate synthetic data.\n")
+  cat("  Next: Rscript workflow/03_generate_synthea_module_artifacts.R\n")
+  cat("        bash workflow/04_generate_synthea_csv.sh\n\n")
   quit(status = 0)
 } else {
   if (issues > 0) {
-    cat("  FAIL:    ", issues, " item(s) must be resolved before running Step 8.\n", sep = "")
+    cat("  FAIL:    ", issues, " item(s) must be resolved before generating synthetic data.\n", sep = "")
   }
   if (warnings > 0) {
     cat("  WARNING: ", warnings, " item(s) to review (non-blocking).\n", sep = "")

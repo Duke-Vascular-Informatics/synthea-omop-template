@@ -1,5 +1,5 @@
 ---
-description: "Pre-flight check for study setup — scans study_params.yaml, cohort SQL files, and covariate CSVs for incomplete placeholders and prints a checklist report. Run before Step 8 to confirm everything is ready."
+description: "Pre-flight check for synthetic dataset setup — scans study_params.yaml, cohort SQL files, and covariate CSVs for incomplete placeholders and prints a checklist report. Run before generating synthetic data to confirm everything is ready."
 name: "Check Study Setup"
 agent: "agent"
 tools: ["read_file", "grep_search", "file_search"]
@@ -85,16 +85,14 @@ Read `covariates/covariate_concepts.csv` if it exists.
 
 ### 5. analyses flags
 
-Read the `analyses:` section of `study_params.yaml`. For each flag
+Read the `analyses:` section of `study_params.yaml`. This repo generates synthetic
+data only — it does not run an analysis — so every flag
 (`cohort_characterization`, `prognostic_model`, `causal_inference`,
-`integer_risk_score`, `word_report`):
+`integer_risk_score`, `word_report`) should be `false`.
 
-- Print [OK] + flag name when `true`.
-- Print [----] + flag name when `false` (not an error — just informational).
-- [WARN] if all five flags are `false` (nothing will run in Step 8).
-- [FAIL] if `causal_inference: true` but `comparator.cohort_id` is not set.
-- [FAIL] if `integer_risk_score: true` but `covariates/covariates.csv` has no
-  `points` column.
+- [OK] if all five flags are `false`.
+- [WARN] if any flag is `true` — this repo doesn't act on it; leave it `false` unless
+  you have a specific reason to keep it set for a downstream consumer.
 
 ---
 
@@ -122,12 +120,10 @@ Print a sectioned checklist report exactly like this structure:
   [FAIL] covariate_concepts.csv has 3 row(s) with concept_id = 0: cov_diabetes, ...
 
 --- 5. analyses flags (study_params.yaml) ---
-  [OK]   cohort_characterization: true
-  [----] prognostic_model: false
-  ...
+  [OK]   all analyses: flags are false (this repo generates synthetic data only)
 
 --- Summary ---
-  FAIL:    2 item(s) must be resolved before running Step 8.
+  FAIL:    2 item(s) must be resolved before generating synthetic data.
   WARNING: 1 item(s) to review (non-blocking).
 
 Resolve [FAIL] items, then re-run: Rscript scripts/check_setup.R
@@ -137,9 +133,9 @@ If everything passes:
 
 ```
 --- Summary ---
-  ALL CHECKS PASSED — ready to run Step 8.
-  Next: Rscript workflow/07_setup_analysis_env.R
-        Rscript workflow/08_run_analysis_and_manuscript_report.R
+  ALL CHECKS PASSED — ready to generate synthetic data.
+  Next: Rscript workflow/03_generate_synthea_module_artifacts.R
+        bash workflow/04_generate_synthea_csv.sh
 ```
 
 ---
@@ -155,4 +151,4 @@ For each [FAIL] item, provide a one-line remediation hint:
 - Schema still at default → Edit `study_params.yaml` and set the correct schema name
 
 Do not suggest database queries or code changes for [WARN] items — those are
-informational only and do not block Step 8.
+informational only and do not block synthetic data generation.

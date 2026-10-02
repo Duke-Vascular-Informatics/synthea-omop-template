@@ -38,7 +38,7 @@
 #
 # PREREQUISITES
 # -------------
-#   - Java 17 (JAVA_HOME set) and the JDBC driver (run workflow/07 first)
+#   - Java 17 (JAVA_HOME set) and the JDBC driver (provisioned by workflow/01)
 #   - DatabaseConnector and SqlRender installed in the project renv library
 # =============================================================================
 

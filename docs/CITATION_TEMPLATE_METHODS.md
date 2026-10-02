@@ -7,14 +7,15 @@ or internal methods documentation.
 
 Use this sentence (edit bracketed values):
 
-"Analysis code was developed using the OMOP Study Template repository (GPL-2.0),
-version [VERSION], available at [REPO_URL], with contributions from the template
-repository contributors documented in `docs/CITATION_TEMPLATE_METHODS.md` and
-machine-readable metadata in `CITATION.cff`."
+"The synthetic OMOP CDM dataset was generated using the OMOP Synthetic Data Generation
+Template repository (GPL-2.0), version [VERSION], available at [REPO_URL], with
+contributions from the template repository contributors documented in
+`docs/CITATION_TEMPLATE_METHODS.md` and machine-readable metadata in `CITATION.cff`."
 
 Shorter version:
 
-"Study code was built from the OMOP Study Template (version [VERSION], [REPO_URL])."
+"The synthetic dataset was generated using the OMOP Synthetic Data Generation Template
+(version [VERSION], [REPO_URL])."
 
 ## Template Repository Contributors
 
