@@ -13,26 +13,33 @@ restricted-network environments.
 
 ---
 
-## Legacy notice — read this before starting a new study
+## Which template? — read this before starting a new study
 
-**For a new study's analysis core, use
+**This template is the right choice when you're generating synthetic data**
+— either a `-synth` repo (Synthea module authoring + Steps 1–6, producing
+one reusable synthetic OMOP CDM dataset for other studies to reuse) or a
+full analysis that genuinely needs Synthea generation + ETL + QC in the same
+repo as the analysis itself. That's its purpose: it owns the numbered
+`workflow/01–09` scaffold so synthetic-data generation and the analysis that
+consumes it can live together when that coupling is actually wanted.
+
+**For a new study's full analysis core against an existing CDM — no
+synthetic-data generation needed in-repo — use
 [`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template)
-instead**, unless you specifically need the numbered `workflow/01–09` scaffold
-in the same repo as the analysis (Synthea generation + ETL + QC alongside the
-analysis code) or you are building a `-synth` data-generation-only repo. This
-template is still the correct, current choice for both of those cases — it
-is not being removed — but for a new observational study's analysis it has
-been superseded. See `omop-dev-workspace`'s README ("Multi-Repo Analysis
-Pipeline") and `docs/MIGRATION_PLAN_REPO_SPLIT.md` for the full picture, and
-`strategus-study-template`'s own README for the two-path decision (and for
+instead.** Its declarative circe/Strategus-based cohort definitions are the
+better fit when you're not also authoring a Synthea module. See
+`omop-dev-workspace`'s README ("Multi-Repo Analysis Pipeline") and
+`docs/MIGRATION_PLAN_REPO_SPLIT.md` for the full picture, and
+`strategus-study-template`'s own README for the two-path decision (including
 converting an existing study built on this template — its `CHECKLIST.md`
 Path B).
 
 **Regardless of which analysis-core template you use, create a separate
 report repo from [`omop-report-template`](https://github.com/Duke-Vascular-Informatics/omop-report-template)**
 rather than relying on this template's Step 8 to produce the manuscript
-report in-repo (see Workflow Reference below) — Step 8's report generation is
-the legacy, pre-split behavior kept for studies that have not yet migrated.
+report in-repo (see Workflow Reference below) — Step 8's in-repo report
+generation is kept for studies that haven't split their report out yet; a
+new study should split it from the start.
 
 ---
 
@@ -105,7 +112,7 @@ from one-time workspace infrastructure setup.
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM (skip for real CDM data) |
 | 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks |
 | 7 | `workflow/07_setup_analysis_env.R` | Verify analysis packages are installed |
-| 8 | `workflow/08_run_analysis_and_manuscript_report.R` | **Your analysis and outputs.** Legacy: also generates the Word manuscript report in-repo. For a new study, prefer splitting this — write result CSVs only here, and generate the report from a sibling `<your-study>-report` repo built from `omop-report-template` (see the Legacy notice above) |
+| 8 | `workflow/08_run_analysis_and_manuscript_report.R` | **Your analysis and outputs.** Also generates the Word manuscript report in-repo by default. For a new study, prefer splitting this — write result CSVs only here, and generate the report from a sibling `<your-study>-report` repo built from `omop-report-template` (see "Which template?" above) |
 | 9 | `workflow/09_build_portable_analysis_bundle.ps1` / `.sh` | Package bundle for deployment to external sites |
 
 Each step script is standalone and resolves the project root automatically, so it can be
