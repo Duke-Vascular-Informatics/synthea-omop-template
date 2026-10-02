@@ -197,8 +197,9 @@ cohort_definition_id  |  subject_id  |  cohort_start_date  |  cohort_end_date
 - `cohort_definition_id = 1` is the **target cohort** (e.g. patients who had surgery).
 - `cohort_definition_id = 2` is the **outcome cohort** (e.g. patients who had an SSI).
 
-The analysis in Step 8 joins these two cohorts to determine which target patients
-developed the outcome within the prediction window after their index date.
+A downstream analysis (in a separate `strategus-study-template` repo) joins these two
+cohorts to determine which target patients developed the outcome within the prediction
+window after their index date.
 
 ### Index date and index event
 
@@ -230,8 +231,8 @@ Index date (day 0)
     └── Day 91+: outside the prediction window (not counted)
 ```
 
-`prediction_window_days` in `config.R` sets this window. It must match the
-`riskWindowEnd` argument in the Step 8 analysis starter patterns.
+`prediction_window_days` in `config.R` sets this window. Whatever downstream analysis
+consumes this dataset must set its own `riskWindowEnd` (or equivalent) to match.
 
 ---
 

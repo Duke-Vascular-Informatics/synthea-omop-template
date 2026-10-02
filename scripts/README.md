@@ -8,7 +8,7 @@ they are not workflow entry points themselves.
 
 | File | Description | Called by |
 |------|-------------|-----------|
-| `check_setup.R` | Pre-flight setup check. Scans `study_params.yaml`, cohort SQL files, and covariate CSVs for incomplete placeholders; prints a `[OK]`/`[WARN]`/`[FAIL]` checklist. No database connection required. Exit code 0 = ready for Step 8. Equivalent to the `/check-setup` Claude skill. | Manual: `Rscript scripts/check_setup.R` |
+| `check_setup.R` | Pre-flight setup check. Scans `study_params.yaml`, cohort SQL files, and covariate CSVs for incomplete placeholders; prints a `[OK]`/`[WARN]`/`[FAIL]` checklist. No database connection required. Exit code 0 = ready to generate synthetic data. Equivalent to the `/check-setup` Claude skill. | Manual: `Rscript scripts/check_setup.R` |
 | `concept_lookup.R` | OMOP vocabulary lookup. Queries `omop_vocab` for standard concept IDs matching a clinical term, with synonym fallback and descendant expansion. Labels results `[vocab query]`. Equivalent to the `/concept-lookup` Claude skill. | Manual: `Rscript scripts/concept_lookup.R "<term>" [domain]` |
 | `create_support_bundle.R` | Creates a redacted troubleshooting bundle in `output/support/` including setup report, git diagnostics, and recent logs. | Manual: `Rscript scripts/create_support_bundle.R` |
 | `find_todos.R` | Scans the project for `# TODO` tags and prints a summary of remaining placeholders. | Manual |
@@ -30,7 +30,6 @@ they are not workflow entry points themselves.
 | `etl/` | Main Synthea CSV → OMOP ETL engine (`run_synthea_full_csv_builder_etl.R`) |
 | `hooks/` | Local git-hook installer and hook documentation for analyst guardrails |
 | `synthea/` | Synthea synthetic data generation and module visualization utilities |
-| `bundle/` | Build utilities for the portable risk score validation bundle |
 | `archive/` | Inactive scripts preserved for reference; not part of the active workflow |
 
 ## CLI flags for quality_check_etl.R

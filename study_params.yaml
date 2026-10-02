@@ -10,7 +10,10 @@
 #   2. Run: Rscript scripts/find_todos.R   — check remaining placeholders
 #   3. Run: Rscript workflow/02_define_omop_cohort_outcome_covariates.R  — validate
 #   4. Populate covariates/covariates.csv and covariates/covariate_concepts.csv
-#   5. Write your analysis in workflow/08 Sections 7–9, then run Step 8
+#   5. Run Steps 3-6 to generate and QC the synthetic dataset, then register it
+#      in synthetic_data/registry.yaml. This repo generates data only — the
+#      `analyses:`/`report:` blocks below are read by this repo's own code but
+#      are not acted on; leave every analyses: flag false. See README.md.
 #
 # CONCEPT ID LOOKUP — before writing any concept ID, run in Claude Code chat:
 #   /concept-lookup total hip replacement procedure
@@ -187,7 +190,8 @@ additional_outcomes: []
 # ANALYSIS PARAMETERS
 # =============================================================================
 # Days after index date during which the outcome is counted.
-# Must match riskWindowEnd in Step 8 analysis settings.
+# Whatever downstream analysis consumes this dataset must set its own
+# riskWindowEnd (or equivalent) to match.
 prediction_window_days: 90   # TODO [CONFIG]: set to your follow-up window in days
 
 # Minimum days of prior observation required before index date.
@@ -199,9 +203,11 @@ covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 
 # =============================================================================
 # ANALYSES
-# Set each flag to true to enable that analysis block in workflow/08.
-# Multiple analyses can run in a single Step 8 execution.
-# No editing of workflow/08 is needed — these flags drive everything.
+# This repo generates synthetic data only and does not run an analysis — leave
+# every flag below false. (They are read by the now-undocumented workflow/08,
+# retained for repos still built on the previous full-analysis version; see
+# git history. New analysis work belongs in a separate strategus-study-template
+# repo.)
 # =============================================================================
 analyses:
   cohort_diagnostics:       false  # CohortDiagnostics phenotype QA — run before any primary analysis

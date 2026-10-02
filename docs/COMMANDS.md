@@ -29,11 +29,7 @@ When a command changes:
 | Generate Synthea CSV (PowerShell) | `powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1` | [Step 13](GETTING_STARTED.md#step-13-generate-synthetic-data-and-run-etl-60-minutes) |
 | Run ETL | `Rscript workflow/05_etl_csv_to_omop.R` | [Step 13](GETTING_STARTED.md#step-13-generate-synthetic-data-and-run-etl-60-minutes) |
 | Run QC checks | `Rscript workflow/06_quality_check_defined_phenotypes.R` | [Step 13](GETTING_STARTED.md#step-13-generate-synthetic-data-and-run-etl-60-minutes) |
-| Build cohorts | `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` | [Step 14](GETTING_STARTED.md#step-14-create-and-test-analysis-code-3060-minutes) |
-| Setup analysis environment | `Rscript workflow/07_setup_analysis_env.R` | [Step 14](GETTING_STARTED.md#step-14-create-and-test-analysis-code-3060-minutes) |
-| Run analyses | `Rscript workflow/08_run_analysis_and_manuscript_report.R` | [Step 14](GETTING_STARTED.md#step-14-create-and-test-analysis-code-3060-minutes) |
-| Build portable bundle (bash) | `bash workflow/09_build_portable_analysis_bundle.sh` | [Step 15](GETTING_STARTED.md#step-15-create-transportable-code-packet-5-minutes) |
-| Build portable bundle (PowerShell) | `powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1` | [Step 15](GETTING_STARTED.md#step-15-create-transportable-code-packet-5-minutes) |
+| Build/validate cohort definitions | `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` | [Step 11](GETTING_STARTED.md#step-11-define-your-cohort-outcome-and-covariates-3060-minutes) |
 | Create support bundle | `Rscript scripts/create_support_bundle.R` | [Playbooks](PLAYBOOKS.md) |
 
 ---

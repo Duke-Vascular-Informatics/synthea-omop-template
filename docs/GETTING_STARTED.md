@@ -762,69 +762,33 @@ If Step 13 fails, use the focused runbook:
 
 ---
 
-## Step 14: Create and Test Analysis Code (30–60 minutes)
+## Step 14: Register Your Synthetic Dataset (10 minutes)
 
-### 14.1 Build cohorts
+Your synthetic OMOP CDM dataset is generated, ETL'd, and quality-checked. This repo's job
+ends here — register the dataset so analysis-core repos (built from
+`strategus-study-template`) can reuse it instead of generating their own.
 
-```bash
-Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-```
+### 14.1 Add an entry to the synthetic dataset registry
 
-This:
-1. Validates your SQL cohort definitions
-2. Instantiates target, outcome, and comparator cohorts in SQL Server
-3. Checks that the cohorts are non-empty and reasonable
+Add (or update) an entry in `synthetic_data/registry.yaml` at the workspace root
+describing this dataset: the disease/procedure it covers, the outcomes present,
+`source_repo` (this repo), `producer_role: synth`, and the physical schema name. See
+that file's own header comment for the full field reference.
 
-### 14.2 Run analyses
-
-```bash
-Rscript workflow/07_setup_analysis_env.R       # Install analysis packages
-Rscript workflow/08_run_analysis_and_manuscript_report.R
-```
-
-All analysis parameters are controlled by the `analyses:` flags in `study_params.yaml`.
-No code editing needed — just set flags to `true` / `false`.
-
-### 14.3 Review outputs
-
-Outputs are written to `config$output_folder` (e.g., `output/my_study/`):
+### 14.2 Commit and push
 
 ```bash
-# Inside the container
-ls -la output/my_study/
-
-# View results in VS Code or your file explorer
-# e.g., output/my_study/CharacterizationResults.csv
+git add synthea/modules/ cohorts/ covariates/ study_params.yaml
+git commit -m "feat: synthetic dataset for <disease/procedure/outcome>"
+git push
 ```
 
----
+Then open a PR against `main` per the branch-strategy rules in `CLAUDE.md`.
 
-## Step 15: Create Transportable Code Packet (5 minutes)
-
-Your analysis code is now ready to run in any environment (with SQL Server access).
-
-### 15.1 Generate the transportable bundle
-
-```bash
-# Inside the container
-bash workflow/09_build_portable_analysis_bundle.sh
-# OR (Windows PowerShell):
-powershell -ExecutionPolicy Bypass -File workflow/09_build_portable_analysis_bundle.ps1
-```
-
-This creates a self-contained folder `portable/transportable_bundle/` containing:
-- All analysis R code
-- Pinned R packages (`renv.lock`)
-- JDBC driver (bundled)
-- OHDSI packages (prebuilt binaries)
-- Configuration templates
-
-### 15.2 Share the packet
-
-The `transportable_bundle/` can be:
-1. **Shipped to a data partner** — they extract it, update config with their schema names, and run `Rscript run_analysis.R` locally
-2. **Pushed to GitHub** — other researchers can clone and use it
-3. **Archived** — long-term preservation of exact analysis code and package versions
+> **Looking for analysis, manuscript reports, or a transportable bundle?** Those belong
+> in a separate analysis-core repo built from
+> [`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template),
+> not here. See the root workspace README's "Multi-Repo Analysis Pipeline" section.
 
 ---
 
