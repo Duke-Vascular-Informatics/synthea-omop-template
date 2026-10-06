@@ -29,8 +29,8 @@ here — use
 [`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template)
 instead.** That is the current, recommended template for every new analysis-core repo:
 declarative circe/Strategus cohort definitions, the extract layer, and nothing else. See
-`omop-dev-workspace`'s README ("Multi-Repo Analysis Pipeline") and
-`docs/MIGRATION_PLAN_REPO_SPLIT.md` for the full picture.
+[charon's README ("Multi-Repo Analysis Pipeline")](https://github.com/Duke-Vascular-Informatics/charon#multi-repo-analysis-pipeline)
+for the full picture.
 
 **Every study also gets a separate report repo**, built from
 [`omop-report-template`](https://github.com/Duke-Vascular-Informatics/omop-report-template) —
