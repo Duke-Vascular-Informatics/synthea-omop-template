@@ -4,8 +4,8 @@ message: >
   the metadata below.
 
 title: >
-  Synthea-OMOP Study Development Template: An End-to-End Observational Study Pipeline for OMOP CDM
-  using OHDSI HADES and Synthea Synthetic Data
+  Synthea-OMOP Synthetic Data Template: Generating Analysis-Specific Synthetic OMOP CDM Datasets
+  with Synthea
 
 authors:
   - given-names: "Adam P."
@@ -22,22 +22,18 @@ authors:
     name-suffix: "MD"
     affiliation: "Duke University School of Medicine, Department of Surgery"
 
-version: "1.0.0"
-date-released: "2026-04-27"
-
 repository-code: "https://github.com/Duke-Vascular-Informatics/synthea-omop-template"
 url: "https://github.com/Duke-Vascular-Informatics/synthea-omop-template"
 
 license: GPL-2.0-only
 
 abstract: >
-  A GitHub Template Repository providing an end-to-end pipeline for observational
-  studies on an OMOP CDM v5.4 SQL Server database. Supports cohort characterization,
-  prognostic modelling, and causal inference using the OHDSI HADES R toolstack.
-  Includes synthetic data generation via Synthea for reproducible development and
-  testing. Workflow steps cover environment setup, cohort definition, ETL to OMOP,
-  data quality assessment (ACHILLES, Data Quality Dashboard), analysis, and
-  manuscript-format report generation.
+  A GitHub Template Repository for generating a disease/procedure/outcome-specific
+  synthetic OMOP CDM v5.4 dataset with Synthea: author a Synthea module, generate
+  synthetic patients, ETL them into OMOP CDM on a SQL Server database, and run
+  post-ETL quality checks. The resulting dataset is registered for reuse so that
+  analysis repositories (built from strategus-study-template) can develop and test
+  against it. It is not used for analysis itself.
   Funding: Research reported in this publication was supported by the National
   Center For Advancing Translational Sciences of the National Institutes of Health
   under Award Number K12TR005435. The content is solely the responsibility of the
@@ -47,22 +43,13 @@ abstract: >
 keywords:
   - OMOP CDM
   - OHDSI
-  - observational study
-  - real-world data
-  - clinical informatics
-  - PatientLevelPrediction
-  - CohortMethod
-  - FeatureExtraction
+  - synthetic data
   - Synthea
+  - clinical informatics
+  - reusable template
   - R
 
 references:
-  - type: software
-    title: "OHDSI PatientLevelPrediction"
-    authors:
-      - name: "Observational Health Data Sciences and Informatics (OHDSI)"
-    url: "https://github.com/OHDSI/PatientLevelPrediction"
-
   - type: software
     title: "OHDSI ETL-Synthea"
     authors:

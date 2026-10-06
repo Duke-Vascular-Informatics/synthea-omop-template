@@ -17,9 +17,9 @@ Focused deep dives are split into dedicated docs:
 **Repeat-study time:** ~10-20 minutes when your machine is already set up  
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
 
-> **Using `omop-dev-workspace`?**  
+> **Using a charon-based workspace?**  
 > The [charon](https://github.com/Duke-Vascular-Informatics/charon) workspace template (the public
-> scaffold for an `omop-dev-workspace`-style folder) provides SQL Server,
+> scaffold for a multi-repo OMOP workspace) provides SQL Server,
 > the OMOP vocabulary mount, and the dev container as shared infrastructure. If you are working
 > inside that workspace, **skip Steps 4, 6, and 7** (machine setup is already done).
 > Clone your study repo into the workspace folder, then jump to **Step 5** to create the repo
