@@ -18,6 +18,7 @@ repository-code: "https://github.com/Duke-Vascular-Informatics/synthea-omop-temp
 url: "https://github.com/Duke-Vascular-Informatics/synthea-omop-template"
 
 license: GPL-2.0-only
+doi: 10.5281/zenodo.23190593
 
 abstract: >
   A GitHub Template Repository for generating a disease/procedure/outcome-specific

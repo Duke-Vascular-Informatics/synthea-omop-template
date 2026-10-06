@@ -1,5 +1,7 @@
 # OMOP Synthetic Data Generation Template
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23190593.svg)](https://doi.org/10.5281/zenodo.23190593)
+
 This GitHub repo is a reusable starter kit for generating a disease/procedure/outcome-specific
 synthetic OMOP CDM v5.4 dataset using Synthea — the module-authoring, generation, ETL, and
 quality-check steps (`workflow/01–06`) that produce a reusable synthetic dataset for a
