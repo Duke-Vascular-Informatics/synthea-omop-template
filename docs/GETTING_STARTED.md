@@ -18,7 +18,8 @@ Focused deep dives are split into dedicated docs:
 **Requires:** ~35 GB disk space, 8 GB RAM (16 GB recommended), active internet
 
 > **Using `omop-dev-workspace`?**  
-> The [omop-dev-workspace](https://github.com/Duke-Vascular-Informatics/omop-dev-workspace) provides SQL Server,
+> The [charon](https://github.com/Duke-Vascular-Informatics/charon) workspace template (the public
+> scaffold for an `omop-dev-workspace`-style folder) provides SQL Server,
 > the OMOP vocabulary mount, and the dev container as shared infrastructure. If you are working
 > inside that workspace, **skip Steps 4, 6, and 7** (machine setup is already done).
 > Clone your study repo into the workspace folder, then jump to **Step 5** to create the repo
