@@ -8,7 +8,7 @@ Use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) for the canonical run 
 This file is a step-level reference for what each workflow script does.
 
 > A previous version of this template also included `workflow/07–09` for a full
-> in-repo analysis, manuscript report, and transportable-bundle workflow. That
+> in-repo analysis, manuscript report, and bundle-packaging workflow. That
 > capability is no longer documented or recommended — new analysis work belongs in a
 > separate repo built from `strategus-study-template`. It remains visible in this
 > repo's git history for any study still built on it.

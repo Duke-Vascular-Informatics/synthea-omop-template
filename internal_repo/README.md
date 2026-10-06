@@ -2,7 +2,7 @@
 
 A previous version of this template used this directory as a local package mirror
 for packages required in a downstream secure analytic environment (the now-removed
-portable-bundle workflow) that weren't available on CRAN. That capability is no
+deployment-bundle workflow) that weren't available on CRAN. That capability is no
 longer documented or recommended — new analysis work, including any such packaging
 need, belongs in a separate repo built from `strategus-study-template`. See git
 history for how this directory was used.

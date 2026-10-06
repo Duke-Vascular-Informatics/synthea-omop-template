@@ -1,7 +1,7 @@
-# Getting Started: From Zero to Analysis (Complete Workflow)
+# Getting Started: From Zero to a Synthetic Dataset (Complete Workflow)
 
-This guide walks you through the complete workflow from downloading VS Code to creating
-a transportable analysis code packet. Each step is designed to work with any AI coding
+This guide walks you through the complete workflow from downloading VS Code to generating
+and registering a reusable synthetic OMOP dataset. Each step is designed to work with any AI coding
 assistant: GitHub Copilot, Claude Code, or any other supported tool.
 
 This is the canonical procedural guide for this template. The root README is intentionally
@@ -65,7 +65,7 @@ Use it to:
 - Roll back mistakes without losing work
 
 In this workflow, treat Git commits as study milestones (setup, phenotype definition,
-analysis runs, and bundle generation).
+and analysis runs).
 
 ### 2.2 Install Git
 
@@ -786,7 +786,7 @@ git push
 
 Then open a PR against `main` per the branch-strategy rules in `CLAUDE.md`.
 
-> **Looking for analysis, manuscript reports, or a transportable bundle?** Those belong
+> **Looking for analysis, manuscript reports, or site deployment?** Those belong
 > in a separate analysis-core repo built from
 > [`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template),
 > not here. See the root workspace README's "Multi-Repo Analysis Pipeline" section.
@@ -813,7 +813,7 @@ Use focused troubleshooting docs to reduce duplicated guidance and merge conflic
    git push
    ```
 
-2. **Share your analysis** — push the transportable bundle or the study repo itself
+2. **Share your dataset** — register it in `synthetic_data/registry.yaml` (Step 14) so other studies can reuse it
 
 3. **Document your phenotypes** — add README files explaining clinical rationale for each cohort
 
@@ -835,10 +835,9 @@ Use focused troubleshooting docs to reduce duplicated guidance and merge conflic
 | `study_params.yaml` | Your study's settings (edit this) |
 | `cohorts/*.sql` | Cohort definitions (edit these) |
 | `covariates/*.csv` | Covariate definitions (edit these) |
-| `workflow/01–09` | Analysis pipeline (do not edit) |
+| `workflow/01–06` | Synthetic-data pipeline (do not edit) |
 | Workspace root container config | Shared development environment (do not edit from this study repo) |
-| `output/` | Analysis results (gitignored) |
-| `portable/` | Transportable bundle (for sharing) |
+| `output/` | Generation logs and QC output (gitignored) |
 
 ---
 
