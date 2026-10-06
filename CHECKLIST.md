@@ -119,8 +119,8 @@ follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
 - [ ] **Step 14.1:** Add an entry to `synthetic_data/registry.yaml` at the workspace root
 - [ ] **Step 14.2:** Commit and push; open a PR against `main`
 
-This repo's job ends here. Analysis, manuscript reports, and transportable bundles
-belong in a separate analysis-core repo built from `strategus-study-template`.
+This repo's job ends here. Analysis and manuscript reports belong in a separate analysis-core repo built from
+`strategus-study-template`; site deployment belongs in your institution's own site-deploy repo.
 
 ---
 

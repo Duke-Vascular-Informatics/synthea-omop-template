@@ -225,7 +225,7 @@ warnings <- character(0)
 known_bad_patterns <- list(
 	list(
 		pattern = "workflow/09_create_transportable_bundle\\.R",
-		message = "Use workflow/09_build_portable_analysis_bundle.sh or .ps1 instead."
+		message = "Bundle building is not part of this repo; use your institution's site-deploy repo."
 	),
 	list(
 		pattern = "Rscript\\s+workflow/04_generate_synthea_csv\\.(sh|ps1)",
