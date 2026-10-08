@@ -13,9 +13,9 @@ Supplementary project documentation that does not belong in the root README.
 
 | File | Description |
 |------|-------------|
-| `GETTING_STARTED.md` | **Start here for new users.** Complete end-to-end workflow from VS Code setup through synthetic data generation. Includes post-clone workflow with skip gates for repeat users. |
+| `GETTING_STARTED.md` | **Start here.** Generating an analysis-specific synthetic dataset, from a ready charon workspace through registering the result. Machine setup (VS Code, Docker, vocabulary) is in the charon workspace docs. |
 | `COMMANDS.md` | **Canonical command index.** Single source of truth for executable command snippets used across docs. |
-| `PLAYBOOKS.md` | **Analyst and maintainer runbooks.** Decision-tree triage for analysts and governance checks for maintainers. |
+| `PLAYBOOKS.md` | **Analyst and maintainer runbooks** for this repo. Decision-tree triage for analysts and governance checks for maintainers. |
 | `omop_primer.md` | **OMOP CDM primer.** Practical introduction to OMOP concepts for analysts new to the data model. |
 | `CITATION_TEMPLATE_METHODS.md` | **Template citation guidance.** Methods-ready citation text for citing this template in manuscripts. |
 | `TOPIC_OWNERSHIP.csv` | **Topic ownership matrix.** Maps sensitive topic headings to canonical owner docs to reduce content cloning. |

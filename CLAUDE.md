@@ -1,16 +1,18 @@
 # Workspace Instructions
 
-This analysis folder inherits shared AI coding instructions from:
+This repo (a `-synth` synthetic-data-generation repo) inherits shared AI coding instructions from:
 
 - `../CLAUDE.md`
 
 Use the workspace-level file as canonical guidance for Claude Code and other assistants.
 
+**Scope reminder:** this template is only for analysis-specific synthetic data generation (`workflow/01–06`). Do not add analysis, report, or bundle-packaging code here; analysis belongs in a `strategus-study-template` repo and the manuscript in an `omop-report-template` repo.
+
 ## Local Overrides
 
 ### Version Control Routing
 
-This repo is a **git submodule** of the workspace root (`omop-dev-workspace`). It has its own independent remote.
+This repo is a **git submodule** of the workspace root (your charon-based workspace). It has its own independent remote.
 
 | Remote | URL | What to push |
 |--------|-----|-------------|
@@ -27,7 +29,7 @@ git push origin main
 
 ### Template Sync Workflow
 
-Comparing analysis repos against this template is a **manual, on-demand step** — run the
+Comparing `-synth` repos against this template is a **manual, on-demand step** — run the
 `/sync-template` skill from the workspace root when you want to check for infrastructure
 improvements to back-port. There is no automatic/scheduled routine; the previous every-3-day
 scheduled routine was removed because it generated unnecessary GitHub issues on a fixed

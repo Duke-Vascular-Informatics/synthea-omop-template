@@ -1,6 +1,6 @@
 # cohorts/
 
-OMOP cohort SQL definitions for the current study.
+OMOP cohort SQL definitions used to validate the synthetic dataset (the real study cohorts live in the analysis-core repo).
 Each file is rendered by SqlRender and executed against the SQL Server CDM to populate the results cohort table.
 
 For complete setup and execution flow, use [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
@@ -17,8 +17,8 @@ For complete setup and execution flow, use [docs/GETTING_STARTED.md](../docs/GET
 
 Cohort SQL files are not run directly.
 
-- Step 02 validates the files and checks for placeholders.
-- Step 08 loads and executes the cohort SQL via `R/cohorts.R`.
+- `workflow/02` validates the files and checks for placeholders.
+- `workflow/06` checks that the generated data has enough rows for the configured target and outcome concepts. No analysis runs in this repo, and the cohort SQL is not instantiated here.
 
 SqlRender template parameters used in both files:
 
