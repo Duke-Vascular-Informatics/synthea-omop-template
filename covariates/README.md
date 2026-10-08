@@ -42,7 +42,7 @@ pass a `FeatureExtraction` settings object directly instead.
 | `lookback_start_day` | Start of lookback window relative to index date (negative = before index). Examples: `-365`, `-3650`, `-30` |
 | `lookback_end_day` | End of lookback window. `-1` = day before index (strictly prior). `0` = include index date. |
 | `min_count` | Minimum qualifying records to count the covariate as present. Almost always `1`. |
-| `points` | **Integer risk score pipeline only.** Point value assigned when present. Positive = risk factor, negative = protective. Set to `1` for simple binary presence/absence. Ignored by FeatureExtraction-based analyses. |
+| `points` | **Optional.** Point value for a downstream integer-risk-score analysis (positive = risk factor, negative = protective). Not read by this repo's workflow; leave blank unless the analysis-core repo uses it. |
 | `missing_is_negative` | `TRUE` = absence means covariate is absent (default). `FALSE` = for derived covariates where missing ≠ absent (e.g. BMI from weight/height). |
 
 **Notes:**

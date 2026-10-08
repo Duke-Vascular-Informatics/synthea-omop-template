@@ -83,19 +83,6 @@ Read `covariates/covariate_concepts.csv` if it exists.
 
 ---
 
-### 5. analyses flags
-
-Read the `analyses:` section of `study_params.yaml`. This repo generates synthetic
-data only — it does not run an analysis — so every flag
-(`cohort_characterization`, `prognostic_model`, `causal_inference`,
-`integer_risk_score`, `word_report`) should be `false`.
-
-- [OK] if all five flags are `false`.
-- [WARN] if any flag is `true` — this repo doesn't act on it; leave it `false` unless
-  you have a specific reason to keep it set for a downstream consumer.
-
----
-
 ## Output format
 
 Print a sectioned checklist report exactly like this structure:
@@ -118,9 +105,6 @@ Print a sectioned checklist report exactly like this structure:
 
 --- 4. covariates/covariate_concepts.csv ---
   [FAIL] covariate_concepts.csv has 3 row(s) with concept_id = 0: cov_diabetes, ...
-
---- 5. analyses flags (study_params.yaml) ---
-  [OK]   all analyses: flags are false (this repo generates synthetic data only)
 
 --- Summary ---
   FAIL:    2 item(s) must be resolved before generating synthetic data.

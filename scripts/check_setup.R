@@ -24,8 +24,7 @@
 #   2. Cohort SQL files  — concept_id = 0 guards still active
 #   3. covariates.csv    — placeholder covariate rows
 #   4. covariate_concepts.csv — concept_id = 0 rows
-#   5. analyses flags    — which analyses are enabled
-#   6. Summary           — pass / warnings / failures
+#   5. Summary           — pass / warnings / failures
 #
 # Exit codes:
 #   0  — all checks passed (ready to generate synthetic data)
@@ -270,71 +269,7 @@ if (!file.exists(cov_conc_path)) {
 
 
 # -----------------------------------------------------------------------------
-# 5. analyses flags — which analyses are enabled
-# -----------------------------------------------------------------------------
-cat("\n--- 5. analyses flags (study_params.yaml) ---\n")
-
-analyses <- p$analyses
-if (is.null(analyses)) {
-  PASS("analyses: section missing from study_params.yaml — fine, this repo generates synthetic data only")
-} else {
-  any_enabled <- FALSE
-  flag_names <- c(
-    cohort_characterization = "cohort_characterization",
-    prognostic_model        = "prognostic_model",
-    causal_inference        = "causal_inference",
-    integer_risk_score      = "integer_risk_score",
-    plp_model_validation    = "plp_model_validation",
-    word_report             = "word_report"
-  )
-  for (flag in names(flag_names)) {
-    val <- isTRUE(analyses[[flag]])
-    if (val) {
-      flag_warn(paste0(flag, ": true — this repo does not act on it; leave false unless a downstream consumer needs it set"))
-      any_enabled <- TRUE
-    } else {
-      cat("  [----] ", flag, ": false\n", sep = "")
-    }
-  }
-  if (!any_enabled) {
-    PASS("All analyses flags are false — expected, this repo generates synthetic data only")
-  }
-
-  # Causal inference requires a comparator cohort
-  if (isTRUE(analyses$causal_inference)) {
-    if (is.null(p$comparator$cohort_id) || is.na(p$comparator$cohort_id)) {
-      flag_fail("causal_inference = true but comparator.cohort_id is not set in study_params.yaml")
-    }
-    # Negative controls are not required but strongly recommended for calibration
-    nco_ids <- unlist(p$negative_controls$ancestor_concept_ids)
-    nco_ids <- nco_ids[!is.na(nco_ids) & nco_ids != 0]
-    if (is.null(nco_ids) || length(nco_ids) == 0) {
-      flag_warn(paste0(
-        "causal_inference = true but negative_controls.ancestor_concept_ids is empty. ",
-        "Add >= 5 negative control concept IDs for empirical calibration."
-      ))
-    } else if (length(nco_ids) < 5L) {
-      flag_warn(paste0(
-        "Only ", length(nco_ids), " negative control(s) defined. ",
-        "EmpiricalCalibration requires >= 5 for a reliable null distribution."
-      ))
-    } else {
-      PASS(paste0("negative_controls: ", length(nco_ids), " concept ID(s) defined"))
-    }
-  }
-
-  # Integer risk score requires points column in covariates.csv
-  if (isTRUE(analyses$integer_risk_score) && file.exists(cov_def_path)) {
-    cov_check <- read.csv(cov_def_path, stringsAsFactors = FALSE, comment.char = "#")
-    if (!"points" %in% names(cov_check)) {
-      flag_fail("integer_risk_score = true but covariates.csv has no 'points' column")
-    }
-  }
-}
-
-
-# -----------------------------------------------------------------------------
-# 6. Summary
+# 5. Summary
 # -----------------------------------------------------------------------------
 cat("\n--- Summary ---\n")
 total_checks <- issues + warnings

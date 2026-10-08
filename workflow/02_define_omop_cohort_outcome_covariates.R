@@ -57,7 +57,7 @@ source(bootstrap_path)
 set_workflow_root()
 
 # Read all study parameters from config.R (which reads study_params.yaml).
-# Step 8 (build_cohorts) reads the same config, so the values never diverge.
+# Every later workflow step reads the same config, so the values never diverge.
 source("config.R")
 config <- get_validation_config()
 target_cohort_sql_path     <- config$target_cohort_sql
@@ -74,10 +74,6 @@ covariate_concepts_path    <- config$covariate_concepts_file
 # in study_params.yaml (not null/NA). Studies without a comparator skip all
 # comparator artifact loading and validation silently.
 comparator_enabled <- !is.na(config$comparator_cohort_id)
-
-# Guard: points column in covariates.csv is only required when the integer
-# risk score analysis is enabled. Continuous PLP studies don't use it.
-require_points <- isTRUE(config$run_integer_risk_score)
 
 # Read the raw YAML once so read_model_reference() can access the full tree.
 study_params_raw <- yaml::read_yaml("study_params.yaml")
@@ -262,13 +258,10 @@ if (!is.null(covariate_definitions_path) && file.exists(covariate_definitions_pa
 
   required_cols <- c("covariate_id", "covariate_name", "domain",
                      "lookback_start_day", "lookback_end_day", "min_count")
-  if (require_points) required_cols <- c(required_cols, "points")
   missing_cols  <- setdiff(required_cols, names(covariate_definitions))
   if (length(missing_cols) > 0)
     stop("Covariates file is missing required columns: ",
          paste(missing_cols, collapse = ", "))
-  if (!require_points && !("points" %in% names(covariate_definitions)))
-    message("[Step 2] No 'points' column in covariates — fine unless analyses.integer_risk_score = true.")
 
   # Warn on placeholder rows (covariate_id still matching template defaults).
   placeholder_ids <- grep("^covariate_[0-9]+$", covariate_definitions$covariate_id, value = TRUE)

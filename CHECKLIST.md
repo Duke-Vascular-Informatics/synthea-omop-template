@@ -48,7 +48,7 @@ container) is done once in your charon workspace: see
 ## Phase 2: Define What The Data Must Support (~30–60 minutes)
 
 - [ ] **Step 5.1:** `Rscript scripts/check_setup.R`
-- [ ] **Step 5.2:** Edit `study_params.yaml`: `study_name`, `cdm_schema`, `results_schema`, `cohort_table`, dates, `output_folder`, generation parameters. Leave `analyses:` flags `false`
+- [ ] **Step 5.2:** Edit `study_params.yaml`: `study_name`, `cdm_schema`, `results_schema`, `cohort_table`, dates, `output_folder`, generation parameters
 - [ ] **Step 5.3:** Look up every concept ID in Rule 1 order (OHDSI PL → lab ATLAS → catalog → live query). Tag `[vocab query]`
 - [ ] **Step 5.4:** Edit `cohorts/*.sql`. Replace `concept_id = 0`
 - [ ] **Step 5.5:** Edit `covariates/covariates.csv` and `covariate_concepts.csv`
