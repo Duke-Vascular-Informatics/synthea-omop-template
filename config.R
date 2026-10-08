@@ -183,6 +183,7 @@ get_validation_config <- function() {
     #                       non-home discharge), verified via a NUBC
     #                       discharge-disposition breakdown instead.
     outcome_domain = p$outcome$domain %||% "condition",
+    outcome_label  = p$outcome$label  %||% "Outcome",  # display label used in cohort messages
 
     # -------------------------------------------------------------------------
     # Existing ATLAS cohorts (optional).
@@ -198,8 +199,8 @@ get_validation_config <- function() {
     # Covariate / feature definition files (pre-specified covariate list).
     # Used when you have a version-controlled, protocol-specified set of
     # covariates rather than automated FeatureExtraction across all domains.
-    # Set either to NULL in workflow/08 to skip this pipeline and use
-    # FeatureExtraction::createCovariateSettings() directly instead.
+    # Set either to NULL to skip this CSV-driven validation of the covariate
+    # specification.
     # -------------------------------------------------------------------------
     covariate_definitions_file = file.path("covariates", "covariates.csv"),
     covariate_concepts_file    = file.path("covariates", "covariate_concepts.csv"),
@@ -219,13 +220,13 @@ get_validation_config <- function() {
 
     # -------------------------------------------------------------------------
     # Output folders — from study_params.yaml.
-    # output_folder:          study analysis results (Step 8)
-    # achilles_output_folder: CDM-level ACHILLES profiling (Step 6b)
-    # dqd_output_folder:      CDM-level Data Quality Dashboard (Step 6c)
+    # output_folder:          generation and QC outputs
+    # achilles_output_folder: CDM-level ACHILLES profiling (workflow 06)
+    # dqd_output_folder:      CDM-level Data Quality Dashboard (workflow 06)
     #
     # All three are runtime-only and excluded from git via .gitignore (output/).
-    # QC outputs are nested under output/qc/ to keep them separate from study
-    # deliverables while avoiding a new root-level directory.
+    # QC outputs are nested under output/qc/ to keep them separate from generation
+    # outputs while avoiding a new root-level directory.
     # -------------------------------------------------------------------------
     output_folder          = file.path(getwd(), p$output_folder %||% "output"),
     achilles_output_folder = file.path(getwd(), "output", "qc", "achilles"),
@@ -237,41 +238,6 @@ get_validation_config <- function() {
     cdm_database_id          = p$cdm_database_id          %||% "my_cdm_v5.4",
     cdm_database_name        = p$cdm_database_name        %||% "My Study Database",
     cdm_database_description = p$cdm_database_description %||%
-                                 "Brief description of the patient population.",
-
-    # -------------------------------------------------------------------------
-    # Negative control outcomes — from study_params.yaml negative_controls: section.
-    # Used for empirical calibration in the causal inference block.
-    # Returns integer(0) when the list is empty or the key is absent.
-    # -------------------------------------------------------------------------
-    negative_control_concept_ids = as_int_vec(p$negative_controls$ancestor_concept_ids),
-
-    # -------------------------------------------------------------------------
-    # Analysis flags — from study_params.yaml analyses: section.
-    # These drive workflow/08 — no code editing in that script is needed.
-    # -------------------------------------------------------------------------
-    run_cohort_diagnostics      = isTRUE(p$analyses$cohort_diagnostics),
-    run_cohort_characterization = isTRUE(p$analyses$cohort_characterization),
-    run_prognostic_model        = isTRUE(p$analyses$prognostic_model),
-    run_causal_inference        = isTRUE(p$analyses$causal_inference),
-    run_integer_risk_score      = isTRUE(p$analyses$integer_risk_score),
-    run_word_report             = isTRUE(p$analyses$word_report),
-    run_plp_model_validation    = isTRUE(p$analyses$plp_model_validation),
-
-    # -------------------------------------------------------------------------
-    # Report generation — from study_params.yaml report: section.
-    # score_type is used only for study_design = "prognostic_model".
-    # -------------------------------------------------------------------------
-    score_type               = p$report$score_type             %||% "integer",
-    outcome_label            = p$report$outcome_label          %||% "Outcome",
-    model_type_description   = p$report$model_type_description %||% "integer risk score",
-    var_imp_file             = p$report$var_imp_file           %||% "model/varImp.rds",
-
-    # Narrative methods text — from study_params.yaml report: section.
-    # NULL means the field was not set; report templates substitute a placeholder string.
-    report_study_title                   = p$report$study_title                   %||% NULL,
-    report_target_population_description = p$report$target_population_description %||% NULL,
-    report_outcome_description           = p$report$outcome_description           %||% NULL,
-    report_score_description             = p$report$score_description             %||% NULL
+                                 "Brief description of the patient population."
   )
 }

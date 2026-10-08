@@ -10,7 +10,9 @@
 #   2. Run: Rscript scripts/find_todos.R   — check remaining placeholders
 #   3. Run: Rscript workflow/02_define_omop_cohort_outcome_covariates.R  — validate
 #   4. Populate covariates/components.csv and covariates/component_concepts.csv
-#   5. Write your analysis in workflow/08 Sections 7–9, then run Step 8
+#   5. Run workflows 03-06 to generate and QC the synthetic dataset, then register it
+#      in synthetic_data/registry.yaml. This repo generates data only; analysis lives
+#      in a strategus-study-template repo.
 #
 # CONCEPT ID LOOKUP — before writing any concept ID, run in Claude Code chat:
 #   /concept-lookup total hip replacement procedure
@@ -148,7 +150,7 @@ comparator:
 # ANALYSIS PARAMETERS
 # =============================================================================
 # Days after index date during which the outcome is counted.
-# Must match riskWindowEnd in Step 8 analysis settings.
+# Should match the risk window used by the analysis-core repo.
 prediction_window_days: 90   # TODO [CONFIG]: set to your follow-up window in days
 
 # Minimum days of prior observation required before index date.
@@ -159,55 +161,8 @@ min_prior_observation_days: 365   # TODO [CONFIG]: adjust or set to 0 for no res
 covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 
 # =============================================================================
-# ANALYSES
-# Set each flag to true to enable that analysis block in workflow/08.
-# Multiple analyses can run in a single Step 8 execution.
-# No editing of workflow/08 is needed — these flags drive everything.
-# =============================================================================
-analyses:
-  cohort_characterization: false  # FeatureExtraction default covariate summary of the target cohort
-  prognostic_model:         false  # PatientLevelPrediction LASSO (default; swap model in workflow/08)
-  causal_inference:         false  # CohortMethod PS matching (requires comparator cohort in config)
-  integer_risk_score:       false  # custom integer score pipeline (R/risk_score_pipeline.R)
-  word_report:              false  # Word report via R/report_extended.R (run after a pipeline above)
-  plp_model_validation:     false  # external validation of a prebuilt PLP model (R/plp_validation_pipeline.R)
-
-# =============================================================================
-# REPORT GENERATION
-# Controls how generate_manuscript_report() renders narrative text and tables.
-# score_type is only used when study_design is "prognostic_model".
-# Other study designs will use their own report: sub-keys when implemented.
-# =============================================================================
-report:
-  score_type:             "integer"                                  # "integer" | "lasso"
-  outcome_label:          "Outcome"                                  # TODO [CONFIG]: outcome display name, e.g. "Surgical Site Infection (SSI)"
-  model_type_description: "integer risk score"                       # TODO [CONFIG]: e.g. "integer risk score" | "LASSO model"
-  # lasso score_type only — path to PatientLevelPrediction variable-importance RDS:
-  # var_imp_file: "model/varImp.rds"
-
-  # ---------------------------------------------------------------------------
-  # Narrative Methods text — Claude Code fills these in before running the report
-  # ---------------------------------------------------------------------------
-  # Before enabling word_report: true, ask Claude Code to read your analytic
-  # files and populate these fields. See the CLAUDE CODE INSTRUCTIONS block at
-  # the top of R/report_prognostic.R for the exact procedure.
-  # Leave as ~ (null) to get a placeholder reminder string in the report output.
-  # ---------------------------------------------------------------------------
-  study_title: ~                        # TODO [CONFIG]: e.g. "Hip Replacement — 90-Day Readmission Risk Score: External Validation"
-  target_population_description: ~     # TODO [CONFIG]: 2–3 sentences — who enters the cohort, index event, washout
-  outcome_description: ~               # TODO [CONFIG]: 2–3 sentences — outcome concept IDs, ascertainment, prediction window
-  score_description: ~                 # TODO [CONFIG]: narrative description of the risk model components and scoring algorithm
-
-# =============================================================================
-# OUTPUT
-# =============================================================================
-# Defaults to output/<study_name> when omitted.
-# Uncomment and set only if you need a non-standard output path.
-# output_folder: ~
-
-# =============================================================================
 # DATABASE METADATA
-# Used in PatientLevelPrediction result objects and analysis reports.
+# Descriptive metadata recorded for the generated dataset.
 # =============================================================================
 cdm_database_id:          "my_cdm_v5.4"                                            # TODO [CONFIG]
 cdm_database_name:        "My Study Database"                                       # TODO [CONFIG]

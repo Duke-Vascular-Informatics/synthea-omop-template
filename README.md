@@ -53,10 +53,9 @@ data-generation repo either.
 
 > **A previous version of this template also supported a full in-repo analysis workflow**
 > (`workflow/07–09`: run the analysis, generate a Word manuscript report, and package a
-> deployment bundle, all in the same repo as data generation). That capability is no longer
-> documented or recommended — new analysis work goes in `strategus-study-template`. It
-> remains visible in this repo's git history for any study still built on it, but the
-> documentation below describes only the data-generation path.
+> deployment bundle, all in the same repo as data generation). That code has been removed
+> (it remains in git history). New analysis work goes in `strategus-study-template`, and
+> the manuscript in `omop-report-template`.
 
 ---
 

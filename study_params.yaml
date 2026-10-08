@@ -10,10 +10,9 @@
 #   2. Run: Rscript scripts/find_todos.R   — check remaining placeholders
 #   3. Run: Rscript workflow/02_define_omop_cohort_outcome_covariates.R  — validate
 #   4. Populate covariates/covariates.csv and covariates/covariate_concepts.csv
-#   5. Run Steps 3-6 to generate and QC the synthetic dataset, then register it
-#      in synthetic_data/registry.yaml. This repo generates data only — the
-#      `analyses:`/`report:` blocks below are read by this repo's own code but
-#      are not acted on; leave every analyses: flag false. See README.md.
+#   5. Run workflows 03-06 to generate and QC the synthetic dataset, then register
+#      it in synthetic_data/registry.yaml. This repo generates data only; analysis
+#      lives in a strategus-study-template repo. See README.md.
 #
 # CONCEPT ID LOOKUP — before writing any concept ID, run in Claude Code chat:
 #   /concept-lookup total hip replacement procedure
@@ -123,31 +122,6 @@ comparator:
     lookback_days: 365
 
 # =============================================================================
-# NEGATIVE CONTROL OUTCOMES (causal inference only)
-# Used for empirical calibration of the outcome model via EmpiricalCalibration.
-# List OMOP standard condition concept IDs representing outcomes that are
-# clinically implausible consequences of the exposure — i.e., outcomes where
-# the true hazard ratio is 1.0 by assumption.
-#
-# How to choose negative controls:
-#   1. Select conditions unrelated to the mechanism of action of your exposure.
-#   2. Verify each concept ID with /concept-lookup before adding it here.
-#   3. Aim for 20–50 negative controls; fewer than 5 produces unreliable calibration.
-#   4. Leave the list empty ([]) to skip empirical calibration even when
-#      causal_inference is enabled.
-#
-# Example:
-#   ancestor_concept_ids:
-#     - 4112343   # [vocab query] Ingrown nail
-#     - 440417    # [vocab query] Fracture of wrist
-#
-# TODO [CAUSAL INFERENCE]: populate before running causal_inference analysis.
-# =============================================================================
-negative_controls:
-  ancestor_concept_ids: []   # TODO [CAUSAL INFERENCE]: add verified negative control concept IDs
-
-
-# =============================================================================
 # ADDITIONAL OUTCOMES (secondary — optional, for descriptive / multi-outcome designs)
 # Instantiates one cohort per list entry via R/cohorts.R's
 # instantiate_additional_outcomes(). Every entry here is a SECONDARY outcome
@@ -202,36 +176,6 @@ min_prior_observation_days: 365   # TODO [CONFIG]: adjust or set to 0 for no res
 covariate_lookback_days: 365   # TODO [CONFIG]: adjust if needed
 
 # =============================================================================
-# ANALYSES
-# This repo generates synthetic data only and does not run an analysis — leave
-# every flag below false. (They are read by the now-undocumented workflow/08,
-# retained for repos still built on the previous full-analysis version; see
-# git history. New analysis work belongs in a separate strategus-study-template
-# repo.)
-# =============================================================================
-analyses:
-  cohort_diagnostics:       false  # CohortDiagnostics phenotype QA — run before any primary analysis
-  cohort_characterization:  false  # FeatureExtraction default covariate summary of the target cohort
-  prognostic_model:         false  # PatientLevelPrediction LASSO (default; swap model in workflow/08)
-  causal_inference:         false  # CohortMethod PS matching (requires comparator cohort in config)
-  integer_risk_score:       false  # custom integer score pipeline (R/risk_score_pipeline.R)
-  word_report:              false  # Word report via R/report_extended.R (run after a pipeline above)
-  plp_model_validation:     false  # external validation of a prebuilt PLP model (R/plp_validation_pipeline.R)
-
-# =============================================================================
-# REPORT GENERATION
-# Controls how generate_manuscript_report() renders narrative text and tables.
-# score_type is only used when study_design is "prognostic_model".
-# Other study designs will use their own report: sub-keys when implemented.
-# =============================================================================
-report:
-  score_type:             "integer"                                  # "integer" | "lasso"
-  outcome_label:          "Outcome"                                  # TODO [CONFIG]: outcome display name, e.g. "Surgical Site Infection (SSI)"
-  model_type_description: "integer risk score"                       # TODO [CONFIG]: e.g. "integer risk score" | "LASSO model"
-  # lasso score_type only — path to PatientLevelPrediction variable-importance RDS:
-  # var_imp_file: "model/varImp.rds"
-
-# =============================================================================
 # OUTPUT
 # =============================================================================
 # Defaults to output/<study_name> when omitted.
@@ -240,7 +184,7 @@ report:
 
 # =============================================================================
 # DATABASE METADATA
-# Used in PatientLevelPrediction result objects and analysis reports.
+# Descriptive metadata recorded for the generated dataset.
 # =============================================================================
 cdm_database_id:          "my_cdm_v5.4"                                            # TODO [CONFIG]
 cdm_database_name:        "My Study Database"                                       # TODO [CONFIG]

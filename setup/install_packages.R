@@ -4,7 +4,7 @@
 # study template.  Also provisions the Microsoft JDBC driver bundle into the
 # project-local drivers/ folder so the project is fully self-contained.
 #
-# Run ONCE in a fresh R session BEFORE running workflow/07_setup_analysis_env.R.
+# Run ONCE in a fresh R session (workflow/01 does this for you).
 # Usage: Rscript setup/install_packages.R
 # =============================================================================
 
@@ -189,4 +189,4 @@ ensure_jdbc_bundle(get_validation_config())
 message("JDBC driver provisioned.")
 
 message("\nAll packages installed and JDBC driver ready.")
-message("Next step: Rscript workflow/07_setup_analysis_env.R to verify the environment.")
+message("Next step: Rscript workflow/02_define_omop_cohort_outcome_covariates.R")

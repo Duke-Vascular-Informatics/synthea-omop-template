@@ -224,6 +224,10 @@ warnings <- character(0)
 
 known_bad_patterns <- list(
 	list(
+		pattern = "workflow/0[78]_(setup_analysis_env|run_analysis_and_manuscript_report)\\.R",
+		message = "Analysis steps were removed; use a strategus-study-template repo for analysis and omop-report-template for the manuscript."
+	),
+	list(
 		pattern = "workflow/09_create_transportable_bundle\\.R",
 		message = "Bundle building is not part of this repo; use your institution's site-deploy repo."
 	),

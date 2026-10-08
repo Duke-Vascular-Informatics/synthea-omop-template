@@ -151,9 +151,8 @@ Rscript scripts/check_setup.R       # [OK] / [WARN] / [FAIL] per item; no databa
 
 Set the study identity (`study_name`), the schema names (`cdm_schema`,
 `results_schema`, `cohort_table`), `output_folder`, the date range, and the
-generation parameters (population size, age range, seed). Leave every
-`analyses:` flag `false`: those blocks are read by this repo's code but never
-acted on, because no analysis runs here.
+generation parameters (population size, age range, seed). There is no
+`analyses:` or `report:` block: no analysis runs in this repo.
 
 ### 5.3 Look up every concept ID (Rule 1)
 

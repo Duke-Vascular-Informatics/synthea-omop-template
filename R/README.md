@@ -17,10 +17,13 @@ Pure functions (no database required) are covered by unit tests in `tests/testth
 
 - `is_transient_db_error()`, `with_db_retry()` — connection retry logic
 
-## Retained from a previous version (not used by Steps 1–6)
+## Also present
 
-`cohorts.R`, `cohort_demographics.R`, `risk_score_pipeline.R`, `report_extended.R`,
-`report_helpers.R`, `report_prognostic.R`, `report_descriptive.R`, and `report_causal.R`
-supported a full in-repo analysis-and-manuscript-report workflow (the old `workflow/08`)
-that this template no longer documents or recommends — see git history for how they were
-used. New analysis work belongs in a separate repo built from `strategus-study-template`.
+`cohorts.R` instantiates cohort SQL into the results cohort table (including optional
+ATLAS cohorts and `additional_outcomes`). No numbered workflow step currently calls it;
+it is kept as a generic helper.
+
+The analysis and manuscript-report code that used to live here (`risk_score_pipeline.R`,
+`report_*.R`, `plp_validation_pipeline.R`, `cohort_demographics.R`, and the old
+`workflow/07–08` that drove them) has been removed. New analysis work belongs in a
+separate repo built from `strategus-study-template`; the code remains in git history.
