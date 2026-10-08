@@ -201,6 +201,27 @@ Rscript scripts/check_setup.R       # no [FAIL] items
 
 Commit the study definition on your branch.
 
+### 5.7 Register the studies that will use this dataset
+
+The check that really protects your downstream studies is run against **their**
+cohorts, not the placeholders above. List every Strategus study that uses this
+dataset in `consumers.yaml`:
+
+```yaml
+dataset_id: my_study_synth_dataset      # this dataset's id in synthetic_data/registry.yaml
+consumers:
+  - study: my-study-desc                # the study repo, cloned beside this one
+    min_target_subjects: 100            # people required in the target cohort
+    min_outcome_subjects: 10            # outcome people who are also in the target
+    min_covariate_subjects: 1           # people required in each covariate cohort
+```
+
+In a Strategus study the target cohort, the outcome cohorts, and every other
+cohort in `inst/Cohorts.csv` (the covariate cohorts) are all checked together.
+The target and outcome ids are read from `CreateStrategusAnalysisSpecification.R`
+(or set `target_id` / `outcome_ids` yourself). Each study must also appear in the
+registry's `used_by` for this dataset (Step 8); QC warns if they disagree.
+
 ---
 
 ## Step 6: Design the Analysis-Specific Synthea Module (30 minutes)
@@ -239,10 +260,28 @@ On Windows run
 `powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1`
 for the first command. Never run `.sh`/`.ps1` files with `Rscript`.
 
-The ETL links to the shared `omop_vocab` schema rather than reloading it. QC
-confirms the target-procedure and outcome concepts you configured in Step 5
+The ETL links to the shared `omop_vocab` schema rather than reloading it. The
+generic QC confirms the target-procedure and outcome concepts you configured in Step 5
 appear in enough rows (thresholds and flags are in `workflow/README.md`; pass
-`--enforce_thresholds=true` to make a shortfall fail the step). If a step fails, use the
+`--enforce_thresholds=true` to make a shortfall fail the step).
+
+**Consumer-study QC.** After the generic checks, workflow 06 also runs
+`scripts/consumer_cohort_qc.R`: for every study in `consumers.yaml` it renders that
+study's cohorts from their circe JSON (as Strategus does), instantiates them against
+the synthetic CDM, and reports subjects per cohort and, for outcomes, subjects who are
+also in the target. A cohort below its minimum is a FAIL. Output goes to
+`output/qc/consumer_cohort_qc.csv`.
+
+```bash
+Rscript workflow/06_quality_check_defined_phenotypes.R --enforce_thresholds=true
+# or only the consumer check:
+Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true
+```
+
+Run it with `--enforce_thresholds=true` before you regenerate or change a dataset that
+other studies already use, so you do not break their links. It checks that the cohorts are
+populated at the subject level; it does not re-run time-at-risk windows. Skip it with
+`--skip_consumer_qc=true`. If a step fails, use the
 [ETL troubleshooting guide](https://github.com/Duke-Vascular-Informatics/charon/blob/main/docs/TROUBLESHOOTING_ETL.md).
 
 ---
@@ -254,12 +293,14 @@ The dataset is generated, loaded and checked. This repo's job ends here.
 1. Add an entry to `synthetic_data/registry.yaml` in the workspace
    root: the disease/procedure covered, the outcomes present, `source_repo`
    (this repo), `producer_role: synth`, and the schema name. The file's header
-   comment lists every field. **Never** include vocabulary tables in anything
-   you export or share.
+   comment lists every field. List every consuming study under `used_by`; it
+   must match `consumers.yaml` (and `consumes_dataset` in the workspace
+   `studies.yaml`). **Never** include vocabulary tables in anything you export
+   or share.
 2. Commit this repo's changes on your branch and open a PR into `main`:
 
 ```bash
-git add synthea/modules/ cohorts/ covariates/ study_params.yaml
+git add synthea/modules/ cohorts/ covariates/ study_params.yaml consumers.yaml
 git commit -m "feat: synthetic dataset for <disease/procedure/outcome>"
 git push
 ```
@@ -289,7 +330,8 @@ manuscript happen there and in the report repo.
 | `config.R` | Infrastructure settings (do not edit) |
 | `study_params.yaml` | Identity, schemas, generation parameters (edit) |
 | `synthea/modules/*.json` | The Synthea disease/procedure module (edit; the main work) |
-| `cohorts/*.sql`, `covariates/*.csv` | What the data must support, for validation (edit) |
+| `cohorts/*.sql`, `covariates/*.csv` | Placeholder definitions for quick validation (edit) |
+| `consumers.yaml` | The Strategus studies that use this dataset; QC checks their cohorts (edit) |
 | `workflow/01–06` | The generation pipeline (do not edit) |
 | `output/` | Generation logs and QC output (gitignored) |
 

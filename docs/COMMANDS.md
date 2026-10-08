@@ -27,7 +27,8 @@ When a command changes:
 | Generate Synthea CSV (bash) | `bash workflow/04_generate_synthea_csv.sh` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
 | Generate Synthea CSV (PowerShell) | `powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
 | Run ETL | `Rscript workflow/05_etl_csv_to_omop.R` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
-| Run QC checks | `Rscript workflow/06_quality_check_defined_phenotypes.R` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
+| Run QC checks (generic + consumer-study QC) | `Rscript workflow/06_quality_check_defined_phenotypes.R` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
+| Consumer-study QC only (fail if a using study would break) | `Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
 | Create support bundle | `Rscript scripts/create_support_bundle.R` | [Playbooks](PLAYBOOKS.md) |
 
 Workspace-level commands (not in this repo): load the OMOP vocabulary with

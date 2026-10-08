@@ -20,6 +20,10 @@
 #   --run_dqd=<true|false>        Run OHDSI Data Quality Dashboard (default: false)
 #   --achilles_threads=<n>        Parallel threads for ACHILLES (default: 1)
 #
+#   --skip_consumer_qc=<true|false>   Skip checking consuming studies' cohorts (default: false)
+#   (the flags --consumers, --cdm_schema and --registry are forwarded to
+#    scripts/consumer_cohort_qc.R; see that file)
+#
 # Examples:
 #   # Fast path — existing clinical signal checks only
 #   Rscript workflow/06_quality_check_defined_phenotypes.R
@@ -76,6 +80,20 @@ status <- system2(file.path(R.home("bin"), rscript_bin), args = cmd)
 if (!identical(status, 0L)) {
   # Preserve fail-fast behavior for downstream workflow automation.
   stop("Quality check failed.")
+}
+
+# Consumer-study QC: check the dataset against the cohorts of every Strategus
+# study listed in consumers.yaml, so a regenerated or edited dataset cannot
+# silently break a downstream study. Runs only when the generic QC passed.
+# Skip with --skip_consumer_qc=true. Report-only unless --enforce_thresholds=true.
+skip_consumer_qc <- any(grepl("^--skip_consumer_qc=(true|1|yes)$", args, ignore.case = TRUE))
+if (!skip_consumer_qc) {
+  consumer_args <- grep("^--(enforce_thresholds|cdm_schema|consumers|registry)=", args, value = TRUE)
+  status <- system2(file.path(R.home("bin"), rscript_bin),
+                    args = c("scripts/consumer_cohort_qc.R", consumer_args))
+  if (!identical(status, 0L)) {
+    stop("Consumer-study QC failed: a study that uses this dataset would break.")
+  }
 }
 
 cat("Step 6 complete: quality checks executed.\n")
