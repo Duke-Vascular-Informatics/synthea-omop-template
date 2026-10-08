@@ -15,7 +15,7 @@ For Docker, SQL Server, and vocabulary infrastructure details, use
 
 ## Related setup script (outside this folder)
 
-Run from the **workspace root** (`OMOP_Dev/`), not from inside this study repo.
+Run from the **workspace root** (your charon clone), not from inside this repo.
 
 | Script | Description | When to run |
 |--------|-------------|-------------|

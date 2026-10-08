@@ -9,6 +9,18 @@ quality-check steps (`workflow/01–06`) that produce a reusable synthetic datas
 from [`strategus-study-template`](https://github.com/Duke-Vascular-Informatics/strategus-study-template)
 for that, consuming the dataset this repo produces.
 
+**Why a study needs synthetic data.** The analysis is written and tested against
+synthetic patients, so the team can build cohorts, choose the analytic strategy and
+produce publication-ready tables and figures *before* seeing any real result. That keeps
+the analysis hypothesis-driven and limits opportunity for p-hacking; the reviewed code is
+then run once in the secure environment. This repo produces the synthetic dataset that
+makes that possible, tailored to what the analysis needs.
+
+**Toolchain versions.** The dev container's R, Java and Python versions should match those
+of your secure analytics environment, because code developed here must later run there.
+They are set once per workspace; see
+[charon Step 6.0](https://github.com/Duke-Vascular-Informatics/charon/blob/main/docs/GETTING_STARTED.md#60-match-the-container-to-your-secure-environment-before-the-first-build).
+
 The template is self-contained and optimized to develop with any AI coding assistant
 (GitHub Copilot, Claude Code, or others). The purpose of this development workflow is to create
 transportable offline-capable code: all R packages are pinned in `renv.lock`, the JDBC driver is bundled,
@@ -56,29 +68,29 @@ To avoid duplicated or conflicting instructions, this README is intentionally hi
 
 - Owns: repository orientation, architecture map, and links to canonical docs.
 - Does not own: step-by-step execution details or command snippets that may drift.
-- Canonical procedural source: [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
-- Canonical commands source: [../docs/COMMANDS.md](../docs/COMMANDS.md).
+- Canonical procedural source for *this repo*: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+- Canonical commands source for *this repo*: [docs/COMMANDS.md](docs/COMMANDS.md).
 
-- Use [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) as the **single source of truth** for end-to-end setup and execution.
-- Use the root `omop-dev-workspace` README for shared Docker, SQL Server, dev container, and vocabulary setup.
+- Use [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) as the **single source of truth** for generating a synthetic dataset.
+- Machine-level setup (Docker, SQL Server, dev container, OMOP vocabulary, toolchain versions) is owned by the [charon workspace](https://github.com/Duke-Vascular-Informatics/charon/blob/main/README.md); its [Getting Started guide](https://github.com/Duke-Vascular-Informatics/charon/blob/main/docs/GETTING_STARTED.md) comes first.
 
 ## Quick Start (Condensed)
 
 1. Create a repo from this template and name it `<study>-synth` (the `-synth` suffix is
    the workspace-wide convention for a data-generation-only repo).
-2. Clone the new repo into your local `omop-dev-workspace/` as a subfolder.
-3. Open the workspace in VS Code Dev Containers (from the workspace root).
-4. From inside the repo's container, run the required bootstrap step:
+2. Clone the new repo into your charon workspace folder as a subfolder (a sibling of your
+   analysis-core and report repos), and work on your own branch.
+3. Open the workspace root in VS Code Dev Containers.
+4. From inside the container, run the per-repo bootstrap:
    `Rscript workflow/01_setup_synthea_etl_qc_env.R`
 5. Author your Synthea module, and fill in `cohorts/*.sql` and `covariates/*.csv` only as
-   far as needed to validate the generated data (Steps 2–6) — there is no study analysis
-   to configure here.
-6. Run Steps 2–6 using canonical commands in [../docs/COMMANDS.md](../docs/COMMANDS.md),
+   far as needed to validate the generated data (workflows 02–06) — there is no study
+   analysis to configure here.
+6. Run workflows 02–06 using the canonical commands in [docs/COMMANDS.md](docs/COMMANDS.md),
    then register the resulting dataset in `synthetic_data/registry.yaml`.
 
-For full step-by-step commands, follow [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
-For workspace-level setup (Docker, SQL Server, OMOP vocabulary, and dev container),
-use the root workspace README in `omop-dev-workspace/`.
+For the full procedure, follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). For
+workspace-level setup, use the [charon workspace](https://github.com/Duke-Vascular-Informatics/charon/blob/main/README.md).
 
 ---
 
@@ -87,8 +99,8 @@ use the root workspace README in `omop-dev-workspace/`.
 | Change for every dataset | Leave as-is |
 |------------------------|-------------|
 | `synthea/modules/*.json` (your disease/procedure module) | `config.R` (infrastructure only — no edits needed) |
-| `cohorts/*.sql` (only as far as Step 2 validation needs) | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
-| `covariates/*.csv` (only as far as Step 2 validation needs) | `setup/` |
+| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
+| `covariates/*.csv` (only as far as `workflow/02` validation needs) | `setup/` |
 | `study_params.yaml`'s generation parameters (population, age range, seed) | `renv.lock` (update only to add a new package) |
 
 ---
@@ -99,18 +111,21 @@ This study template is designed to run inside the shared root workspace containe
 Keep machine-level setup instructions in the workspace README and keep this README
 focused on template usage.
 
-Workspace-first note: open `omop-dev-workspace/` in VS Code and use the single
+Workspace-first note: open the charon workspace root in VS Code and use the single
 shared root-level container definition for the workspace.
 
 ---
 
 ## Workflow Reference
 
-Run Step 1 once immediately after opening this repo in the dev container. This is
+Run `workflow/01` once immediately after opening this repo in the dev container. This is
 the per-repo bootstrap checkpoint (renv/packages, JDBC checks, and DB preflight), distinct
 from one-time workspace infrastructure setup.
 
-| Step | Script | Purpose |
+The numbers below are the `workflow/` script numbers, not the step numbers of
+[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
+| Workflow | Script | Purpose |
 |------|--------|---------|
 | 1 | `workflow/01_setup_synthea_etl_qc_env.R` | Install packages, verify DB connectivity, provision JDBC driver |
 | 2 | `workflow/02_define_omop_cohort_outcome_covariates.R` | **Validate your study definition** — cohort SQL, covariate CSVs, concept IDs |
@@ -119,9 +134,8 @@ from one-time workspace infrastructure setup.
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM |
 | 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks — the last step for a `-synth` repo |
 
-After Step 6, register the resulting dataset in `synthetic_data/registry.yaml` so other
-studies can reuse it. This repo's documented workflow ends here — there is no Step 7
-onward; analysis happens in a separate `strategus-study-template` repo.
+After `workflow/06`, register the resulting dataset in `synthetic_data/registry.yaml` so other
+studies can reuse it. This repo's documented workflow ends here; analysis happens in a separate `strategus-study-template` repo.
 
 Each step script is standalone and resolves the project root automatically, so it can be
 run from any shell working directory.
@@ -198,17 +212,13 @@ code or CSV files.
 
 | Resource | Purpose | Audience |
 |----------|---------|----------|
-| **[../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from first-time setup to synthetic data generation | New users, first time setup |
-| **[../docs/COMMANDS.md](../docs/COMMANDS.md)** | Canonical command index used by all operational docs | All users |
+| **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Canonical step-by-step workflow from a ready workspace to a registered synthetic dataset | New users |
+| **[docs/COMMANDS.md](docs/COMMANDS.md)** | Canonical command index for this repo | All users |
 | **[docs/CITATION_TEMPLATE_METHODS.md](docs/CITATION_TEMPLATE_METHODS.md)** | Template-repo citation language and contributor list for methods sections | Manuscript authors |
-| **[../docs/ANALYST_PLAYBOOK.md](../docs/ANALYST_PLAYBOOK.md)** | Fast decision-tree guidance for common analyst tasks and escalation | Analysts, support triage |
-| **[../docs/MAINTAINER_PLAYBOOK.md](../docs/MAINTAINER_PLAYBOOK.md)** | Governance and release-freeze checks for documentation consistency | Maintainers |
-| **[../docs/SETUP.md](../docs/SETUP.md)** | Detailed Docker, SQL Server, Athena vocabulary, and dev container setup | Docker/infrastructure details |
+| **[docs/PLAYBOOKS.md](docs/PLAYBOOKS.md)** | Triage guidance for common tasks, and governance checks for maintainers | Analysts, maintainers |
 | **[CHECKLIST.md](CHECKLIST.md)** | Quick visual reference for workflow phases and key commands | Quick reference during work |
 | **[CLAUDE.md](CLAUDE.md)** | Coding conventions, package rules, comment style, architecture | Developers, AI assistants |
-| **[../docs/CHANGELOG.md](../docs/CHANGELOG.md)** | Categorized docs-governance change history for high-signal review | Maintainers, reviewers |
-| **[../infrastructure/setup/setup_docker_and_vocab.sh](../infrastructure/setup/setup_docker_and_vocab.sh)** | Automated Docker + vocabulary setup (macOS/Linux, workspace-level) | Automation-first users |
-| **[../infrastructure/setup/setup_docker_and_vocab.ps1](../infrastructure/setup/setup_docker_and_vocab.ps1)** | Automated Docker + vocabulary setup (Windows PowerShell, workspace-level) | Windows users |
+| **[charon README](https://github.com/Duke-Vascular-Informatics/charon/blob/main/README.md)** and **[charon docs](https://github.com/Duke-Vascular-Informatics/charon/blob/main/docs/)** | Workspace setup (Docker, SQL Server, vocabulary, dev container, toolchain versions), git/GitHub auth, troubleshooting | Everyone, first |
 | **[Book of OHDSI](https://ohdsi.github.io/TheBookOfOhdsi/)** | OHDSI methodology reference (cohorts, phenotypes, causal inference) | OHDSI methods questions |
 | **[OHDSI Forums](https://forums.ohdsi.org)** | Community Q&A and discussion | Troubleshooting, best practices |
 
