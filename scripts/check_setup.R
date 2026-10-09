@@ -153,6 +153,7 @@ if (!file.exists("consumers.yaml")) {
                   " outcome, ", sum(m$role == "covariate"), " covariate cohort(s) found"))
     }
     for (prob in seen$problems) flag_fail(prob)
+    for (h in seen$hints) flag_warn(h)
   }
 }
 
