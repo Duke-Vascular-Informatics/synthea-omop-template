@@ -29,7 +29,8 @@
 #
 # OUTPUT
 #   Console table plus output/qc/consumer_cohort_qc.csv (aggregate counts only;
-#   no patient-level data).
+#   no patient-level data). For consumers with discharge_disposition_check: true,
+#   also output/qc/discharge_disposition_qc.csv.
 #
 # EXIT CODES
 #   0  all consumers pass (or none registered, or report-only mode)
@@ -71,6 +72,9 @@ if (length(cfg$consumers) == 0) {
 studies <- vapply(cfg$consumers, function(co) co$study, character(1))
 cat("Consumer-study QC for dataset '", cfg$dataset_id, "': ",
     paste(studies, collapse = ", "), "\n", sep = "")
+
+# Advisory: a consumer that reads discharge disposition but has not opted in.
+for (h in inspect_consumers(cfg$consumers, getwd())$hints) cat("  [WARN] ", h, "\n", sep = "")
 
 # consumers.yaml and the workspace registry must tell the same story.
 agree <- check_registry_agreement(cfg$dataset_id, studies, registry_path, cfg$not_checked)
@@ -122,9 +126,17 @@ if (!is.null(out$results)) {
     cat("  note: ", notes$consumer[i], " cohort ", notes$cohort_id[i], ": ", notes$note[i], "\n", sep = "")
   }
 }
+if (!is.null(out$discharge)) {
+  cat("\nDischarge-disposition check (opt-in per consumer; the cohort check above cannot see this):\n")
+  print(out$discharge[, c("consumer", "check", "value", "threshold", "status")], row.names = FALSE)
+  dir.create(file.path(getwd(), "output", "qc"), recursive = TRUE, showWarnings = FALSE)
+  write.csv(out$discharge, file.path(getwd(), "output", "qc", "discharge_disposition_qc.csv"), row.names = FALSE)
+  cat("Wrote output/qc/discharge_disposition_qc.csv\n")
+}
 for (p in out$problems) cat("  [FAIL] ", p, "\n", sep = "")
 
 n_fail <- if (is.null(out$results)) 0L else sum(out$results$status == "FAIL")
+if (!is.null(out$discharge)) n_fail <- n_fail + sum(out$discharge$status == "FAIL")
 n_problem <- length(out$problems)
 cat("\nConsumer-study QC: ", n_fail, " cohort FAIL, ", n_problem,
     " consumer(s) could not be checked.\n", sep = "")

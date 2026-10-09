@@ -174,6 +174,14 @@ consumers:
 not_checked: [some-retired-study]       # in the registry's used_by, deliberately not QC'd
 ```
 
+**If a study's analysis depends on discharge disposition** (for example a non-home discharge
+outcome), also set `discharge_disposition_check: true` on it. Such a cohort is hand-authored SQL that
+Strategus never runs, so the cohort check cannot see whether the dataset carries dispositions at
+all. This opt-in check reads `visit_occurrence` and verifies discharge dispositions were loaded,
+mapped to concepts, and include both home (NUBC 01) and non-home discharge. `workflow/02` and
+`check_setup` warn when a consumer's own cohort SQL reads `discharged_to_*` but the check is not
+set. Optional thresholds: `min_discharge_visits`, `min_non_home_visits`, `min_discharge_mapped_pct`.
+
 The target and outcome ids are read from `CreateStrategusAnalysisSpecification.R` (or set
 `target_id` / `outcome_ids` yourself; the script cannot read ids a spec builds
 programmatically, and says so). Mark outcomes that Synthea cannot generate as

@@ -99,6 +99,7 @@ if (length(consumer_cfg$consumers) == 0) {
     }
   }
   for (p in seen$problems) warning("[Step 2] consumer: ", p, call. = FALSE)
+  for (h in seen$hints)    warning("[Step 2] consumer: ", h, call. = FALSE)
 }
 
 cat("\nNext: design the Synthea module, then run workflow/03, which checks that the\n",

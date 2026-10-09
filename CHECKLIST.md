@@ -49,7 +49,7 @@ container) is done once in your charon workspace: see
 
 - [ ] **Step 5.1:** `Rscript scripts/check_setup.R`
 - [ ] **Step 5.2:** Edit `study_params.yaml`: `study_name`, `cdm_schema`, optional `results_schema` / `output_folder`, database description
-- [ ] **Step 5.3:** List every consuming Strategus study in `consumers.yaml` (and in the registry `used_by`); mark outcomes Synthea cannot generate as `expected_empty`
+- [ ] **Step 5.3:** List every consuming Strategus study in `consumers.yaml` (and in the registry `used_by`); mark outcomes Synthea cannot generate as `expected_empty`; for any study whose analysis depends on discharge disposition, also set `discharge_disposition_check: true`
 - [ ] **Step 5.4:** `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` lists each study's target / outcome / covariate cohorts with no unexpected warnings
 - [ ] **Step 5.5:** Concept IDs: none live in this repo. Missing concepts are added to the consuming study's own cohorts (Rule 1)
 - [ ] Commit `study_params.yaml` and `consumers.yaml` on your branch

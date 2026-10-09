@@ -35,6 +35,16 @@
 #                              on synthetic data (e.g. an outcome Synthea does not
 #                              generate). They get no minimum and are reported with
 #                              a note instead of failing.
+#     discharge_disposition_check  default false. Set true for a study whose analysis
+#                              depends on discharge disposition (e.g. a non-home
+#                              discharge outcome). Its cohort is hand-authored SQL that
+#                              Strategus never runs, so the cohort check passes even when
+#                              the dataset carries no dispositions; this check reads
+#                              visit_occurrence and verifies they were loaded, mapped,
+#                              and include home (NUBC 01) and non-home discharge. QC warns
+#                              when a consumer's cohort SQL reads discharged_to_* but this
+#                              is not set. Optional thresholds: min_discharge_visits (1),
+#                              min_non_home_visits (1), min_discharge_mapped_pct (90).
 #     min_target_subjects      default 100  people required in the target cohort
 #     min_outcome_subjects     default 10   outcome people who are ALSO in the
 #                              target cohort (per outcome cohort)
@@ -59,3 +69,4 @@ consumers: []
 #     min_target_subjects: 100
 #     min_outcome_subjects: 10
 #     min_covariate_subjects: 1
+#     discharge_disposition_check: true   # only for discharge-disposition analyses

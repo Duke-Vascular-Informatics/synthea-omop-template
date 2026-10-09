@@ -59,7 +59,8 @@
 #         not_checked = studies in the registry's used_by that are deliberately
 #         not QC'd, e.g. retired studies or non-Strategus consumers).
 #         Each entry has: study, repo_dir, cohorts_manifest, cohorts_json_dir,
-#         spec_script, target_id, outcome_ids, expected_empty, min_target_subjects,
+#         spec_script, target_id, outcome_ids, expected_empty, discharge_disposition_check
+#         (+ min_discharge_visits, min_non_home_visits, min_discharge_mapped_pct), min_target_subjects,
 #         min_outcome_subjects, min_covariate_subjects.
 # -----------------------------------------------------------------------------
 read_consumers <- function(path = "consumers.yaml") {
@@ -84,7 +85,12 @@ read_consumers <- function(path = "consumers.yaml") {
       expected_empty         = as_int(co$expected_empty),
       min_target_subjects    = as.numeric(co$min_target_subjects    %||% 100),
       min_outcome_subjects   = as.numeric(co$min_outcome_subjects   %||% 10),
-      min_covariate_subjects = as.numeric(co$min_covariate_subjects %||% 1)
+      min_covariate_subjects = as.numeric(co$min_covariate_subjects %||% 1),
+      # Opt-in discharge-disposition check (see check_discharge_disposition()).
+      discharge_disposition_check = isTRUE(co$discharge_disposition_check),
+      min_discharge_visits       = as.numeric(co$min_discharge_visits       %||% 1),
+      min_non_home_visits        = as.numeric(co$min_non_home_visits        %||% 1),
+      min_discharge_mapped_pct   = as.numeric(co$min_discharge_mapped_pct   %||% 90)
     )
   })
 
@@ -184,10 +190,12 @@ read_consumer_manifest <- function(consumer_dir, consumer) {
 # Used by workflow/02 to print the requirements before the module is built.
 #
 # @return list(manifest = data.frame(consumer, cohort_id, cohort_name, role,
-#         expected_empty), problems = character)
+#         expected_empty), problems = character, hints = character)
+#         `hints` are advisory (e.g. a consumer reads discharge disposition but has not
+#         opted in to discharge_disposition_check).
 # -----------------------------------------------------------------------------
 inspect_consumers <- function(consumers, repo_root = getwd()) {
-  rows <- list(); problems <- character(0)
+  rows <- list(); problems <- character(0); hints <- character(0)
   for (co in consumers) {
     dir <- resolve_consumer_dir(co, repo_root)
     if (!dir.exists(dir)) {
@@ -206,6 +214,12 @@ inspect_consumers <- function(consumers, repo_root = getwd()) {
     no_json <- manifest$cohortId[!file.exists(file.path(dir, co$cohorts_json_dir, paste0(manifest$cohortId, ".json")))]
     if (length(no_json)) problems <- c(problems, paste0(co$study, ": missing cohort JSON for id(s) ",
                                                          paste(no_json, collapse = ", ")))
+    dd <- detect_discharge_dependence(dir, co, manifest$cohortId)
+    if (length(dd) && !isTRUE(co$discharge_disposition_check)) {
+      hints <- c(hints, paste0(co$study, ": cohort(s) ", paste(dd, collapse = ", "),
+        " read discharge disposition (discharged_to_*) in their SQL, but discharge_disposition_check is not set. ",
+        "Set it to true in consumers.yaml so the synthetic data is checked for discharge dispositions."))
+    }
     role <- ifelse(!is.null(target) & manifest$cohortId %in% target, "target",
             ifelse(manifest$cohortId %in% outcomes, "outcome", "covariate"))
     rows[[length(rows) + 1L]] <- data.frame(
@@ -213,7 +227,7 @@ inspect_consumers <- function(consumers, repo_root = getwd()) {
       role = role, expected_empty = manifest$cohortId %in% co$expected_empty,
       stringsAsFactors = FALSE)
   }
-  list(manifest = if (length(rows)) do.call(rbind, rows) else NULL, problems = problems)
+  list(manifest = if (length(rows)) do.call(rbind, rows) else NULL, problems = problems, hints = hints)
 }
 
 # -----------------------------------------------------------------------------
@@ -391,6 +405,81 @@ drop_scratch_tables <- function(connection, schema, table_names) {
 }
 
 # -----------------------------------------------------------------------------
+# detect_discharge_dependence   (no database)
+#
+# Finds cohorts of a consuming study whose own SQL reads discharge disposition
+# (visit_occurrence.discharged_to_*). circe cannot express such a cohort, so these
+# are hand-authored SQL files under inst/sql/sql_server/<id>.sql; a study whose
+# outcome or target is "non-home discharge" depends on the synthetic data actually
+# carrying discharge dispositions. Used to warn when a consumer relies on them but
+# has not opted in to discharge_disposition_check.
+#
+# @return integer vector of cohort ids whose SQL references discharged_to_*
+# -----------------------------------------------------------------------------
+detect_discharge_dependence <- function(consumer_dir, consumer, cohort_ids) {
+  hits <- integer(0)
+  sql_dir <- file.path(consumer_dir, "inst", "sql", "sql_server")
+  for (id in cohort_ids) {
+    f <- file.path(sql_dir, paste0(id, ".sql"))
+    if (file.exists(f) && any(grepl("discharged_to", readLines(f, warn = FALSE), ignore.case = TRUE))) {
+      hits <- c(hits, as.integer(id))
+    }
+  }
+  hits
+}
+
+# -----------------------------------------------------------------------------
+# check_discharge_disposition
+#
+# Opt-in check (consumers.yaml: discharge_disposition_check: true) for any
+# synthetic dataset used by an analysis that depends on discharge disposition.
+# The consumer cohort QC cannot see this: a discharge-disposition cohort is
+# hand-authored SQL, and Strategus runs only its placeholder JSON, so the cohort
+# check passes even when the dataset carries no dispositions at all.
+#
+# It reads visit_occurrence in the CDM and verifies that:
+#   - discharge dispositions were loaded       (discharged_to_source_value populated)
+#   - they were mapped to OMOP concepts        (discharged_to_concept_id non-zero)
+#   - home discharge is present                (NUBC 01, the reference category)
+#   - non-home discharge is present            (any other NUBC code)
+#
+# @param connection   DatabaseConnector connection (read-only use)
+# @param cdm_schema   schema holding the synthetic CDM (qualified if needed)
+# @param consumer     normalised consumer entry (thresholds)
+# @return data.frame(consumer, check, value, threshold, status, note)
+# -----------------------------------------------------------------------------
+check_discharge_disposition <- function(connection, cdm_schema, consumer) {
+  sql <- SqlRender::translate(SqlRender::render(
+    "SELECT COUNT(*) AS visits_total,
+            SUM(CASE WHEN discharged_to_source_value IS NOT NULL THEN 1 ELSE 0 END) AS visits_with_source,
+            SUM(CASE WHEN discharged_to_source_value IS NOT NULL
+                      AND discharged_to_concept_id IS NOT NULL
+                      AND discharged_to_concept_id <> 0 THEN 1 ELSE 0 END) AS visits_mapped,
+            SUM(CASE WHEN LTRIM(RTRIM(discharged_to_source_value)) = '01' THEN 1 ELSE 0 END) AS home_visits,
+            SUM(CASE WHEN discharged_to_source_value IS NOT NULL
+                      AND LTRIM(RTRIM(discharged_to_source_value)) <> '01' THEN 1 ELSE 0 END) AS non_home_visits
+     FROM @cdm_schema.visit_occurrence;", cdm_schema = cdm_schema),
+    targetDialect = connection@dbms)
+  r <- DatabaseConnector::querySql(connection, sql, snakeCaseToCamelCase = TRUE)
+  num <- function(x) { v <- suppressWarnings(as.numeric(x)); if (length(v) == 0 || is.na(v)) 0 else v }
+  with_source <- num(r$visitsWithSource); mapped <- num(r$visitsMapped)
+  mapped_pct <- if (with_source > 0) 100 * mapped / with_source else 0
+
+  row <- function(check, value, threshold, note)
+    data.frame(consumer = consumer$study, check = check, value = value, threshold = threshold,
+               status = if (value >= threshold) "PASS" else "FAIL", note = note, stringsAsFactors = FALSE)
+  rbind(
+    row("discharge_dispositions_present", with_source, consumer$min_discharge_visits,
+        paste0("visits with discharged_to_source_value, of ", num(r$visitsTotal), " visits")),
+    row("discharge_codes_mapped_pct", round(mapped_pct, 1), consumer$min_discharge_mapped_pct,
+        "% of those visits with a non-zero discharged_to_concept_id"),
+    row("home_discharge_present", num(r$homeVisits), 1, "visits with NUBC 01 (home), the reference category"),
+    row("non_home_discharge_present", num(r$nonHomeVisits), consumer$min_non_home_visits,
+        "visits with any other NUBC code")
+  )
+}
+
+# -----------------------------------------------------------------------------
 # qualify_schema
 #
 # On SQL Server, DatabaseConnector (which CohortGenerator uses to list tables)
@@ -421,7 +510,8 @@ qualify_schema <- function(schema, database = NULL) {
 # @param repo_root           root of this -synth repo (siblings resolve from it)
 # @param database            database name; qualifies the two schemas above as
 #                            <database>.<schema> (needed on SQL Server)
-# @return list(results = data.frame, problems = character): `problems` holds
+# @return list(results = data.frame, discharge = data.frame (opt-in discharge-disposition
+#         check rows, or NULL), problems = character): `problems` holds
 #         consumers that could not be checked at all (repo missing, no usable
 #         roles, JSON missing, SQL error); each is a hard failure under
 #         --enforce_thresholds.
@@ -436,6 +526,7 @@ run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schem
   dbms <- connection@dbms
 
   all_results <- list()
+  discharge <- list()
   problems <- character(0)
   add_problem <- function(study, msg) problems <<- c(problems, paste0(study, ": ", msg))
 
@@ -445,6 +536,13 @@ run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schem
       add_problem(co$study, paste0("repository not found at ", dir,
                                    " (clone it into the workspace, or set repo_dir)"))
       next
+    }
+
+    # Opt-in: for a study whose analysis depends on discharge disposition. Run first
+    # so a problem with the study's cohorts cannot hide it.
+    if (isTRUE(co$discharge_disposition_check)) {
+      discharge[[co$study]] <- tryCatch(check_discharge_disposition(connection, cdm_schema, co),
+        error = function(e) { add_problem(co$study, paste0("discharge-disposition check failed: ", conditionMessage(e))); NULL })
     }
 
     spec <- parse_spec_roles(file.path(dir, co$spec_script))
@@ -520,5 +618,6 @@ run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schem
   }
 
   list(results = if (length(all_results)) do.call(rbind, unname(all_results)) else NULL,
+       discharge = if (length(discharge)) do.call(rbind, unname(discharge)) else NULL,
        problems = problems)
 }

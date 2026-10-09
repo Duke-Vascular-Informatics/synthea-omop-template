@@ -85,7 +85,9 @@ Rscript workflow/06_quality_check_defined_phenotypes.R --enforce_thresholds=true
 Rscript workflow/06_quality_check_defined_phenotypes.R --skip_consumer_qc=true   # generic QC only
 Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true                   # consumer check only
 ```
-It reads `consumers.yaml`, renders each consuming Strategus study's cohorts from their
+For a consumer with `discharge_disposition_check: true` (analyses that depend on discharge
+disposition) it also verifies the dataset has discharge dispositions loaded, mapped, and both home
+and non-home (`output/qc/discharge_disposition_qc.csv`). It reads `consumers.yaml`, renders each consuming Strategus study's cohorts from their
 circe JSON, instantiates them against the active CDM schema, and fails any cohort below its
 per-role minimum (target, outcome-in-target, covariate). With no consumers listed it only warns.
 

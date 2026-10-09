@@ -92,6 +92,65 @@ test_that("expected_empty cohorts get no minimum but are annotated", {
   expect_equal(res2$status[res2$cohort_id == 4], "FAIL")
 })
 
+test_that("read_consumers reads the opt-in discharge-disposition settings", {
+  d <- withr::local_tempdir()
+  p <- write_consumers_yaml(d, c("consumers:", "  - study: a", "  - study: b",
+    "    discharge_disposition_check: true", "    min_discharge_visits: 50",
+    "    min_non_home_visits: 5", "    min_discharge_mapped_pct: 95"))
+  r <- read_consumers(p)$consumers
+  expect_false(r[[1]]$discharge_disposition_check)
+  expect_equal(c(r[[1]]$min_discharge_visits, r[[1]]$min_non_home_visits, r[[1]]$min_discharge_mapped_pct), c(1, 1, 90))
+  expect_true(r[[2]]$discharge_disposition_check)
+  expect_equal(c(r[[2]]$min_discharge_visits, r[[2]]$min_non_home_visits, r[[2]]$min_discharge_mapped_pct), c(50, 5, 95))
+})
+
+test_that("a consumer that reads discharge disposition gets a hint until it opts in", {
+  d <- withr::local_tempdir()
+  st <- file.path(d, "study-nhd"); dir.create(file.path(st, "inst", "cohorts"), recursive = TRUE)
+  dir.create(file.path(st, "inst", "sql", "sql_server"), recursive = TRUE)
+  writeLines(c("atlas_id,cohort_id,cohort_name", "0,1,T", "0,2,Non-home discharge"), file.path(st, "inst", "Cohorts.csv"))
+  for (id in 1:2) writeLines("{}", file.path(st, "inst", "cohorts", paste0(id, ".json")))
+  writeLines("SELECT 1;", file.path(st, "inst", "sql", "sql_server", "1.sql"))
+  writeLines("SELECT person_id FROM @cdm.visit_occurrence WHERE discharged_to_source_value <> '01';",
+             file.path(st, "inst", "sql", "sql_server", "2.sql"))
+  writeLines(c("targetId <- 1L", "outcomeIds <- c(2L)"), file.path(st, "CreateStrategusAnalysisSpecification.R"))
+  co <- read_consumers(write_consumers_yaml(d, c("consumers:", "  - study: study-nhd", paste0("    repo_dir: ", st))))$consumers
+  expect_equal(detect_discharge_dependence(st, co[[1]], c(1L, 2L)), 2L)
+  expect_match(inspect_consumers(co, d)$hints, "cohort\\(s\\) 2 read discharge disposition.*not set")
+  co[[1]]$discharge_disposition_check <- TRUE
+  expect_length(inspect_consumers(co, d)$hints, 0)
+})
+
+test_that("check_discharge_disposition passes, and fails on each missing property", {
+  skip_if_not_installed("RSQLite"); skip_if_not_installed("DatabaseConnector")
+  tmp <- withr::local_tempdir()
+  cd <- DatabaseConnector::createConnectionDetails(dbms = "sqlite", server = file.path(tmp, "v.sqlite"))
+  con <- DatabaseConnector::connect(cd); on.exit(DatabaseConnector::disconnect(con), add = TRUE)
+  put <- function(df) DatabaseConnector::insertTable(con, databaseSchema = "main", tableName = "visit_occurrence",
+    data = df, dropTableIfExists = TRUE, createTable = TRUE, progressBar = FALSE, camelCaseToSnakeCase = FALSE)
+  co <- list(study = "s", min_discharge_visits = 3, min_non_home_visits = 2, min_discharge_mapped_pct = 90)
+  status <- function() { r <- check_discharge_disposition(con, "main", co); setNames(r$status, r$check) }
+
+  # Healthy: 4 home (01), 2 non-home (03, 62), all mapped, plus visits with no disposition.
+  put(data.frame(visit_occurrence_id = 1:8,
+                 discharged_to_source_value = c(rep("01", 4), "03", "62", NA, NA),
+                 discharged_to_concept_id   = c(rep(900001L, 4), 900002L, 900003L, NA, NA)))
+  expect_true(all(status() == "PASS"))
+
+  # Nothing loaded -> every check fails.
+  put(data.frame(visit_occurrence_id = 1:5, discharged_to_source_value = NA_character_, discharged_to_concept_id = NA_integer_))
+  expect_true(all(status() == "FAIL"))
+
+  # Loaded but unmapped (concept 0): only the mapped-percentage check fails.
+  put(data.frame(visit_occurrence_id = 1:6, discharged_to_source_value = c(rep("01", 3), "03", "62", "50"),
+                 discharged_to_concept_id = 0L))
+  st <- status(); expect_equal(unname(st["discharge_codes_mapped_pct"]), "FAIL"); expect_equal(unname(st["discharge_dispositions_present"]), "PASS")
+
+  # No non-home discharge at all.
+  put(data.frame(visit_occurrence_id = 1:5, discharged_to_source_value = rep("01", 5), discharged_to_concept_id = 900001L))
+  st <- status(); expect_equal(unname(st["non_home_discharge_present"]), "FAIL"); expect_equal(unname(st["home_discharge_present"]), "PASS")
+})
+
 test_that("inspect_consumers lists cohorts by role and reports what blocks the QC", {
   d <- withr::local_tempdir()
   ok <- file.path(d, "study-ok"); dir.create(file.path(ok, "inst", "cohorts"), recursive = TRUE)
@@ -189,6 +248,9 @@ test_that("run_consumer_cohort_qc counts target, outcome-in-target and covariate
         max_levels_of_separation = 0L))
   ins("concept_relationship", data.frame(concept_id_1 = 1L, concept_id_2 = 1L,
         relationship_id = "x", invalid_reason = NA_character_))
+  ins("visit_occurrence", data.frame(visit_occurrence_id = 1:4,
+        discharged_to_source_value = c("01", "01", "03", "62"),
+        discharged_to_concept_id = c(900001L, 900001L, 900002L, 900003L)))
   DatabaseConnector::disconnect(con)
 
   # --- Fake consumer Strategus repo
@@ -210,7 +272,8 @@ test_that("run_consumer_cohort_qc counts target, outcome-in-target and covariate
     "dataset_id: ds1", "consumers:",
     paste0("  - study: study-a"),
     paste0("    repo_dir: ", consumer_dir),
-    "    min_target_subjects: 5", "    min_outcome_subjects: 3", "    min_covariate_subjects: 2"))
+    "    min_target_subjects: 5", "    min_outcome_subjects: 3", "    min_covariate_subjects: 2",
+    "    discharge_disposition_check: true", "    min_discharge_visits: 3", "    min_non_home_visits: 1"))
   cfg <- read_consumers(yml)
 
   out <- run_consumer_cohort_qc(cd, cdm_schema = "main", results_schema = "main",
@@ -223,6 +286,10 @@ test_that("run_consumer_cohort_qc counts target, outcome-in-target and covariate
   expect_equal(get(12)$subjects_in_target, 4);   expect_equal(get(12)$status, "PASS")
   expect_equal(get(13)$role, "covariate")
   expect_equal(get(13)$subjects, 1);             expect_equal(get(13)$status, "FAIL")  # 1 < 2
+  # Opt-in discharge-disposition rows are returned alongside the cohort results.
+  expect_equal(sort(out$discharge$check), sort(c("discharge_dispositions_present", "discharge_codes_mapped_pct",
+                                                 "home_discharge_present", "non_home_discharge_present")))
+  expect_true(all(out$discharge$status == "PASS"))
 
   # Scratch cohort tables are dropped, and the CDM tables are untouched.
   con <- DatabaseConnector::connect(cd)
