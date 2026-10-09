@@ -101,6 +101,7 @@ workspace-level setup, use the [charon workspace](https://github.com/Duke-Vascul
 | `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
 | `covariates/*.csv` (only as far as `workflow/02` validation needs) | `setup/` |
 | `study_params.yaml`'s generation parameters (population, age range, seed) | `renv.lock` (update only to add a new package) |
+| `consumers.yaml` (the Strategus studies that use this dataset; QC checks their cohorts) | |
 
 ---
 
@@ -131,7 +132,7 @@ The numbers below are the `workflow/` script numbers, not the step numbers of
 | 3 | `workflow/03_generate_synthea_module_artifacts.R` | Validate Synthea disease module and regenerate HTML diagram |
 | 4 | `workflow/04_generate_synthea_csv.ps1` / `.sh` | Generate Synthea synthetic patients |
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM |
-| 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks — the last step for a `-synth` repo |
+| 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks, plus consumer-study QC of every study in `consumers.yaml` — the last step for a `-synth` repo |
 
 After `workflow/06`, register the resulting dataset in `synthetic_data/registry.yaml` so other
 studies can reuse it. This repo's documented workflow ends here; analysis happens in a separate `strategus-study-template` repo.

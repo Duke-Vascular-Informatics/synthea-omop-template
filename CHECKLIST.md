@@ -53,6 +53,7 @@ container) is done once in your charon workspace: see
 - [ ] **Step 5.4:** Edit `cohorts/*.sql`. Replace `concept_id = 0`
 - [ ] **Step 5.5:** Edit `covariates/covariates.csv` and `covariate_concepts.csv`
 - [ ] **Step 5.6:** `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` shows no `[FAIL]`
+- [ ] **Step 5.7:** List every consuming Strategus study in `consumers.yaml` (and in the registry `used_by`)
 - [ ] Commit the definitions on your branch
 
 ---
@@ -60,7 +61,8 @@ container) is done once in your charon workspace: see
 ## Phase 3: Generate, Load, Check (~90 minutes)
 
 - [ ] **Step 6:** Edit the Synthea module in `synthea/modules/`. Run `workflow/03`
-- [ ] **Step 7:** Run `workflow/04` (generate), `workflow/05` (ETL), `workflow/06` (QC)
+- [ ] **Step 7:** Run `workflow/04` (generate), `workflow/05` (ETL), `workflow/06` (QC, incl. consumer-study QC)
+- [ ] **Step 7:** Before regenerating a dataset others use: `Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true`
 
 ---
 

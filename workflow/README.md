@@ -24,7 +24,7 @@ This file is a step-level reference for what each workflow script does.
 | 3 | `03_generate_synthea_module_artifacts.R` | — | Validate Synthea disease module JSON and regenerate HTML diagram |
 | 4 | `04_generate_synthea_csv.ps1` / `.sh` | — | Generate synthetic patients |
 | 5 | `05_etl_csv_to_omop.R` | — | ETL Synthea CSV → OMOP CDM tables |
-| 6 | `06_quality_check_defined_phenotypes.R` | — | Post-ETL data quality and phenotype validation checks — the last step this repo documents |
+| 6 | `06_quality_check_defined_phenotypes.R` | — | Post-ETL data quality checks, then consumer-study QC of every study in `consumers.yaml` (`scripts/consumer_cohort_qc.R`) — the last step this repo documents |
 
 Step 2 is the primary required customization. Steps 1, 3–6 are infrastructure and do
 not normally need changes. After Step 6, register the dataset in
@@ -94,3 +94,13 @@ Rscript workflow/06_quality_check_defined_phenotypes.R \
   --enforce_thresholds=true \
   --min_person_rows=100
 ```
+
+**Consumer-study QC** (part of Step 6; flags are forwarded to `scripts/consumer_cohort_qc.R`):
+```bash
+Rscript workflow/06_quality_check_defined_phenotypes.R --enforce_thresholds=true
+Rscript workflow/06_quality_check_defined_phenotypes.R --skip_consumer_qc=true   # generic QC only
+Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true                   # consumer check only
+```
+It reads `consumers.yaml`, renders each consuming Strategus study's cohorts from their
+circe JSON, instantiates them against the active CDM schema, and fails any cohort below its
+per-role minimum (target, outcome-in-target, covariate). With no consumers listed it only warns.

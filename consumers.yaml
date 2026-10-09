@@ -1,0 +1,47 @@
+# =============================================================================
+# consumers.yaml — the Strategus studies that use this synthetic dataset
+#
+# Tracks which downstream studies depend on the dataset this -synth repo
+# generates. workflow/06 (scripts/consumer_cohort_qc.R) instantiates each
+# listed study's own cohorts against the synthetic CDM and fails if a cohort
+# that study needs is empty or too small, so regenerating or editing the
+# dataset cannot silently break a study.
+#
+# In a Strategus study the cohort roles are: ONE target cohort, the outcome
+# cohorts, and every other cohort in inst/Cohorts.csv is a covariate cohort.
+# So listing a study checks its cohorts, outcomes and covariates together.
+#
+# Keep this file in step with the workspace registry: every study here should
+# also appear in synthetic_data/registry.yaml `used_by` for this dataset (and
+# `consumes_dataset` in studies.yaml). QC warns when they disagree.
+#
+#   dataset_id   this dataset's `id` in synthetic_data/registry.yaml
+#
+#   consumers:   one entry per consuming Strategus study
+#     study                    directory name of the study repo (REQUIRED).
+#                              It is cloned beside this repo in the workspace.
+#     repo_dir                 optional path override (absolute, or relative to
+#                              this repo). Default: ../<study>
+#     cohorts_manifest         default inst/Cohorts.csv
+#     cohorts_json_dir         default inst/cohorts
+#     spec_script              default CreateStrategusAnalysisSpecification.R
+#     target_id, outcome_ids   optional. By default they are read from
+#                              targetId / outcomeIds in spec_script. Set them
+#                              here if that script cannot be parsed.
+#     min_target_subjects      default 100  people required in the target cohort
+#     min_outcome_subjects     default 10   outcome people who are ALSO in the
+#                              target cohort (per outcome cohort)
+#     min_covariate_subjects   default 1    people required in each covariate cohort
+#
+# Rule 1 does not apply here: this file holds study names and thresholds, not
+# concept IDs. The concept sets live in each study's own cohort definitions.
+# =============================================================================
+
+dataset_id: my_study_synth_dataset   # TODO [CONFIG]: your dataset's id in synthetic_data/registry.yaml
+
+consumers: []
+# consumers:
+#   - study: my-study-desc
+#     min_target_subjects: 100
+#     min_outcome_subjects: 10
+#     min_covariate_subjects: 1

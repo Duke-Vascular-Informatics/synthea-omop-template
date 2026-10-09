@@ -9,6 +9,7 @@ by the numbered workflow steps — they are not a package and should not be run 
 |------|---------|------------|
 | `connection.R` | Builds DatabaseConnector connection details for SQL Server with JDBC/Windows auth; retry helpers for transient DB errors | Steps 01, 05, 06 |
 | `drivers.R` | Downloads and stages the Microsoft JDBC 13.2.1 driver bundle into `drivers/` on first run | Step 01 via `connection.R` |
+| `consumer_qc.R` | Consumer-study QC: renders each consuming Strategus study's cohorts from circe JSON, instantiates them against the synthetic CDM with CohortGenerator, and counts subjects per role | `scripts/consumer_cohort_qc.R` (Step 06) |
 | `db_maintenance.R` | SQL Server maintenance utilities: pre-grows transaction log and tempdb before bulk ETL to prevent auto-growth stalls | Step 05 |
 
 ## Key functions available for testing
