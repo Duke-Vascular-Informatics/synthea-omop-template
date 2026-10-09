@@ -15,8 +15,8 @@ steps:
     title: Open in the Dev Container and Bootstrap
     anchor: step-4-open-in-the-dev-container-and-bootstrap-10-minutes
   - step: 5
-    title: Define the Cohorts and Covariates Your Data Must Support
-    anchor: step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes
+    title: Declare the Studies Your Data Must Support
+    anchor: step-5-declare-the-studies-your-data-must-support-15-minutes
   - step: 6
     title: Design the Analysis-Specific Synthea Module
     anchor: step-6-design-the-analysis-specific-synthea-module-30-minutes

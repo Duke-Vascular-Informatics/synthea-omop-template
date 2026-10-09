@@ -33,14 +33,6 @@ get_validation_config <- function() {
 
   p <- yaml::read_yaml(params_file)
 
-  # Helper: coerce a YAML value (may be NULL / list / scalar) to integer vector.
-  # Returns integer(0) when the YAML field is null or an empty sequence [].
-  as_int_vec <- function(x) {
-    if (is.null(x)) return(integer(0))
-    v <- suppressWarnings(as.integer(unlist(x)))
-    v[!is.na(v)]
-  }
-
   # Helper: return y when x is NULL.
   `%||%` <- function(x, y) if (is.null(x)) y else x
 
@@ -69,7 +61,7 @@ get_validation_config <- function() {
 
   # Slugify a study_name into a SQL-Server-safe identifier stem: lowercase,
   # with hyphens / dots / whitespace collapsed to single underscores.  Used to
-  # derive default results_schema, cohort_table, and output_folder names from
+  # derive default results_schema and output_folder names from
   # study_name when those fields are omitted from study_params.yaml.
   .slugify <- function(x) {
     s <- tolower(x)
@@ -116,96 +108,15 @@ get_validation_config <- function() {
     # Study identity — from study_params.yaml
     # -------------------------------------------------------------------------
     study_name   = study_name_value,
-    study_design = p$study_design %||% "prognostic_model",
 
     # -------------------------------------------------------------------------
     # Database schemas — from study_params.yaml.
-    # results_schema and cohort_table auto-derive from study_name (via
-    # study_slug) when omitted; cdm_schema must be set explicitly because the
+    # results_schema auto-derives from study_name (via study_slug) when omitted; cdm_schema must be set explicitly because the
     # CDM is typically a shared dataset populated by a separate ETL.
     # -------------------------------------------------------------------------
     cdm_schema        = p$cdm_schema     %||% "cdm_my_study",
     cdm_version       = 5L,
     results_schema    = .bq(p$results_schema %||% paste0(study_slug, "_results")),
-    results_database  = p$results_database %||% NA_character_,
-    cohort_table      = p$cohort_table   %||% paste0(study_slug, "_cohort"),
-
-    # -------------------------------------------------------------------------
-    # Cohort IDs — from study_params.yaml
-    # -------------------------------------------------------------------------
-    target_cohort_id     = as.integer(p$target$cohort_id %||% 1L),
-    comparator_cohort_id = if (!is.null(p$comparator$cohort_id))
-                             as.integer(p$comparator$cohort_id) else NA_integer_,
-    outcome_cohort_id    = if (!is.null(p$outcome$cohort_id))
-                             as.integer(p$outcome$cohort_id) else NA_integer_,
-
-    # -------------------------------------------------------------------------
-    # Cohort SQL file paths — from study_params.yaml
-    # -------------------------------------------------------------------------
-    target_cohort_sql     = p$target$sql_file     %||% "cohorts/target_surgery.sql",
-    comparator_cohort_sql = p$comparator$sql_file %||% "cohorts/comparator_cohort.sql",
-    outcome_cohort_sql    = p$outcome$sql_file,
-
-    # -------------------------------------------------------------------------
-    # Target cohort phenotype parameters — passed as SqlRender params at runtime
-    # -------------------------------------------------------------------------
-    target_visit_concept_ids    = as_int_vec(p$target$visit_concept_ids),
-    target_min_age              = as.integer(p$target$min_age_at_index %||% 0L),
-    target_index_concept_ids    = as_int_vec(p$target$index_event$ancestor_concept_ids),
-    target_index_domain         = p$target$index_event$domain %||% "procedure",
-    target_washout_concept_ids  = as_int_vec(p$target$washout$ancestor_concept_ids),
-    target_washout_lookback_days = as.integer(
-                                    p$target$washout$lookback_days %||% 365L),
-
-    # -------------------------------------------------------------------------
-    # Comparator cohort phenotype parameters — passed as SqlRender params at runtime.
-    # These are only used when comparator.cohort_id is set in study_params.yaml.
-    # -------------------------------------------------------------------------
-    comparator_visit_concept_ids     = as_int_vec(p$comparator$visit_concept_ids),
-    comparator_min_age               = as.integer(p$comparator$min_age_at_index %||% 0L),
-    comparator_index_concept_ids     = as_int_vec(p$comparator$index_event$ancestor_concept_ids),
-    comparator_index_domain          = p$comparator$index_event$domain %||% "procedure",
-    comparator_washout_concept_ids   = as_int_vec(p$comparator$washout$ancestor_concept_ids),
-    comparator_washout_lookback_days = as.integer(
-                                         p$comparator$washout$lookback_days %||% 365L),
-
-    # -------------------------------------------------------------------------
-    # Outcome cohort phenotype parameters
-    # -------------------------------------------------------------------------
-    outcome_concept_ids = as_int_vec(p$outcome$ancestor_concept_ids),
-
-    # outcome_domain selects which QA check quality_check_etl.R runs for the
-    # outcome signal:
-    #   "condition"      (default) — a diagnosis code in condition_occurrence,
-    #                       verified via the concept_ancestor rollup check.
-    #   "visit_discharge" — a visit-level attribute recorded on
-    #                       visit_occurrence.discharged_to_concept_id (e.g.
-    #                       non-home discharge), verified via a NUBC
-    #                       discharge-disposition breakdown instead.
-    outcome_domain = p$outcome$domain %||% "condition",
-
-    # -------------------------------------------------------------------------
-    # Covariate / feature definition files (pre-specified covariate list).
-    # Used when you have a version-controlled, protocol-specified set of
-    # covariates rather than automated FeatureExtraction across all domains.
-    # Set either to NULL to skip this CSV-driven validation of the covariate
-    # specification.
-    # -------------------------------------------------------------------------
-    covariate_definitions_file = file.path("covariates", "covariates.csv"),
-    covariate_concepts_file    = file.path("covariates", "covariate_concepts.csv"),
-
-    # -------------------------------------------------------------------------
-    # Analysis parameters — from study_params.yaml
-    # -------------------------------------------------------------------------
-    prediction_window_days     = as.integer(p$prediction_window_days     %||% 90L),
-    min_prior_observation_days = as.integer(p$min_prior_observation_days %||% 365L),
-    covariate_lookback_days    = as.integer(p$covariate_lookback_days    %||% 365L),
-
-    # -------------------------------------------------------------------------
-    # Study date window — from study_params.yaml
-    # -------------------------------------------------------------------------
-    study_start_date = p$study_start_date %||% "2017-01-01",
-    study_end_date   = p$study_end_date   %||% "2025-12-31",
 
     # -------------------------------------------------------------------------
     # Output folders — from study_params.yaml.

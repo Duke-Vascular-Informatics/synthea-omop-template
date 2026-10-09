@@ -43,21 +43,21 @@
 #      - Index_Diagnosis_Encounter : SNOMED-CT REPLACE_ME  — outpatient evaluation
 #      - Index_Admission_Encounter : SNOMED-CT REPLACE_ME  — inpatient admission
 #      - Outcome_Encounter         : SNOMED-CT REPLACE_ME  — outcome encounter
-#      Confirm encounter codes map to the visit_concept_ids used in target_surgery.sql
-#      and study_params.yaml > target > visit_concept_ids.
+#      Confirm encounter codes map to the visit types in the target cohorts of the
+#      studies in consumers.yaml (workflow/02 lists those cohorts).
 #
 #   4. COVARIATE ALIGNMENT
-#      - Confirm each Covariate_N_Onset concept code matches concept_id in
-#        covariates/covariate_concepts.csv for the corresponding covariate_N row.
+#      - Confirm each Covariate_N_Onset concept code is in the concept set of a covariate
+#        cohort of a study in consumers.yaml (the coverage check below reports this).
 #      - Confirm Covariate_2_Onset type is 'Procedure' if domain = 'procedure'.
 #      - Confirm Covariate_3_Onset type is 'MedicationOrder' if domain = 'drug'.
-#      - Confirm covariate_4 has a row in covariates/covariates.csv.
+#      - Delete any spare Covariate_N state that no consuming study has a cohort for.
 #
 #   5. TIMING PARAMETERS
 #      - Pre_Index_Workup_Delay: does the range match the typical time from
 #        diagnosis to procedure in your study population?
 #      - Post_Discharge_Observation_Delay: does the range align with
-#        prediction_window_days in study_params.yaml?
+#        the time at risk of the consuming studies?
 #      - Post_Index_Inpatient_Delay: is the inpatient stay duration realistic?
 #
 # HOW TO REVISE

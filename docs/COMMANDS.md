@@ -20,9 +20,9 @@ When a command changes:
 | Clone your synth repo | `git clone https://github.com/<your-org>/<your-study>-synth.git` | [Step 3](GETTING_STARTED.md#step-3-create-your-synth-repository-from-template-5-minutes) |
 | Create your working branch | `BRANCH=$(gh api user --jq .login) && git checkout -b "$BRANCH" && git push -u origin "$BRANCH"` | [Step 3](GETTING_STARTED.md#step-3-create-your-synth-repository-from-template-5-minutes) |
 | Per-repo bootstrap (packages, JDBC, DB test) | `Rscript workflow/01_setup_synthea_etl_qc_env.R` | [Step 4](GETTING_STARTED.md#step-4-open-in-the-dev-container-and-bootstrap-10-minutes) |
-| Validate customization status | `Rscript scripts/check_setup.R` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
-| Look up OMOP concepts | `Rscript scripts/concept_lookup.R "<clinical term>" <Domain>` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
-| Validate cohort and covariate definitions | `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
+| Validate customization status (study_params, consumers, module) | `Rscript scripts/check_setup.R` | [Step 5](GETTING_STARTED.md#step-5-declare-the-studies-your-data-must-support-15-minutes) |
+| Look up OMOP concepts (for the Synthea module's source codes, or a consuming study's cohorts) | `Rscript scripts/concept_lookup.R "<clinical term>" <Domain>` | [Step 5](GETTING_STARTED.md#step-5-declare-the-studies-your-data-must-support-15-minutes) |
+| List the cohorts the dataset must support (from consumers.yaml) | `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` | [Step 5](GETTING_STARTED.md#step-5-declare-the-studies-your-data-must-support-15-minutes) |
 | Validate Synthea module (+ coverage of consuming studies' cohorts) | `Rscript workflow/03_generate_synthea_module_artifacts.R` | [Step 6](GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes) |
 | Fail if the module cannot produce a consuming study's cohort | `Rscript workflow/03_generate_synthea_module_artifacts.R --enforce_coverage=true` | [Step 6](GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes) |
 | Generate Synthea CSV (bash) | `bash workflow/04_generate_synthea_csv.sh` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |

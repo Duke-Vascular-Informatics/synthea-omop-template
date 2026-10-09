@@ -20,7 +20,7 @@ This file is a step-level reference for what each workflow script does.
 | Step | Script | Customize? | Purpose |
 |------|--------|:----------:|---------|
 | 1 | `01_setup_synthea_etl_qc_env.R` | — | Install packages, verify DB connectivity, provision JDBC driver |
-| **2** | **`02_define_omop_cohort_outcome_covariates.R`** | **Yes** | Declare study design, validate cohort SQL and covariate files |
+| **2** | **`02_define_omop_cohort_outcome_covariates.R`** | **Edit `consumers.yaml`** | List the cohorts of every consuming study that the module and the data must support |
 | 3 | `03_generate_synthea_module_artifacts.R` | — | Validate Synthea disease module JSON, regenerate HTML diagram, and check the module can produce the cohorts of every study in `consumers.yaml` (`scripts/module_coverage_check.R`) |
 | 4 | `04_generate_synthea_csv.ps1` / `.sh` | — | Generate synthetic patients |
 | 5 | `05_etl_csv_to_omop.R` | — | ETL Synthea CSV → OMOP CDM tables |
@@ -43,37 +43,21 @@ workspace infrastructure setup.
 
 ---
 
-## Step 2 — Study definition (`02_define_omop_cohort_outcome_covariates.R`)
+## Step 2 — What the dataset must support (`02_define_omop_cohort_outcome_covariates.R`)
 
-The primary customization checkpoint. Contains three user-facing sections at the top of
-the file:
+A `-synth` repo defines no cohorts, outcomes or covariates of its own. What the dataset must
+contain is defined by the studies that will use it, listed in `consumers.yaml`; their cohort
+definitions (`inst/Cohorts.csv` and `inst/cohorts/*.json` in each Strategus repo) are read
+directly, so nothing is copied here and nothing can drift.
 
-**Section A — Study design**
-Set `study_design` to one of:
-- `"cohort_characterization"` — single cohort, no outcome required
-- `"prognostic_model"` — target cohort + outcome + covariates
-- `"causal_inference"` — target + comparator + outcome + covariates
-- `"descriptive"` — target + comparator, no formal outcome
-- `"custom"` — any other design; minimal validation
+Step 2 does not connect to a database. It prints, for every consuming study, the cohorts the
+Synthea module must be able to produce and the final data must contain, by role (target, outcome,
+covariate), and reports anything that would stop the later checks from running (a study repo not
+cloned, a missing manifest or cohort JSON, an unresolvable target or outcome id). It also registers
+this repo in the workspace `studies.yaml` on first run. The same list drives Step 3 (does the module
+cover these cohorts?) and Step 6 (does the final data contain them?).
 
-This setting shapes the SYNTHETIC DATA you generate (which cohorts/covariates need to
-be populated and validated) — it does not configure an in-repo analysis.
-
-**Section B — Phenotype artifact paths**
-Set file paths to your cohort SQL files and covariate CSVs. Paths are relative to
-the project root. Set any path to `NULL` to mark it as not applicable for your design.
-
-**Section C — Study parameters**
-Set `prediction_window_days`, `min_prior_observation_days`, `covariate_lookback_days`,
-and any other study-specific numeric parameters.
-
-The validation logic (Chunks 3–5) adapts to your study design: a
-`cohort_characterization` run will not warn about a missing outcome cohort, a
-`causal_inference` run will warn if the comparator path is NULL, etc.
-
-Run Step 2 early and often as you fill in your phenotype files — it catches
-placeholder `concept_id = 0` values and structural issues before generating synthetic
-data.
+Edit `consumers.yaml`, then run Step 2 early and often.
 
 ---
 

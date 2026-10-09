@@ -82,9 +82,9 @@ To avoid duplicated or conflicting instructions, this README is intentionally hi
 3. Open the workspace root in VS Code Dev Containers.
 4. From inside the container, run the per-repo bootstrap:
    `Rscript workflow/01_setup_synthea_etl_qc_env.R`
-5. Author your Synthea module, and fill in `cohorts/*.sql` and `covariates/*.csv` only as
-   far as needed to validate the generated data (workflows 02–06) — there is no study
-   analysis to configure here.
+5. List the Strategus studies that will use the dataset in `consumers.yaml`, then author your
+   Synthea module. Their cohorts (read directly from their repos) define what the module and the
+   final data must contain (workflows 02–06) — this repo holds no cohort definitions of its own.
 6. Run workflows 02–06 using the canonical commands in [docs/COMMANDS.md](docs/COMMANDS.md),
    then register the resulting dataset in `synthetic_data/registry.yaml`.
 
@@ -98,10 +98,8 @@ workspace-level setup, use the [charon workspace](https://github.com/Duke-Vascul
 | Change for every dataset | Leave as-is |
 |------------------------|-------------|
 | `synthea/modules/*.json` (your disease/procedure module) | `config.R` (infrastructure only — no edits needed) |
-| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/consumer_qc.R` |
-| `covariates/*.csv` (only as far as `workflow/02` validation needs) | `setup/` |
+| `consumers.yaml` (the Strategus studies that use this dataset) | `R/drivers.R`, `R/connection.R`, `R/consumer_qc.R`, `R/module_coverage.R` |
 | `study_params.yaml`'s generation parameters (population, age range, seed) | `renv.lock` (update only to add a new package) |
-| `consumers.yaml` (the Strategus studies that use this dataset; QC checks their cohorts) | |
 
 ---
 
@@ -128,7 +126,7 @@ The numbers below are the `workflow/` script numbers, not the step numbers of
 | Workflow | Script | Purpose |
 |------|--------|---------|
 | 1 | `workflow/01_setup_synthea_etl_qc_env.R` | Install packages, verify DB connectivity, provision JDBC driver |
-| 2 | `workflow/02_define_omop_cohort_outcome_covariates.R` | **Validate your study definition** — cohort SQL, covariate CSVs, concept IDs — and list the cohorts of every study in `consumers.yaml` that the module must cover |
+| 2 | `workflow/02_define_omop_cohort_outcome_covariates.R` | **List what the dataset must support** — the cohorts of every study in `consumers.yaml` |
 | 3 | `workflow/03_generate_synthea_module_artifacts.R` | Validate Synthea disease module, regenerate HTML diagram, and check the module can produce the consuming studies' cohorts |
 | 4 | `workflow/04_generate_synthea_csv.ps1` / `.sh` | Generate Synthea synthetic patients |
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM |
@@ -151,8 +149,7 @@ run from any shell working directory.
   R/                          ← reusable infrastructure functions
   setup/                      ← renv + package install helpers
   scripts/                    ← ETL, Synthea runner, QC utilities
-  cohorts/                    ← SQL cohort definitions (as far as Step 2 validation needs)
-  covariates/                 ← covariate CSV spec files (as far as Step 2 validation needs)
+  consumers.yaml              ← the Strategus studies that use this dataset (defines what it must contain)
   synthea/modules/            ← Synthea disease module + diagram (edit this)
   drivers/                    ← JDBC driver archive
   .github/                    ← Claude Code / AI assistant instructions

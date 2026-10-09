@@ -163,8 +163,8 @@ WHERE ca.ancestor_concept_id = 201826   -- Type 2 DM (ancestor)
 ```
 
 This is the standard OHDSI pattern for capturing a full clinical concept and all its
-sub-types. The cohort SQL templates in `cohorts/` use this pattern for both the index
-event and the outcome.
+sub-types. Cohort definitions (circe JSON in the consuming Strategus repos) use this pattern for
+both the index event and the outcome.
 
 ### When to use a single concept vs. an ancestor rollup
 
@@ -225,14 +225,14 @@ Index date (day 0)
     │           not the outcome. We start looking for the outcome the day
     │           AFTER the procedure.
     │
-    ├── Days 1–90: follow-up window (prediction_window_days = 90)
+    ├── Days 1–90: follow-up window (a 90-day time at risk, for example)
     │           Any outcome event in this window is counted as a case.
     │
     └── Day 91+: outside the prediction window (not counted)
 ```
 
-`prediction_window_days` in `config.R` sets this window. Whatever downstream analysis
-consumes this dataset must set its own `riskWindowEnd` (or equivalent) to match.
+The consuming study's time-at-risk setting sets this window; it lives in that study's
+analysis specification, not in this repo.
 
 ---
 
@@ -240,7 +240,7 @@ consumes this dataset must set its own `riskWindowEnd` (or equivalent) to match.
 
 ### Prior observation
 Patients need sufficient history in the database for their baseline covariates to be
-meaningful. `min_prior_observation_days` in `workflow/02` excludes patients who entered
+meaningful. A cohort's observation-window requirement (the `PriorDays` setting of a circe cohort) excludes patients who entered
 the database too recently (e.g. new insurance enrollees with < 365 days of history).
 
 ### Washout period
