@@ -1,6 +1,0 @@
-# See covariates/README.md for column definitions and usage guide.
-covariate_id,concept_id,include_descendants,concept_role,value_concept_ids
-covariate_1,0,TRUE,,
-covariate_2,0,TRUE,,
-covariate_3,0,TRUE,,
-covariate_4,0,TRUE,,

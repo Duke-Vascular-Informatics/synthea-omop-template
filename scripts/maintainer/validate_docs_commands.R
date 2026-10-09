@@ -37,7 +37,6 @@ collect_docs <- function() {
 		"workflow/README.md",
 		"setup/README.md",
 		"scripts/README.md",
-		"cohorts/README.md",
 		"R/README.md",
 		"drivers/README.md",
 		"tests/README.md",

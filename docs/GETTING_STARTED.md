@@ -132,14 +132,18 @@ refused" section of the
 
 ---
 
-## Step 5: Define the Cohorts and Covariates Your Data Must Support (30 to 60 minutes)
+## Step 5: Declare the Studies Your Data Must Support (15 minutes)
 
-The point of this step is to say what the synthetic data **must contain** so
-that the analysis repo's cohorts, outcomes and covariates will find patients
-(`workflow/06` later checks the generated data against these concepts).
-Fill in `cohorts/` and `covariates/` **only as far as is needed to validate
-the generated data**; the real study definitions belong in the analysis-core
-repo and should match these.
+A `-synth` repo defines **no cohorts, outcomes or covariates of its own**. What the
+dataset must contain is defined by the studies that will use it, so you declare those
+studies and their own cohort definitions are used directly. Nothing is copied into this
+repo, so nothing can drift out of sync.
+
+In a Strategus study, the target cohort, the outcome cohorts, and every other cohort in
+`inst/Cohorts.csv` (the covariate cohorts) are what the dataset must support. The same
+list drives three checks: `workflow/02` lists the cohorts (this step), `workflow/03` checks
+that the Synthea module can produce them (Step 6), and `workflow/06` checks the final data
+(Step 7).
 
 ### 5.1 Review what still needs input
 
@@ -149,65 +153,15 @@ Rscript scripts/check_setup.R       # [OK] / [WARN] / [FAIL] per item; no databa
 
 ### 5.2 Edit `study_params.yaml`
 
-Set the study identity (`study_name`), the schema names (`cdm_schema`,
-`results_schema`, `cohort_table`), `output_folder`, the date range, and the
-generation parameters (population size, age range, seed). There is no
-`analyses:` or `report:` block: no analysis runs in this repo.
+Set the study identity (`study_name`), the CDM schema (`cdm_schema`), optionally
+`results_schema` and `output_folder`, and the database description. That file holds
+no cohort, outcome or concept settings. Generation parameters (population size, age
+range, state) are arguments to `workflow/04` in Step 7; record the ones you used in the
+registry entry (Step 8).
 
-### 5.3 Look up every concept ID (Rule 1)
+### 5.3 List the studies that will use this dataset
 
-Replace each `0` placeholder only with a verified concept ID. Check, in order:
-the OHDSI Phenotype Library, your lab's labelled ATLAS definitions, the local
-catalog (`phenotype_library/catalog.yaml`), and only then a live vocabulary
-query. All of these tools are in the charon README's "Rules you must follow"
-and `phenotype_library/README.md`. The live query is:
-
-```bash
-Rscript scripts/concept_lookup.R "<clinical term>" <Domain>
-```
-
-Tag each ID `[vocab query]` (confirmed against your loaded vocabulary) or
-`[pretraining]` (unverified; do not commit it). After a live lookup, add the
-result to the catalog so the next study skips it.
-
-### 5.4 Edit the cohort SQL
-
-In `cohorts/`: `target_surgery.sql` (index event), `outcome_ssi.sql`
-(outcome), and `comparator_cohort.sql` if the analysis compares groups.
-Replace every `concept_id = 0` and explain each ID in a trailing comment:
-
-```sql
-WHERE c.procedure_concept_id IN (<id>, <id>)  -- [vocab query] <concept name> (<vocabulary>)
-```
-
-### 5.5 Edit the covariate files
-
-- `covariates/covariates.csv`: one row per covariate (name, OMOP domain, lookback window, minimum events)
-- `covariates/covariate_concepts.csv`: the concept IDs behind each covariate
-
-```csv
-covariate_id,concept_id,include_descendants
-diabetes,<id>,TRUE
-```
-
-See `covariates/README.md` for every column.
-
-### 5.6 Validate
-
-```bash
-Rscript workflow/02_define_omop_cohort_outcome_covariates.R
-Rscript scripts/check_setup.R       # no [FAIL] items
-```
-
-Commit the study definition on your branch.
-
-### 5.7 Register the studies that will use this dataset
-
-The studies that will use this dataset define what it must contain. The checks that
-protect them run against **their** cohorts, not the placeholders above, at three points:
-`workflow/02` lists the cohorts the module must cover, `workflow/03` checks that the
-Synthea module can produce them (Step 6), and `workflow/06` checks the final data (Step 7).
-List every Strategus study that uses this dataset in `consumers.yaml`:
+Add every Strategus study that uses this dataset to `consumers.yaml`:
 
 ```yaml
 dataset_id: my_study_synth_dataset      # this dataset's id in synthetic_data/registry.yaml
@@ -220,15 +174,37 @@ consumers:
 not_checked: [some-retired-study]       # in the registry's used_by, deliberately not QC'd
 ```
 
-In a Strategus study the target cohort, the outcome cohorts, and every other
-cohort in `inst/Cohorts.csv` (the covariate cohorts) are all checked together.
-The target and outcome ids are read from `CreateStrategusAnalysisSpecification.R`
-(or set `target_id` / `outcome_ids` yourself; the script cannot read ids a spec builds
+The target and outcome ids are read from `CreateStrategusAnalysisSpecification.R` (or set
+`target_id` / `outcome_ids` yourself; the script cannot read ids a spec builds
 programmatically, and says so). Mark outcomes that Synthea cannot generate as
 `expected_empty` so they are reported rather than failed. Each study must also appear in
 the registry's `used_by` for this dataset (Step 8); QC warns if they disagree. The
 producer repo itself is ignored, and studies you list under `not_checked` (retired, or not
 a Strategus repo) are too.
+
+The consuming study's cohorts must exist before they can be checked: if the study is still
+being designed, define its cohorts in **its** repo first. The dataset follows the study's
+definitions, not the other way round.
+
+### 5.4 See what the module must cover
+
+```bash
+Rscript workflow/02_define_omop_cohort_outcome_covariates.R
+```
+
+It prints, for each consuming study, its target, outcome and covariate cohorts, and warns
+about anything that would stop the later checks (a study repo not cloned, a missing
+manifest or cohort JSON, an unresolvable target or outcome id). No database is needed.
+
+### 5.5 Concept IDs
+
+This repo contains no concept IDs. A concept a consuming cohort needs is added to that
+study's own cohort definition, following Rule 1 (check the OHDSI Phenotype Library, your
+lab's ATLAS definitions, the local catalog, then a live vocabulary query; tag each ID
+`[vocab query]`). The live query is
+`Rscript scripts/concept_lookup.R "<clinical term>" <Domain>`. In the Synthea module you
+use source codes (SNOMED-CT, RxNorm, LOINC) that map to those concepts; Step 6 checks that
+they do.
 
 ---
 
@@ -240,10 +216,10 @@ shapes the dataset to the analysis.
 
 1. Open the default module in `synthea/modules/` (for example
    `surgical_site_infection_study.json`) to see the structure.
-2. Edit it so the population contains what Step 5 requires: the index
-   event, the outcome at a plausible rate, and the comorbidities and
+2. Edit it so the population contains what the studies in Step 5 require: the
+   index event, the outcomes at plausible rates, and the comorbidities and
    exposures used as covariates (prevalence, procedure rates, medication
-   patterns).
+   patterns). Step 5.4 lists the cohorts to cover.
 3. Validate it, regenerate its diagram, and check coverage:
 
 ```bash
@@ -288,9 +264,11 @@ On Windows run
 for the first command. Never run `.sh`/`.ps1` files with `Rscript`.
 
 The ETL links to the shared `omop_vocab` schema rather than reloading it. The
-generic QC confirms the target-procedure and outcome concepts you configured in Step 5
-appear in enough rows (thresholds and flags are in `workflow/README.md`; pass
-`--enforce_thresholds=true` to make a shortfall fail the step).
+generic QC checks the dataset in general: people, visits, procedures and conditions,
+the share of conditions mapped to standard concepts, the era tables and age
+distribution (thresholds and flags are in `workflow/README.md`; pass
+`--enforce_thresholds=true` to make a shortfall fail the step). It holds no study
+concepts; what a study needs is checked by the consumer-study QC below.
 
 **Consumer-study QC.** After the generic checks, workflow 06 also runs
 `scripts/consumer_cohort_qc.R`: for every study in `consumers.yaml` it renders that
@@ -327,7 +305,7 @@ The dataset is generated, loaded and checked. This repo's job ends here.
 2. Commit this repo's changes on your branch and open a PR into `main`:
 
 ```bash
-git add synthea/modules/ cohorts/ covariates/ study_params.yaml consumers.yaml
+git add synthea/modules/ study_params.yaml consumers.yaml
 git commit -m "feat: synthetic dataset for <disease/procedure/outcome>"
 git push
 ```
@@ -355,9 +333,8 @@ manuscript happen there and in the report repo.
 | File | Purpose |
 |---|---|
 | `config.R` | Infrastructure settings (do not edit) |
-| `study_params.yaml` | Identity, schemas, generation parameters (edit) |
+| `study_params.yaml` | Identity, schemas, database description (edit) |
 | `synthea/modules/*.json` | The Synthea disease/procedure module (edit; the main work) |
-| `cohorts/*.sql`, `covariates/*.csv` | Placeholder definitions for quick validation (edit) |
 | `consumers.yaml` | The Strategus studies that use this dataset; QC checks their cohorts (edit) |
 | `workflow/01–06` | The generation pipeline (do not edit) |
 | `output/` | Generation logs and QC output (gitignored) |

@@ -27,7 +27,7 @@ container) is done once in your charon workspace: see
 - Step 2: [Check Whether a Dataset Already Exists](docs/GETTING_STARTED.md#step-2-check-whether-a-dataset-already-exists-5-minutes)
 - Step 3: [Create Your Synth Repository from Template](docs/GETTING_STARTED.md#step-3-create-your-synth-repository-from-template-5-minutes)
 - Step 4: [Open in the Dev Container and Bootstrap](docs/GETTING_STARTED.md#step-4-open-in-the-dev-container-and-bootstrap-10-minutes)
-- Step 5: [Define the Cohorts and Covariates Your Data Must Support](docs/GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes)
+- Step 5: [Declare the Studies Your Data Must Support](docs/GETTING_STARTED.md#step-5-declare-the-studies-your-data-must-support-15-minutes)
 - Step 6: [Design the Analysis-Specific Synthea Module](docs/GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes)
 - Step 7: [Generate Synthetic Data, Run ETL, and Check Quality](docs/GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes)
 - Step 8: [Register Your Synthetic Dataset](docs/GETTING_STARTED.md#step-8-register-your-synthetic-dataset-10-minutes)
@@ -45,16 +45,14 @@ container) is done once in your charon workspace: see
 
 ---
 
-## Phase 2: Define What The Data Must Support (~30–60 minutes)
+## Phase 2: Declare What The Data Must Support (~15 minutes)
 
 - [ ] **Step 5.1:** `Rscript scripts/check_setup.R`
-- [ ] **Step 5.2:** Edit `study_params.yaml`: `study_name`, `cdm_schema`, `results_schema`, `cohort_table`, dates, `output_folder`, generation parameters
-- [ ] **Step 5.3:** Look up every concept ID in Rule 1 order (OHDSI PL → lab ATLAS → catalog → live query). Tag `[vocab query]`
-- [ ] **Step 5.4:** Edit `cohorts/*.sql`. Replace `concept_id = 0`
-- [ ] **Step 5.5:** Edit `covariates/covariates.csv` and `covariate_concepts.csv`
-- [ ] **Step 5.6:** `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` shows no `[FAIL]`
-- [ ] **Step 5.7:** List every consuming Strategus study in `consumers.yaml` (and in the registry `used_by`)
-- [ ] Commit the definitions on your branch
+- [ ] **Step 5.2:** Edit `study_params.yaml`: `study_name`, `cdm_schema`, optional `results_schema` / `output_folder`, database description
+- [ ] **Step 5.3:** List every consuming Strategus study in `consumers.yaml` (and in the registry `used_by`); mark outcomes Synthea cannot generate as `expected_empty`
+- [ ] **Step 5.4:** `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` lists each study's target / outcome / covariate cohorts with no unexpected warnings
+- [ ] **Step 5.5:** Concept IDs: none live in this repo. Missing concepts are added to the consuming study's own cohorts (Rule 1)
+- [ ] Commit `study_params.yaml` and `consumers.yaml` on your branch
 
 ---
 

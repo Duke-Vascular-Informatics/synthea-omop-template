@@ -8,7 +8,7 @@ they are not workflow entry points themselves.
 
 | File | Description | Called by |
 |------|-------------|-----------|
-| `check_setup.R` | Pre-flight setup check. Scans `study_params.yaml`, cohort SQL files, and covariate CSVs for incomplete placeholders; prints a `[OK]`/`[WARN]`/`[FAIL]` checklist. No database connection required. Exit code 0 = ready to generate synthetic data. Equivalent to the `/check-setup` Claude skill. | Manual: `Rscript scripts/check_setup.R` |
+| `check_setup.R` | Pre-flight setup check. Scans `study_params.yaml`, `consumers.yaml` (consuming studies present and readable) and the Synthea module for incomplete placeholders; prints a `[OK]`/`[WARN]`/`[FAIL]` checklist. No database connection required. Exit code 0 = ready to generate synthetic data. Equivalent to the `/check-setup` Claude skill. | Manual: `Rscript scripts/check_setup.R` |
 | `concept_lookup.R` | OMOP vocabulary lookup. Queries `omop_vocab` for standard concept IDs matching a clinical term, with synonym fallback and descendant expansion. Labels results `[vocab query]`. Equivalent to the `/concept-lookup` Claude skill. | Manual: `Rscript scripts/concept_lookup.R "<term>" [domain]` |
 | `create_support_bundle.R` | Creates a redacted troubleshooting bundle in `output/support/` including setup report, git diagnostics, and recent logs. | Manual: `Rscript scripts/create_support_bundle.R` |
 | `module_coverage_check.R` | Pre-generation coverage check. Confirms the custom Synthea module and Synthea's built-in modules can emit the concepts needed by every cohort of every study in `consumers.yaml`. Writes `output/qc/module_coverage.csv`. See `R/module_coverage.R`. | `workflow/03_generate_synthea_module_artifacts.R`; manual: `Rscript scripts/module_coverage_check.R` |
@@ -43,7 +43,6 @@ Pass these through `workflow/06_quality_check_defined_phenotypes.R`:
 | `--run_name=<name>` | latest schema | Target CDM schema override |
 | `--enforce_thresholds=<true\|false>` | `false` | Fail if row counts fall below minimums |
 | `--min_person_rows=<n>` | 1 | Minimum rows in person table |
-| `--min_outcome_condition_rows=<n>` | 1 | Minimum rows for the configured outcome concept IDs (checked only when `outcome.ancestor_concept_ids` is set) |
 | `--min_mapped_condition_pct=<pct>` | 0 | Minimum % conditions with standard concept |
 | `--run_achilles=<true\|false>` | `true` | Run ACHILLES CDM profiling |
 | `--run_dqd=<true\|false>` | `true` | Run OHDSI Data Quality Dashboard |

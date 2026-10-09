@@ -13,7 +13,6 @@
 #   --run_name=<name>
 #   --enforce_thresholds=<true|false>
 #   --min_person_rows=<n>
-#   --min_outcome_condition_rows=<n>   (only when outcome concept IDs are configured)
 #   --min_mapped_condition_pct=<pct>
 #   --run_achilles=<true|false>   Run ACHILLES CDM profiling (default: TRUE, 10-60 min)
 #   --run_dqd=<true|false>        Run OHDSI Data Quality Dashboard (default: TRUE, 10-60 min)
