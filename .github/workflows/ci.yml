@@ -102,10 +102,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Job 3: Run testthat unit tests.
-  # Tests cover pure/logic functions that do not require a live database:
-  # is_transient_db_error, with_db_retry, clamp_probability, compute_ece,
-  # get_domain_mapping, build_calibration_table, compute_binary_metrics,
-  # score_discrimination_metrics, build_combined_feature_table, read_score_specs.
+  # These cover the database helpers and the consuming-study QC
+  # (R/consumer_qc.R, R/module_coverage.R): consumer-manifest parsing, circe cohort
+  # instantiation against a throwaway SQLite CDM, module-code collection and
+  # coverage, registry agreement and the discharge-disposition check. No live
+  # database is needed; the SQLite-backed tests need DatabaseConnector, CirceR and
+  # CohortGenerator (hence Java), and each of them skips itself when its package
+  # is missing. A skip would hide exactly the logic CI exists to protect, so the
+  # job fails on any skipped test instead of reporting it green.
   # ---------------------------------------------------------------------------
   test:
     name: Run unit tests
@@ -115,6 +119,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # DatabaseConnector and CirceR need rJava; the Java major version mirrors the
+      # dev container default (JAVA_VERSION in .env.example / Dockerfile).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: 'release'
@@ -122,16 +133,28 @@ jobs:
 
       - name: Install test dependencies
         run: |
+          R CMD javareconf
           Rscript -e "
-            pkgs <- c('testthat', 'withr', 'pROC', 'PRROC')
+            pkgs <- c('testthat', 'withr', 'jsonlite', 'yaml', 'data.table',
+                      'RSQLite', 'SqlRender', 'DatabaseConnector',
+                      'CirceR', 'CohortGenerator')
             install.packages(pkgs, repos = 'https://cloud.r-project.org')
+            missing <- setdiff(pkgs, rownames(installed.packages()))
+            if (length(missing) > 0) stop('failed to install: ', paste(missing, collapse = ', '))
           "
 
-      - name: Run tests
+      - name: Run tests (fail on any failure or skip)
         run: |
           Rscript -e "
             library(testthat)
-            results <- test_dir('tests/testthat', reporter = 'progress', stop_on_failure = TRUE)
+            res <- as.data.frame(test_dir('tests/testthat', reporter = 'summary',
+                                          stop_on_failure = TRUE))
+            skipped <- res[res\$skipped, c('file', 'test')]
+            if (nrow(skipped) > 0) {
+              print(skipped)
+              stop(nrow(skipped), ' test(s) were skipped; install the missing packages so they run.')
+            }
+            cat('All', nrow(res), 'test blocks ran, none skipped.\n')
           "
 
   # ---------------------------------------------------------------------------
