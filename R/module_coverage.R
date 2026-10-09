@@ -28,6 +28,12 @@
 #   criteria have no concept set, source-concept sets, `includeMapped` items,
 #   and OR-groups of inclusion rules (the check only under-requires).
 #
+#   Visit criteria are not evaluated either. Synthea never emits a visit concept
+#   through a code: the ETL derives visit_concept_id from the encounter class. So a
+#   VisitOccurrence entry event (e.g. "Inpatient Visit") is treated as satisfiable
+#   and the cohort is judged on its other required criteria; a cohort that is only
+#   a visit criterion is reported NOT_EVALUABLE.
+#
 # INPUTS   module JSON files, each consumer's inst/cohorts/<id>.json, omop_vocab
 # OUTPUT   data frame of per-cohort coverage (see check_module_coverage())
 # SIDE EFFECTS  none: read-only queries against the vocabulary schema.
@@ -174,10 +180,12 @@ map_codes_to_concepts <- function(connection, vocab_schema, codes, batch_size = 
 # Reads a circe cohort JSON and returns what must be populated for the cohort
 # to be non-empty:
 #   primary   - concept-set ids of the primary criteria. The cohort needs ANY ONE.
-#   required  - concept-set ids of inclusion criteria that need at least one
-#               event, inside ALL groups (each is needed). OR-groups are skipped.
+#   required  - list of requirements, each a vector of concept-set ids satisfied by ANY of
+#               them: one per "at least one" criterion inside an ALL group, and one per
+#               ANY group whose criteria are all plain "at least one" concept-set criteria.
 #   unevaluable - TRUE when a primary criterion has no concept set (e.g. an
-#               observation-period or visit-only entry), so coverage is unknown.
+#               observation-period entry), so coverage is unknown.
+#   visit_entry - TRUE when a primary criterion is a visit criterion (not judged).
 #   concept_sets - list keyed by id: data.frame(concept_id, descendants,
 #               excluded, mapped) of the set's items.
 # -----------------------------------------------------------------------------
@@ -199,29 +207,50 @@ parse_cohort_requirements <- function(json_text) {
     inner <- criterion[[1]]
     if (is.null(inner$CodesetId)) NA_integer_ else as.integer(inner$CodesetId)
   }
+  # Visit criteria are not judged here (see the header): Synthea gets visit types from
+  # the ETL's encounter-class mapping, not from codes in the module.
+  is_visit <- function(criterion) names(criterion)[1] %in% c("VisitOccurrence", "VisitDetail")
 
-  primary_ids <- vapply(j$PrimaryCriteria$CriteriaList %||% list(), codeset_of, integer(1))
-  unevaluable <- length(primary_ids) == 0 || any(is.na(primary_ids))
-  primary_ids <- primary_ids[!is.na(primary_ids)]
+  primary_list <- j$PrimaryCriteria$CriteriaList %||% list()
+  visit_entry  <- any(vapply(primary_list, is_visit, logical(1)))
+  evaluable    <- primary_list[!vapply(primary_list, is_visit, logical(1))]
+  primary_ids  <- vapply(evaluable, codeset_of, integer(1))
+  unevaluable  <- (length(primary_list) == 0) || any(is.na(primary_ids))
+  primary_ids  <- primary_ids[!is.na(primary_ids)]
 
-  required <- integer(0)
+  # Each requirement is a vector of concept-set ids satisfied by ANY of them.
+  #   ALL group: every criterion that needs "at least one" event is its own requirement
+  #              (a vector of length one); sub-groups are walked.
+  #   ANY group: one requirement made of all its criteria, but only when EVERY criterion
+  #              is a plain "at least one" concept-set criterion; otherwise the group is
+  #              skipped (the check only under-requires).
+  # Visit criteria and criteria without a concept set are never required.
+  required <- list()
+  at_least_one <- function(cr) {
+    occ <- cr$Occurrence %||% list()
+    (occ$Type %||% -1L) %in% c(0L, 2L) && (occ$Count %||% 0L) >= 1L
+  }
   walk_group <- function(g) {
-    # Only an ALL group makes each of its "at least one" criteria mandatory.
-    if (!identical(toupper(g$Type %||% ""), "ALL")) return(invisible())
-    for (cr in g$CriteriaList %||% list()) {
-      occ <- cr$Occurrence %||% list()
-      type <- occ$Type %||% -1L; cnt <- occ$Count %||% 0L
-      if (type %in% c(0L, 2L) && cnt >= 1L) {
-        id <- codeset_of(cr$Criteria)
-        if (!is.na(id)) required <<- c(required, id)
+    type <- toupper(g$Type %||% "")
+    crits <- g$CriteriaList %||% list()
+    if (type == "ALL") {
+      for (cr in crits) {
+        if (at_least_one(cr) && !is_visit(cr$Criteria)) {
+          id <- codeset_of(cr$Criteria)
+          if (!is.na(id)) required[[length(required) + 1L]] <<- id
+        }
       }
+      for (sub in g$Groups %||% list()) walk_group(sub)
+    } else if (type == "ANY" && length(crits) > 0 && length(g$Groups %||% list()) == 0) {
+      ids <- vapply(crits, function(cr)
+        if (at_least_one(cr) && !is_visit(cr$Criteria)) codeset_of(cr$Criteria) else NA_integer_, integer(1))
+      if (!anyNA(ids)) required[[length(required) + 1L]] <<- unique(ids)
     }
-    for (sub in g$Groups %||% list()) walk_group(sub)
   }
   for (rule in j$InclusionRules %||% list()) walk_group(rule$expression)
 
   list(primary = unique(primary_ids), required = unique(required),
-       unevaluable = unevaluable, concept_sets = sets)
+       unevaluable = unevaluable, visit_entry = visit_entry, concept_sets = sets)
 }
 
 # -----------------------------------------------------------------------------
@@ -267,24 +296,35 @@ concept_set_hits <- function(connection, vocab_schema, set, module_concepts, bat
 #
 # @param req        parse_cohort_requirements() result
 # @param hits       named list: concept-set id -> matching module concept ids
-# @return list(status = "COVERED"|"NOT_COVERED"|"NOT_EVALUABLE", missing = <set ids>)
+# @return list(status = "COVERED"|"NOT_COVERED"|"NOT_EVALUABLE", missing = <set ids>, note)
 # -----------------------------------------------------------------------------
 evaluate_cohort_coverage <- function(req, hits) {
   has <- function(id) length(hits[[as.character(id)]] %||% numeric(0)) > 0
+  visit_entry <- isTRUE(req$visit_entry)
 
-  # A required inclusion criterion with no module code leaves the cohort empty
-  # whatever the entry events do.
-  missing_required <- req$required[!vapply(req$required, has, logical(1))]
-  if (length(missing_required)) {
-    return(list(status = "NOT_COVERED", missing = unique(missing_required)))
+  # A required inclusion criterion (or ANY-group) with no module code leaves the cohort
+  # empty whatever the entry events do.
+  covered_req <- vapply(req$required, function(ids) any(vapply(ids, has, logical(1))), logical(1))
+  if (any(!covered_req)) {
+    return(list(status = "NOT_COVERED", missing = unique(unlist(req$required[!covered_req])), note = ""))
   }
   if (length(req$primary) > 0 && any(vapply(req$primary, has, logical(1)))) {
-    return(list(status = "COVERED", missing = integer(0)))
+    return(list(status = "COVERED", missing = integer(0), note = ""))
   }
-  # Primary criteria are OR-ed. If one has no concept set (observation period,
-  # visit only, ...) it may still populate the cohort, so we cannot say.
-  if (req$unevaluable) return(list(status = "NOT_EVALUABLE", missing = integer(0)))
-  list(status = "NOT_COVERED", missing = unique(req$primary))
+  # Visit entry events are not judged (the ETL derives visit types from encounter
+  # class). If the cohort has other required criteria, those decide and they are met.
+  if (visit_entry) {
+    if (length(req$required) > 0) {
+      return(list(status = "COVERED", missing = integer(0),
+                  note = "visit entry event not evaluated; its required criteria are covered"))
+    }
+    return(list(status = "NOT_EVALUABLE", missing = integer(0),
+                note = "visit-only cohort: visit types come from the ETL, not module codes"))
+  }
+  # Primary criteria are OR-ed. If one has no concept set (observation period, ...)
+  # it may still populate the cohort, so we cannot say.
+  if (req$unevaluable) return(list(status = "NOT_EVALUABLE", missing = integer(0), note = ""))
+  list(status = "NOT_COVERED", missing = unique(req$primary), note = "")
 }
 
 # -----------------------------------------------------------------------------
@@ -333,13 +373,13 @@ check_module_coverage <- function(connection, vocab_schema, consumers, module_co
         problems <- c(problems, paste0(co$study, ": missing cohort JSON ", json_path)); next
       }
       req <- parse_cohort_requirements(paste(readLines(json_path, warn = FALSE), collapse = "\n"))
-      needed <- unique(c(req$primary, req$required))
+      needed <- unique(c(req$primary, unlist(req$required)))
       hits <- setNames(lapply(needed, function(id) {
         concept_set_hits(connection, vocab_schema, req$concept_sets[[as.character(id)]], module_concepts)
       }), as.character(needed))
       ev <- evaluate_cohort_coverage(req, hits)
 
-      matched <- unique(unlist(hits[as.character(unique(c(req$primary, req$required)))]))
+      matched <- unique(unlist(hits[as.character(unique(c(req$primary, unlist(req$required))))]))
       src <- by_concept[by_concept$concept_id %in% matched, , drop = FALSE]
       provided_by <- if (nrow(src) == 0) "" else if (all(src$module == "custom")) "custom module"
                      else if (any(src$module == "custom")) "custom + built-in" else "built-in only"
@@ -347,7 +387,7 @@ check_module_coverage <- function(connection, vocab_schema, consumers, module_co
 
       status <- ev$status
       detail <- if (length(ev$missing)) paste0("no module code reaches concept set(s) ",
-                                               paste(ev$missing, collapse = ", ")) else ""
+                                               paste(ev$missing, collapse = ", ")) else ev$note
       if (cid %in% co$expected_empty) {
         detail <- paste(c(detail, if (status == "COVERED") "declared expected_empty but the module can emit it"
                                   else "expected empty"), collapse = if (nzchar(detail)) "; " else "")

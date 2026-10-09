@@ -250,6 +250,12 @@ concept set) or `EXPECTED_EMPTY` (listed in `expected_empty`). Results go to
 
 `COVERED` means the module **can** emit the concept; age, sex, probabilities and the ETL can
 still make it rare or empty, so the final counts are judged by consumer-study QC in Step 7.
+Two things are deliberately not judged. Visit entry events (for example "Inpatient Visit"): Synthea never
+emits a visit concept through a code, the ETL derives it from the encounter class, so the cohort is judged on
+its other required criteria, and a cohort that is *only* a visit criterion (such as a discharge-disposition
+outcome) is `NOT_EVALUABLE`. For those, use `discharge_disposition_check` (Step 5.3) and consumer QC on the
+final data. Inclusion criteria are judged when they are "at least one" criteria in an ALL group, or an ANY
+group made only of such criteria (satisfied by any one of its concept sets).
 On a real dataset this check named exactly the three outcomes that later had no people.
 It needs the vocabulary (a database connection); skip it with `--skip_coverage_check=true`.
 
