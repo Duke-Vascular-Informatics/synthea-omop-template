@@ -214,13 +214,19 @@ consumers:
     min_target_subjects: 100            # people required in the target cohort
     min_outcome_subjects: 10            # outcome people who are also in the target
     min_covariate_subjects: 1           # people required in each covariate cohort
+    expected_empty: [9100104]           # cohorts the study knows are empty on synthetic data
+not_checked: [some-retired-study]       # in the registry's used_by, deliberately not QC'd
 ```
 
 In a Strategus study the target cohort, the outcome cohorts, and every other
 cohort in `inst/Cohorts.csv` (the covariate cohorts) are all checked together.
 The target and outcome ids are read from `CreateStrategusAnalysisSpecification.R`
-(or set `target_id` / `outcome_ids` yourself). Each study must also appear in the
-registry's `used_by` for this dataset (Step 8); QC warns if they disagree.
+(or set `target_id` / `outcome_ids` yourself; the script cannot read ids a spec builds
+programmatically, and says so). Mark outcomes that Synthea cannot generate as
+`expected_empty` so they are reported rather than failed. Each study must also appear in
+the registry's `used_by` for this dataset (Step 8); QC warns if they disagree. The
+producer repo itself is ignored, and studies you list under `not_checked` (retired, or not
+a Strategus repo) are too.
 
 ---
 

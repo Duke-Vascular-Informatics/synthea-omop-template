@@ -55,9 +55,11 @@
 # Reads and validates consumers.yaml, applying defaults.
 #
 # @param path  Path to consumers.yaml.
-# @return list(dataset_id = <chr|NA>, consumers = list of normalised entries).
+# @return list(dataset_id = <chr|NA>, consumers = list of normalised entries,
+#         not_checked = studies in the registry's used_by that are deliberately
+#         not QC'd, e.g. retired studies or non-Strategus consumers).
 #         Each entry has: study, repo_dir, cohorts_manifest, cohorts_json_dir,
-#         spec_script, target_id, outcome_ids, min_target_subjects,
+#         spec_script, target_id, outcome_ids, expected_empty, min_target_subjects,
 #         min_outcome_subjects, min_covariate_subjects.
 # -----------------------------------------------------------------------------
 read_consumers <- function(path = "consumers.yaml") {
@@ -79,6 +81,7 @@ read_consumers <- function(path = "consumers.yaml") {
       spec_script            = co$spec_script %||% "CreateStrategusAnalysisSpecification.R",
       target_id              = as_int(co$target_id),
       outcome_ids            = as_int(co$outcome_ids),
+      expected_empty         = as_int(co$expected_empty),
       min_target_subjects    = as.numeric(co$min_target_subjects    %||% 100),
       min_outcome_subjects   = as.numeric(co$min_outcome_subjects   %||% 10),
       min_covariate_subjects = as.numeric(co$min_covariate_subjects %||% 1)
@@ -90,7 +93,9 @@ read_consumers <- function(path = "consumers.yaml") {
     stop("duplicate consumer study in consumers.yaml: ",
          paste(unique(studies[duplicated(studies)]), collapse = ", "))
   }
-  list(dataset_id = y$dataset_id %||% NA_character_, consumers = consumers)
+  not_checked <- as.character(unlist(y$not_checked %||% list()))
+  list(dataset_id = y$dataset_id %||% NA_character_, consumers = consumers,
+       not_checked = not_checked)
 }
 
 # -----------------------------------------------------------------------------
@@ -218,6 +223,10 @@ evaluate_consumer_results <- function(consumer, cohort_names, roles, subjects,
     threshold <- switch(role, target = consumer$min_target_subjects,
                               outcome = consumer$min_outcome_subjects,
                               covariate = consumer$min_covariate_subjects)
+    # A cohort the study knows is empty on synthetic data (e.g. an outcome Synthea
+    # does not generate) has no minimum; it is reported, not failed.
+    is_expected_empty <- id %in% consumer$expected_empty
+    if (is_expected_empty) threshold <- 0
     value  <- if (role == "outcome") ov else n
     metric <- if (role == "outcome") "subjects_in_target" else "subjects"
 
@@ -225,6 +234,9 @@ evaluate_consumer_results <- function(consumer, cohort_names, roles, subjects,
     status <- if (value >= threshold) "PASS" else "FAIL"
     if (key %in% names(failed)) {
       status <- "FAIL"; note <- c(note, paste0("generation failed: ", failed[[key]]))
+    }
+    if (is_expected_empty) {
+      note <- c(note, paste0("expected empty on synthetic data (", value, " found)"))
     }
     if (id %in% hand_authored) {
       note <- c(note, "hand-authored: checked on the placeholder JSON Strategus will run")
@@ -244,8 +256,13 @@ evaluate_consumer_results <- function(consumer, cohort_names, roles, subjects,
 # consumers.yaml is what drives the QC; the workspace registry's `used_by` is
 # the shared record. They must agree, or one of them is out of date. Returns a
 # character vector of problems (empty when they agree or nothing to compare).
+#
+# `used_by` entries may be plain strings or maps with a `study_id`. The dataset's
+# own producer (source_repo) is not a consumer and is ignored, as is any study
+# named in `not_checked` (a retired study, or one that is not a Strategus repo).
 # -----------------------------------------------------------------------------
-check_registry_agreement <- function(dataset_id, studies, registry_path) {
+check_registry_agreement <- function(dataset_id, studies, registry_path,
+                                     not_checked = character(0)) {
   if (is.na(dataset_id) || !nzchar(dataset_id)) {
     return("consumers.yaml has no dataset_id, so it cannot be compared with synthetic_data/registry.yaml")
   }
@@ -257,7 +274,9 @@ check_registry_agreement <- function(dataset_id, studies, registry_path) {
   if (length(hit) == 0) {
     return(paste0("dataset '", dataset_id, "' is not in ", registry_path))
   }
-  used_by <- vapply(hit[[1]]$used_by %||% list(), function(u) u$study_id %||% "", character(1))
+  entry_name <- function(u) if (is.list(u)) as.character(u$study_id %||% "") else as.character(u)
+  used_by <- vapply(hit[[1]]$used_by %||% list(), entry_name, character(1))
+  used_by <- setdiff(used_by, c(hit[[1]]$source_repo, not_checked, ""))
   problems <- character(0)
   for (s in setdiff(studies, used_by)) {
     problems <- c(problems, paste0("'", s, "' is in consumers.yaml but not in registry used_by for ", dataset_id))
@@ -319,33 +338,59 @@ drop_scratch_tables <- function(connection, schema, table_names) {
 }
 
 # -----------------------------------------------------------------------------
+# qualify_schema
+#
+# On SQL Server, DatabaseConnector (which CohortGenerator uses to list tables)
+# reads a single-part schema name as a DATABASE name, so cohort and CDM schemas
+# must be given as <database>.<schema> (the same rule as the Strategus
+# conventions, section 4). Schemas that already contain a dot are left alone, and
+# so is everything when `database` is NULL (e.g. SQLite in the tests).
+# -----------------------------------------------------------------------------
+qualify_schema <- function(schema, database = NULL) {
+  if (is.null(database) || !nzchar(database) || grepl(".", schema, fixed = TRUE)) return(schema)
+  paste0(database, ".", schema)
+}
+
+# -----------------------------------------------------------------------------
 # run_consumer_cohort_qc
 #
 # Runs the QC for every consumer against one CDM schema.
+#
+# Every per-consumer failure, including an unexpected error from SQL, is caught
+# and reported in `problems`, and the scratch tables are always dropped.
+# (Under Rscript an uncaught error does NOT unwind `finally`/`on.exit`, so
+# relying on those alone would leave scratch tables behind.)
 #
 # @param connection_details  DatabaseConnector connectionDetails
 # @param cdm_schema          schema holding the synthetic CDM (read only)
 # @param results_schema      schema for scratch cohort tables (must exist)
 # @param consumers           the `consumers` list from read_consumers()
 # @param repo_root           root of this -synth repo (siblings resolve from it)
+# @param database            database name; qualifies the two schemas above as
+#                            <database>.<schema> (needed on SQL Server)
 # @return list(results = data.frame, problems = character): `problems` holds
 #         consumers that could not be checked at all (repo missing, no usable
-#         roles, JSON missing); each is a hard failure under --enforce_thresholds.
+#         roles, JSON missing, SQL error); each is a hard failure under
+#         --enforce_thresholds.
 # -----------------------------------------------------------------------------
 run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schema,
-                                   consumers, repo_root = getwd()) {
+                                   consumers, repo_root = getwd(), database = NULL) {
+  cdm_schema     <- qualify_schema(cdm_schema, database)
+  results_schema <- qualify_schema(results_schema, database)
+
   connection <- DatabaseConnector::connect(connection_details)
   on.exit(DatabaseConnector::disconnect(connection), add = TRUE)
   dbms <- connection@dbms
 
   all_results <- list()
   problems <- character(0)
+  add_problem <- function(study, msg) problems <<- c(problems, paste0(study, ": ", msg))
 
   for (co in consumers) {
     dir <- resolve_consumer_dir(co, repo_root)
     if (!dir.exists(dir)) {
-      problems <- c(problems, paste0(co$study, ": repository not found at ", dir,
-                                     " (clone it into the workspace, or set repo_dir)"))
+      add_problem(co$study, paste0("repository not found at ", dir,
+                                   " (clone it into the workspace, or set repo_dir)"))
       next
     }
 
@@ -353,30 +398,27 @@ run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schem
     roles <- list(target_id = co$target_id %||% spec$target_id,
                   outcome_ids = if (length(co$outcome_ids)) co$outcome_ids else spec$outcome_ids)
     if (is.null(roles$target_id) || length(roles$outcome_ids) == 0) {
-      problems <- c(problems, paste0(co$study, ": could not determine target and outcome cohort ids from ",
-                                     co$spec_script, "; set target_id and outcome_ids in consumers.yaml"))
+      add_problem(co$study, paste0("could not determine target and outcome cohort ids from ",
+                                   co$spec_script, "; set target_id and outcome_ids in consumers.yaml"))
       next
     }
 
     cohorts <- tryCatch(load_consumer_cohorts(dir, co), error = function(e) {
-      problems <<- c(problems, paste0(co$study, ": ", conditionMessage(e))); NULL })
+      add_problem(co$study, conditionMessage(e)); NULL })
     if (is.null(cohorts)) next
     missing_roles <- setdiff(c(roles$target_id, roles$outcome_ids), cohorts$cohortId)
     if (length(missing_roles)) {
-      problems <- c(problems, paste0(co$study, ": role cohort id(s) not in the manifest: ",
-                                     paste(missing_roles, collapse = ", ")))
+      add_problem(co$study, paste0("role cohort id(s) not in the manifest: ",
+                                   paste(missing_roles, collapse = ", ")))
       next
     }
 
     slug <- gsub("[^a-z0-9]+", "_", tolower(co$study))
     table_names <- CohortGenerator::getCohortTableNames(cohortTable = paste0("qc_consumer_", slug))
-    CohortGenerator::createCohortTables(connection = connection, cohortDatabaseSchema = results_schema,
-                                        cohortTableNames = table_names, incremental = FALSE)
-    # CohortGenerator also creates checksum and subset-attrition tables that
-    # dropCohortStatsTables() leaves behind, so drop every scratch table.
-    cleanup <- function() drop_scratch_tables(connection, results_schema, table_names)
 
     outcome <- tryCatch({
+      CohortGenerator::createCohortTables(connection = connection, cohortDatabaseSchema = results_schema,
+                                          cohortTableNames = table_names, incremental = FALSE)
       gen <- CohortGenerator::generateCohortSet(
         connection = connection, cdmDatabaseSchema = cdm_schema,
         cohortDatabaseSchema = results_schema, cohortTableNames = table_names,
@@ -399,7 +441,15 @@ run_consumer_cohort_qc <- function(connection_details, cdm_schema, results_schem
 
       failed_rows <- gen[gen$generationStatus == "FAILED", , drop = FALSE]
       list(counts = counts, overlap = overlap, failed_rows = failed_rows)
-    }, finally = cleanup())
+    }, error = function(e) {
+      add_problem(co$study, paste0("QC query failed: ", conditionMessage(e)))
+      NULL
+    }, finally = {
+      # CohortGenerator also creates checksum and subset-attrition tables that
+      # dropCohortStatsTables() leaves behind, so drop every scratch table.
+      drop_scratch_tables(connection, results_schema, table_names)
+    })
+    if (is.null(outcome)) next
 
     named <- function(df, col) setNames(as.numeric(df[[col]]), as.character(df$cohortDefinitionId))
     failed <- if (nrow(outcome$failed_rows)) {

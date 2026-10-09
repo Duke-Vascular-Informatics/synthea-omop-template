@@ -41,10 +41,9 @@ Pass these through `workflow/06_quality_check_defined_phenotypes.R`:
 |------|---------|-------------|
 | `--run_name=<name>` | latest schema | Target CDM schema override |
 | `--enforce_thresholds=<true\|false>` | `false` | Fail if row counts fall below minimums |
-| `--min_person_rows=<n>` | 100 | Minimum rows in person table |
-| `--min_open_revascularization_rows=<n>` | 50 | Minimum qualifying procedures |
-| `--min_ssi_condition_rows=<n>` | 5 | Minimum SSI condition records |
-| `--min_mapped_condition_pct=<pct>` | 50 | Minimum % conditions with standard concept |
+| `--min_person_rows=<n>` | 1 | Minimum rows in person table |
+| `--min_outcome_condition_rows=<n>` | 1 | Minimum rows for the configured outcome concept IDs (checked only when `outcome.ancestor_concept_ids` is set) |
+| `--min_mapped_condition_pct=<pct>` | 0 | Minimum % conditions with standard concept |
 | `--run_achilles=<true\|false>` | `true` | Run ACHILLES CDM profiling |
 | `--run_dqd=<true\|false>` | `true` | Run OHDSI Data Quality Dashboard |
 | `--achilles_threads=<n>` | 1 | Parallel threads for ACHILLES |

@@ -13,11 +13,10 @@
 #   --run_name=<name>
 #   --enforce_thresholds=<true|false>
 #   --min_person_rows=<n>
-#   --min_open_revascularization_rows=<n>
-#   --min_ssi_condition_rows=<n>
+#   --min_outcome_condition_rows=<n>   (only when outcome concept IDs are configured)
 #   --min_mapped_condition_pct=<pct>
-#   --run_achilles=<true|false>   Run ACHILLES CDM profiling (default: false)
-#   --run_dqd=<true|false>        Run OHDSI Data Quality Dashboard (default: false)
+#   --run_achilles=<true|false>   Run ACHILLES CDM profiling (default: TRUE, 10-60 min)
+#   --run_dqd=<true|false>        Run OHDSI Data Quality Dashboard (default: TRUE, 10-60 min)
 #   --achilles_threads=<n>        Parallel threads for ACHILLES (default: 1)
 #
 #   --skip_consumer_qc=<true|false>   Skip checking consuming studies' cohorts (default: false)
@@ -25,8 +24,8 @@
 #    scripts/consumer_cohort_qc.R; see that file)
 #
 # Examples:
-#   # Fast path — existing clinical signal checks only
-#   Rscript workflow/06_quality_check_defined_phenotypes.R
+#   # Fast path — skip the slow profilers (clinical signal checks + consumer QC only)
+#   Rscript workflow/06_quality_check_defined_phenotypes.R --run_achilles=false --run_dqd=false
 #
 #   # Full profiling before manuscript submission
 #   Rscript workflow/06_quality_check_defined_phenotypes.R \

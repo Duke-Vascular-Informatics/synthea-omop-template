@@ -28,10 +28,20 @@
 #     target_id, outcome_ids   optional. By default they are read from
 #                              targetId / outcomeIds in spec_script. Set them
 #                              here if that script cannot be parsed.
+#     expected_empty           optional list of cohort ids the study knows are EMPTY
+#                              on synthetic data (e.g. an outcome Synthea does not
+#                              generate). They get no minimum and are reported with
+#                              a note instead of failing.
 #     min_target_subjects      default 100  people required in the target cohort
 #     min_outcome_subjects     default 10   outcome people who are ALSO in the
 #                              target cohort (per outcome cohort)
 #     min_covariate_subjects   default 1    people required in each covariate cohort
+#
+#   not_checked: studies named in the registry's `used_by` that are deliberately
+#     NOT QC'd here, e.g. a retired study or a consumer that is not a Strategus
+#     repo (a federated PLP study). Listing them records the decision and stops
+#     the registry-agreement warning. The producing repo itself is ignored
+#     automatically.
 #
 # Rule 1 does not apply here: this file holds study names and thresholds, not
 # concept IDs. The concept sets live in each study's own cohort definitions.
@@ -40,6 +50,7 @@
 dataset_id: my_study_synth_dataset   # TODO [CONFIG]: your dataset's id in synthetic_data/registry.yaml
 
 consumers: []
+# not_checked: [some-retired-study]
 # consumers:
 #   - study: my-study-desc
 #     min_target_subjects: 100

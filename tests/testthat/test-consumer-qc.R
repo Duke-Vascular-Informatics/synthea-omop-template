@@ -26,13 +26,15 @@ test_that("read_consumers applies defaults and rejects duplicates", {
   expect_null(r$consumers[[1]]$target_id)
   expect_equal(r$consumers[[2]]$min_target_subjects, 50)
   expect_equal(r$consumers[[2]]$outcome_ids, c(8L, 9L))
+  expect_null(r$consumers[[1]]$expected_empty)
 
   p2 <- write_consumers_yaml(d, c("consumers:", "  - study: x", "  - study: x"))
   expect_error(read_consumers(p2), "duplicate")
   p3 <- write_consumers_yaml(d, c("consumers:", "  - repo_dir: foo"))
   expect_error(read_consumers(p3), "study")
-  p4 <- write_consumers_yaml(d, c("consumers: []"))
+  p4 <- write_consumers_yaml(d, c("consumers: []", "not_checked: [a, b]"))
   expect_length(read_consumers(p4)$consumers, 0)
+  expect_equal(read_consumers(p4)$not_checked, c("a", "b"))
 })
 
 test_that("parse_spec_roles reads target, outcomes and hand-authored ids", {
@@ -73,6 +75,23 @@ test_that("evaluate_consumer_results classifies roles and applies thresholds", {
   expect_match(get(4)$note, "hand-authored")
 })
 
+test_that("expected_empty cohorts get no minimum but are annotated", {
+  co <- list(study = "s", min_target_subjects = 100, min_outcome_subjects = 10,
+             min_covariate_subjects = 1, expected_empty = 4L)
+  res <- evaluate_consumer_results(
+    co, c(`1` = "T", `2` = "O", `4` = "O-empty"), roles = list(target_id = 1L, outcome_ids = c(2L, 4L)),
+    subjects = c(`1` = 120, `2` = 50), overlap = c(`2` = 20))
+  expect_equal(res$status[res$cohort_id == 4], "PASS")
+  expect_match(res$note[res$cohort_id == 4], "expected empty")
+  expect_equal(res$status[res$cohort_id == 2], "PASS")
+  # Without the declaration the same empty outcome fails.
+  co$expected_empty <- NULL
+  res2 <- evaluate_consumer_results(co, c(`1` = "T", `2` = "O", `4` = "O-empty"),
+    roles = list(target_id = 1L, outcome_ids = c(2L, 4L)),
+    subjects = c(`1` = 120, `2` = 50), overlap = c(`2` = 20))
+  expect_equal(res2$status[res2$cohort_id == 4], "FAIL")
+})
+
 test_that("check_registry_agreement reports mismatches in both directions", {
   d <- withr::local_tempdir()
   reg <- file.path(d, "registry.yaml")
@@ -85,6 +104,17 @@ test_that("check_registry_agreement reports mismatches in both directions", {
   expect_length(check_registry_agreement("ds1", c("study-a", "study-c"), reg), 0)
   expect_match(check_registry_agreement("nope", "x", reg), "not in")
   expect_match(check_registry_agreement(NA_character_, "x", reg), "no dataset_id")
+
+  # Real registries often list consumers as plain strings, include the producer
+  # repo, and list retired / non-Strategus studies; those must not warn.
+  reg2 <- file.path(d, "registry2.yaml")
+  writeLines(c("datasets:", "  - id: ds2", "    source_repo: the-synth",
+               "    used_by:", "      - the-synth   # produces it",
+               "      - study-a", "      - old-study  # retired", "      - plp-network"), reg2)
+  expect_length(check_registry_agreement("ds2", "study-a", reg2, c("old-study", "plp-network")), 0)
+  p2 <- check_registry_agreement("ds2", "study-a", reg2)
+  expect_length(p2, 2)
+  expect_false(any(grepl("the-synth", p2)))
   expect_match(check_registry_agreement("ds1", "x", file.path(d, "missing.yaml")), "not found")
 })
 
@@ -183,6 +213,17 @@ test_that("run_consumer_cohort_qc counts target, outcome-in-target and covariate
   tables <- tolower(DatabaseConnector::getTableNames(con, databaseSchema = "main"))
   expect_false(any(grepl("^qc_consumer_", tables)))
   expect_true(all(c("person", "condition_occurrence") %in% tables))
+
+  # An unexpected SQL error (here: a results schema that does not exist) is
+  # reported as a problem for that consumer instead of aborting the whole run.
+  out3 <- run_consumer_cohort_qc(cd, "main", "no_such_schema", cfg$consumers, file.path(tmp, "synth"))
+  expect_match(out3$problems, "QC query failed")
+  expect_null(out3$results)
+
+  # Schemas are qualified as <database>.<schema> only when asked, and never twice.
+  expect_equal(qualify_schema("plp_results", "omop_synth"), "omop_synth.plp_results")
+  expect_equal(qualify_schema("omop_synth.plp_results", "omop_synth"), "omop_synth.plp_results")
+  expect_equal(qualify_schema("plp_results", NULL), "plp_results")
 
   # A missing consumer repo is reported as a problem rather than skipped silently.
   gone <- cfg$consumers; gone[[1]]$repo_dir <- file.path(tmp, "does-not-exist")
