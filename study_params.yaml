@@ -83,15 +83,12 @@ target:
     lookback_days: 365
 
 # =============================================================================
-# PRIMARY OUTCOME COHORT
-# Defines WHAT the study is measuring. When set, this is always the study's
-# single primary outcome — it drives score validation / PLP / causal inference
-# metrics, and every entry in additional_outcomes below is secondary to it.
-#
-# Set cohort_id and sql_file to ~ (null) for cohort_characterization, or for a
-# descriptive design that defines all of its outcomes via additional_outcomes
-# instead (see below — in that case, flag exactly one additional_outcomes
-# entry with is_primary: true if the study has a designated primary outcome).
+# OUTCOME COHORT (validation of the generated data only)
+# The outcome the synthetic data must contain, used by workflow/02 and the
+# config-driven outcome check in workflow/06. The study's real outcomes, primary
+# and secondary, are cohorts in the consuming Strategus repo and are checked by
+# consumer-study QC (consumers.yaml). Set cohort_id and sql_file to ~ (null) if
+# the data needs no outcome.
 # =============================================================================
 outcome:
   cohort_id: 2
@@ -120,45 +117,6 @@ comparator:
     domain: "condition"
     ancestor_concept_ids: ~   # ~ = no washout; set to concept IDs to enable
     lookback_days: 365
-
-# =============================================================================
-# ADDITIONAL OUTCOMES (secondary — optional, for descriptive / multi-outcome designs)
-# Instantiates one cohort per list entry via R/cohorts.R's
-# instantiate_additional_outcomes(). Every entry here is a SECONDARY outcome
-# unless it sets is_primary: true — which is only meaningful when the primary
-# outcome block above is disabled (cohort_id: ~); if outcome.cohort_id is set,
-# that single cohort is always primary and is_primary flags here are ignored.
-#
-# Fields:
-#   name                 - unique snake_case identifier
-#   label                - display label for messages/reports
-#   cohort_id            - unique cohort_definition_id (must not collide with
-#                          target/comparator/outcome cohort_ids)
-#   domain               - "condition" | "procedure" | "death" | "composite"
-#   sql_file             - cohort SQL; composite entries self-join on cohort_id
-#   ancestor_concept_ids - [] for domain: death or composite (no concepts needed)
-#   composite_cohort_ids - only for domain: composite — component cohort_ids,
-#                          which must be listed earlier in this file so they
-#                          already exist when the composite SQL runs
-#   is_primary           - optional; true designates this the study's single
-#                          primary outcome when outcome.cohort_id is ~ (null)
-#
-# Outcomes whose ancestor_concept_ids still contain the placeholder 0 are
-# skipped (with a message) rather than failing the whole run, so verified
-# outcomes can build while others await a vocabulary query.
-#
-# Leave the list empty ([]) — the default — for studies with a single
-# primary outcome defined above and no secondary outcomes.
-# =============================================================================
-additional_outcomes: []
-#   - name:    "my_secondary_outcome"
-#     label:   "My Secondary Outcome"
-#     cohort_id: 10
-#     domain:  "condition"
-#     sql_file: "cohorts/outcome_my_secondary.sql"
-#     ancestor_concept_ids: [0]   # TODO [OUTCOME COHORT]: replace 0 [REQUIRES vocab query]
-#     is_primary: false
-
 
 # =============================================================================
 # ANALYSIS PARAMETERS

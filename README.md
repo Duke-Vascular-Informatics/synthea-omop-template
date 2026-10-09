@@ -98,7 +98,7 @@ workspace-level setup, use the [charon workspace](https://github.com/Duke-Vascul
 | Change for every dataset | Leave as-is |
 |------------------------|-------------|
 | `synthea/modules/*.json` (your disease/procedure module) | `config.R` (infrastructure only — no edits needed) |
-| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
+| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/consumer_qc.R` |
 | `covariates/*.csv` (only as far as `workflow/02` validation needs) | `setup/` |
 | `study_params.yaml`'s generation parameters (population, age range, seed) | `renv.lock` (update only to add a new package) |
 | `consumers.yaml` (the Strategus studies that use this dataset; QC checks their cohorts) | |
@@ -128,8 +128,8 @@ The numbers below are the `workflow/` script numbers, not the step numbers of
 | Workflow | Script | Purpose |
 |------|--------|---------|
 | 1 | `workflow/01_setup_synthea_etl_qc_env.R` | Install packages, verify DB connectivity, provision JDBC driver |
-| 2 | `workflow/02_define_omop_cohort_outcome_covariates.R` | **Validate your study definition** — cohort SQL, covariate CSVs, concept IDs |
-| 3 | `workflow/03_generate_synthea_module_artifacts.R` | Validate Synthea disease module and regenerate HTML diagram |
+| 2 | `workflow/02_define_omop_cohort_outcome_covariates.R` | **Validate your study definition** — cohort SQL, covariate CSVs, concept IDs — and list the cohorts of every study in `consumers.yaml` that the module must cover |
+| 3 | `workflow/03_generate_synthea_module_artifacts.R` | Validate Synthea disease module, regenerate HTML diagram, and check the module can produce the consuming studies' cohorts |
 | 4 | `workflow/04_generate_synthea_csv.ps1` / `.sh` | Generate Synthea synthetic patients |
 | 5 | `workflow/05_etl_csv_to_omop.R` | ETL Synthea CSV → OMOP CDM |
 | 6 | `workflow/06_quality_check_defined_phenotypes.R` | Post-ETL data quality checks, plus consumer-study QC of every study in `consumers.yaml` — the last step for a `-synth` repo |

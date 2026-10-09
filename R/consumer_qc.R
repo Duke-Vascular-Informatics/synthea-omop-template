@@ -154,15 +154,13 @@ resolve_consumer_dir <- function(consumer, repo_root) {
 }
 
 # -----------------------------------------------------------------------------
-# load_consumer_cohorts
+# read_consumer_manifest
 #
-# Builds the cohort definition set for one consumer: cohortId, cohortName,
-# json, sql. SQL is rendered from the JSON with CirceR the way Strategus does
-# (generateStats = FALSE: membership is identical and no inclusion-statistics
-# tables are needed for QC). Manifest rows with cohort_id 0 are the template's
-# example row and are skipped.
+# Reads a consumer's cohort manifest (inst/Cohorts.csv) without touching its
+# cohort definitions: data.frame(cohortId, cohortName). Rows with cohort_id 0 are
+# the template's example row and are skipped.
 # -----------------------------------------------------------------------------
-load_consumer_cohorts <- function(consumer_dir, consumer) {
+read_consumer_manifest <- function(consumer_dir, consumer) {
   manifest_path <- file.path(consumer_dir, consumer$cohorts_manifest)
   if (!file.exists(manifest_path)) stop("cohort manifest not found: ", manifest_path)
   manifest <- read.csv(manifest_path, stringsAsFactors = FALSE)
@@ -173,7 +171,62 @@ load_consumer_cohorts <- function(consumer_dir, consumer) {
   manifest <- manifest[manifest$cohortId != 0, , drop = FALSE]
   if (nrow(manifest) == 0) stop(manifest_path, " lists no cohorts")
   if (anyDuplicated(manifest$cohortId)) stop("duplicate cohort_id in ", manifest_path)
+  manifest$cohortId <- as.integer(manifest$cohortId)
+  manifest[, c("cohortId", "cohortName")]
+}
 
+# -----------------------------------------------------------------------------
+# inspect_consumers   (no database, no Java)
+#
+# What the dataset and the Synthea module must cover: each consumer's cohorts and
+# their roles, plus anything that would stop the QC from running (repo not
+# cloned, manifest or cohort JSON missing, target/outcome ids unresolvable).
+# Used by workflow/02 to print the requirements before the module is built.
+#
+# @return list(manifest = data.frame(consumer, cohort_id, cohort_name, role,
+#         expected_empty), problems = character)
+# -----------------------------------------------------------------------------
+inspect_consumers <- function(consumers, repo_root = getwd()) {
+  rows <- list(); problems <- character(0)
+  for (co in consumers) {
+    dir <- resolve_consumer_dir(co, repo_root)
+    if (!dir.exists(dir)) {
+      problems <- c(problems, paste0(co$study, ": repository not found at ", dir)); next
+    }
+    spec <- parse_spec_roles(file.path(dir, co$spec_script))
+    target <- co$target_id %||% spec$target_id
+    outcomes <- if (length(co$outcome_ids)) co$outcome_ids else spec$outcome_ids
+    if (is.null(target) || length(outcomes) == 0) {
+      problems <- c(problems, paste0(co$study, ": could not determine target and outcome ids from ",
+                                     co$spec_script, "; set target_id and outcome_ids in consumers.yaml"))
+    }
+    manifest <- tryCatch(read_consumer_manifest(dir, co), error = function(e) {
+      problems <<- c(problems, paste0(co$study, ": ", conditionMessage(e))); NULL })
+    if (is.null(manifest)) next
+    no_json <- manifest$cohortId[!file.exists(file.path(dir, co$cohorts_json_dir, paste0(manifest$cohortId, ".json")))]
+    if (length(no_json)) problems <- c(problems, paste0(co$study, ": missing cohort JSON for id(s) ",
+                                                         paste(no_json, collapse = ", ")))
+    role <- ifelse(!is.null(target) & manifest$cohortId %in% target, "target",
+            ifelse(manifest$cohortId %in% outcomes, "outcome", "covariate"))
+    rows[[length(rows) + 1L]] <- data.frame(
+      consumer = co$study, cohort_id = manifest$cohortId, cohort_name = manifest$cohortName,
+      role = role, expected_empty = manifest$cohortId %in% co$expected_empty,
+      stringsAsFactors = FALSE)
+  }
+  list(manifest = if (length(rows)) do.call(rbind, rows) else NULL, problems = problems)
+}
+
+# -----------------------------------------------------------------------------
+# load_consumer_cohorts
+#
+# Builds the cohort definition set for one consumer: cohortId, cohortName,
+# json, sql. SQL is rendered from the JSON with CirceR the way Strategus does
+# (generateStats = FALSE: membership is identical and no inclusion-statistics
+# tables are needed for QC). Manifest rows with cohort_id 0 are the template's
+# example row and are skipped.
+# -----------------------------------------------------------------------------
+load_consumer_cohorts <- function(consumer_dir, consumer) {
+  manifest <- read_consumer_manifest(consumer_dir, consumer)
   json_dir <- file.path(consumer_dir, consumer$cohorts_json_dir)
   rows <- lapply(seq_len(nrow(manifest)), function(i) {
     cid <- as.integer(manifest$cohortId[i])

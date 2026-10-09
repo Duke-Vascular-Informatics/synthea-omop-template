@@ -345,6 +345,30 @@ if (!identical(status, 0L)) {
 }
 
 # -----------------------------------------------------------------------------
+# Chunk 8b - Coverage of the consuming studies' cohorts
+# Purpose:
+# Before spending time on data generation, confirm the Synthea modules that will
+# run (this custom module AND Synthea's built-in modules, since workflow/04 runs
+# them all) can emit the concepts every study in consumers.yaml needs.
+# Code path notes:
+# - Report-only by default; pass --enforce_coverage=true to stop on a cohort the
+#   module cannot produce. Skip entirely with --skip_coverage_check=true.
+# - Needs the OMOP vocabulary on the SQL Server; if the database is unreachable the
+#   check warns and is skipped (it fails only under --enforce_coverage=true).
+# - Covered means the module CAN emit the concept; the final counts are checked by
+#   consumer-study QC in workflow/06.
+# -----------------------------------------------------------------------------
+cli_args <- commandArgs(trailingOnly = TRUE)
+if (!any(grepl("^--skip_coverage_check=(true|1|yes)$", cli_args, ignore.case = TRUE))) {
+  cov_args <- c("scripts/module_coverage_check.R",
+                grep("^--(enforce_coverage|consumers|synthea_home)=", cli_args, value = TRUE))
+  cov_status <- system2(file.path(R.home("bin"), rscript_bin), args = cov_args)
+  if (!identical(cov_status, 0L)) {
+    stop("Module coverage check failed: the module cannot produce cohorts a consuming study needs.")
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Chunk 9 - Completion banner
 # Purpose:
 # Confirm that validation paths completed and the review artifact was generated.

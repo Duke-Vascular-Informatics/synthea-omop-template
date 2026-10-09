@@ -183,17 +183,6 @@ get_validation_config <- function() {
     #                       non-home discharge), verified via a NUBC
     #                       discharge-disposition breakdown instead.
     outcome_domain = p$outcome$domain %||% "condition",
-    outcome_label  = p$outcome$label  %||% "Outcome",  # display label used in cohort messages
-
-    # -------------------------------------------------------------------------
-    # Existing ATLAS cohorts (optional).
-    # If use_atlas_cohorts = TRUE the target cohort is copied from ATLAS.
-    # -------------------------------------------------------------------------
-    use_atlas_cohorts       = FALSE,
-    atlas_cohort_schema     = "results",
-    atlas_cohort_table      = "cohort",
-    atlas_target_cohort_id  = NA_integer_,
-    atlas_outcome_cohort_id = NA_integer_,
 
     # -------------------------------------------------------------------------
     # Covariate / feature definition files (pre-specified covariate list).
