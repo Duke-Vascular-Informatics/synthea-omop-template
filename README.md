@@ -98,7 +98,7 @@ workspace-level setup, use the [charon workspace](https://github.com/Duke-Vascul
 | Change for every dataset | Leave as-is |
 |------------------------|-------------|
 | `synthea/modules/*.json` (your disease/procedure module) | `config.R` (infrastructure only — no edits needed) |
-| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/cohorts.R` |
+| `cohorts/*.sql` (only as far as `workflow/02` validation needs) | `R/drivers.R`, `R/connection.R`, `R/consumer_qc.R` |
 | `covariates/*.csv` (only as far as `workflow/02` validation needs) | `setup/` |
 | `study_params.yaml`'s generation parameters (population, age range, seed) | `renv.lock` (update only to add a new package) |
 | `consumers.yaml` (the Strategus studies that use this dataset; QC checks their cohorts) | |

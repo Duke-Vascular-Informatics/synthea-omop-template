@@ -18,13 +18,11 @@ Pure functions (no database required) are covered by unit tests in `tests/testth
 
 - `is_transient_db_error()`, `with_db_retry()` — connection retry logic
 
-## Also present
+## Removed
 
-`cohorts.R` instantiates cohort SQL into the results cohort table (including optional
-ATLAS cohorts and `additional_outcomes`). No numbered workflow step currently calls it;
-it is kept as a generic helper.
-
-The analysis and manuscript-report code that used to live here (`risk_score_pipeline.R`,
-`report_*.R`, `plp_validation_pipeline.R`, `cohort_demographics.R`, and the old
-`workflow/07–08` that drove them) has been removed. New analysis work belongs in a
-separate repo built from `strategus-study-template`; the code remains in git history.
+`cohorts.R` (cohort instantiation, ATLAS-cohort copy, `additional_outcomes`) and the
+analysis and manuscript-report code (`risk_score_pipeline.R`, `report_*.R`,
+`plp_validation_pipeline.R`, `cohort_demographics.R`, and the old `workflow/07–08`) have
+been removed; nothing here called them. Cohorts are instantiated by Strategus in the
+analysis-core repo, and `consumer_qc.R` instantiates the consuming studies' cohorts
+into scratch tables to QC this dataset. The code remains in git history.

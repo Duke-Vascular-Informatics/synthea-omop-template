@@ -84,7 +84,7 @@ cohort_end_date       DATE    -- observation end or censoring date
 ```
 
 - IDs are defined in `config.R` — never hardcode `cohort_definition_id = 1` in analysis code.
-- Use `build_cohorts()` from `R/cohorts.R` to populate the cohort table from SQL files.
+- This repo does not instantiate cohorts. Cohorts are instantiated by Strategus in the analysis-core repo; `R/consumer_qc.R` instantiates the consuming studies' cohorts into scratch tables to QC the synthetic dataset.
 
 ## Concept ID Lookup — MANDATORY RULE
 
