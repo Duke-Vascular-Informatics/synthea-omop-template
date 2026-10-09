@@ -2,10 +2,13 @@
 # consumers.yaml — the Strategus studies that use this synthetic dataset
 #
 # Tracks which downstream studies depend on the dataset this -synth repo
-# generates. workflow/06 (scripts/consumer_cohort_qc.R) instantiates each
-# listed study's own cohorts against the synthetic CDM and fails if a cohort
-# that study needs is empty or too small, so regenerating or editing the
-# dataset cannot silently break a study.
+# generates. It is the dataset's specification, used at three points so that
+# regenerating or editing the dataset cannot silently break a study:
+#   workflow/02  lists each listed study's cohorts (what must be covered)
+#   workflow/03  scripts/module_coverage_check.R checks the Synthea module (custom
+#                + built-in modules) CAN produce them, before generation
+#   workflow/06  scripts/consumer_cohort_qc.R instantiates them against the final
+#                synthetic CDM and fails any that is empty or too small
 #
 # In a Strategus study the cohort roles are: ONE target cohort, the outcome
 # cohorts, and every other cohort in inst/Cohorts.csv is a covariate cohort.

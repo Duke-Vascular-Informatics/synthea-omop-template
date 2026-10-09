@@ -385,6 +385,41 @@ cat("           (or skip to Step 7 if not using Synthea)\n")
 
 
 # -----------------------------------------------------------------------------
+# Chunk 6b - What the module and dataset must cover (consuming studies)
+# -----------------------------------------------------------------------------
+# consumers.yaml lists the Strategus studies that will use this dataset. Their
+# cohorts (target, outcomes, and the covariate cohorts) are what the Synthea
+# module must be able to produce (checked by workflow/03) and what the final data
+# must contain (checked by workflow/06). Printed here so the requirements are
+# visible before the module is designed. Problems are warnings, not stops: a
+# consuming study may not be cloned yet.
+# -----------------------------------------------------------------------------
+source("R/consumer_qc.R")
+if (file.exists("consumers.yaml")) {
+  consumer_cfg <- read_consumers("consumers.yaml")
+  cat("\nStudies this dataset must support (consumers.yaml):\n")
+  if (length(consumer_cfg$consumers) == 0) {
+    warning("[Step 2] consumers.yaml lists no consuming studies, so the Synthea module and the ",
+            "final data are not checked against any study's cohorts. Add each Strategus study ",
+            "that will use this dataset.", call. = FALSE)
+  } else {
+    seen <- inspect_consumers(consumer_cfg$consumers, getwd())
+    if (!is.null(seen$manifest)) {
+      by_study <- split(seen$manifest, seen$manifest$consumer)
+      for (nm in names(by_study)) {
+        m <- by_study[[nm]]
+        cat("  ", nm, ": ", sum(m$role == "target"), " target, ", sum(m$role == "outcome"),
+            " outcome, ", sum(m$role == "covariate"), " covariate cohort(s)",
+            if (any(m$expected_empty)) paste0(" (", sum(m$expected_empty), " expected empty)") else "", "\n", sep = "")
+      }
+    }
+    for (p in seen$problems) warning("[Step 2] consumer: ", p, call. = FALSE)
+  }
+} else {
+  warning("[Step 2] consumers.yaml not found; no consuming studies to check against.", call. = FALSE)
+}
+
+# -----------------------------------------------------------------------------
 # Chunk 7 - Study registry
 # Purpose:
 # - Register this study in the workspace-level studies.yaml index on first run.

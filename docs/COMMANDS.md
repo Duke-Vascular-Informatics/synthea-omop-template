@@ -23,7 +23,8 @@ When a command changes:
 | Validate customization status | `Rscript scripts/check_setup.R` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
 | Look up OMOP concepts | `Rscript scripts/concept_lookup.R "<clinical term>" <Domain>` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
 | Validate cohort and covariate definitions | `Rscript workflow/02_define_omop_cohort_outcome_covariates.R` | [Step 5](GETTING_STARTED.md#step-5-define-the-cohorts-and-covariates-your-data-must-support-30-to-60-minutes) |
-| Validate Synthea module | `Rscript workflow/03_generate_synthea_module_artifacts.R` | [Step 6](GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes) |
+| Validate Synthea module (+ coverage of consuming studies' cohorts) | `Rscript workflow/03_generate_synthea_module_artifacts.R` | [Step 6](GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes) |
+| Fail if the module cannot produce a consuming study's cohort | `Rscript workflow/03_generate_synthea_module_artifacts.R --enforce_coverage=true` | [Step 6](GETTING_STARTED.md#step-6-design-the-analysis-specific-synthea-module-30-minutes) |
 | Generate Synthea CSV (bash) | `bash workflow/04_generate_synthea_csv.sh` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
 | Generate Synthea CSV (PowerShell) | `powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |
 | Run ETL | `Rscript workflow/05_etl_csv_to_omop.R` | [Step 7](GETTING_STARTED.md#step-7-generate-synthetic-data-run-etl-and-check-quality-60-minutes) |

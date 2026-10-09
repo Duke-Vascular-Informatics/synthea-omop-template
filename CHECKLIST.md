@@ -60,7 +60,7 @@ container) is done once in your charon workspace: see
 
 ## Phase 3: Generate, Load, Check (~90 minutes)
 
-- [ ] **Step 6:** Edit the Synthea module in `synthea/modules/`. Run `workflow/03`
+- [ ] **Step 6:** Edit the Synthea module in `synthea/modules/`. Run `workflow/03` (also checks the module can produce the cohorts of every study in `consumers.yaml`; use `--enforce_coverage=true` to stop on a gap)
 - [ ] **Step 7:** Run `workflow/04` (generate), `workflow/05` (ETL), `workflow/06` (QC, incl. consumer-study QC)
 - [ ] **Step 7:** Before regenerating a dataset others use: `Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true`
 

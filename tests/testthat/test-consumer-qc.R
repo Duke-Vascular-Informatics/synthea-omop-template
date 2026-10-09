@@ -92,6 +92,23 @@ test_that("expected_empty cohorts get no minimum but are annotated", {
   expect_equal(res2$status[res2$cohort_id == 4], "FAIL")
 })
 
+test_that("inspect_consumers lists cohorts by role and reports what blocks the QC", {
+  d <- withr::local_tempdir()
+  ok <- file.path(d, "study-ok"); dir.create(file.path(ok, "inst", "cohorts"), recursive = TRUE)
+  writeLines(c("atlas_id,cohort_id,cohort_name", "0,0,EXAMPLE", "0,1,T", "0,2,O", "0,3,C"),
+             file.path(ok, "inst", "Cohorts.csv"))
+  for (id in 1:2) writeLines("{}", file.path(ok, "inst", "cohorts", paste0(id, ".json")))   # cohort 3 JSON missing
+  writeLines(c("targetId <- 1L", "outcomeIds <- c(2L)"), file.path(ok, "CreateStrategusAnalysisSpecification.R"))
+  yml <- write_consumers_yaml(d, c("consumers:", "  - study: study-ok", paste0("    repo_dir: ", ok),
+                                   "    expected_empty: [2]",
+                                   "  - study: study-gone", paste0("    repo_dir: ", file.path(d, "nope"))))
+  r <- inspect_consumers(read_consumers(yml)$consumers, d)
+  expect_equal(r$manifest$role, c("target", "outcome", "covariate"))
+  expect_equal(r$manifest$expected_empty, c(FALSE, TRUE, FALSE))
+  expect_true(any(grepl("missing cohort JSON for id\\(s\\) 3", r$problems)))
+  expect_true(any(grepl("study-gone: repository not found", r$problems)))
+})
+
 test_that("check_registry_agreement reports mismatches in both directions", {
   d <- withr::local_tempdir()
   reg <- file.path(d, "registry.yaml")

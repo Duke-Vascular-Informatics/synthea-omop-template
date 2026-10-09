@@ -203,9 +203,11 @@ Commit the study definition on your branch.
 
 ### 5.7 Register the studies that will use this dataset
 
-The check that really protects your downstream studies is run against **their**
-cohorts, not the placeholders above. List every Strategus study that uses this
-dataset in `consumers.yaml`:
+The studies that will use this dataset define what it must contain. The checks that
+protect them run against **their** cohorts, not the placeholders above, at three points:
+`workflow/02` lists the cohorts the module must cover, `workflow/03` checks that the
+Synthea module can produce them (Step 6), and `workflow/06` checks the final data (Step 7).
+List every Strategus study that uses this dataset in `consumers.yaml`:
 
 ```yaml
 dataset_id: my_study_synth_dataset      # this dataset's id in synthetic_data/registry.yaml
@@ -242,11 +244,30 @@ shapes the dataset to the analysis.
    event, the outcome at a plausible rate, and the comorbidities and
    exposures used as covariates (prevalence, procedure rates, medication
    patterns).
-3. Validate it and regenerate its diagram:
+3. Validate it, regenerate its diagram, and check coverage:
 
 ```bash
 Rscript workflow/03_generate_synthea_module_artifacts.R
+Rscript workflow/03_generate_synthea_module_artifacts.R --enforce_coverage=true   # stop if a study's cohort cannot be produced
 ```
+
+**Coverage check.** Workflow 03 also runs `scripts/module_coverage_check.R`, before you
+spend time generating data. For every study in `consumers.yaml` it reads the study's cohort
+definitions and checks that the Synthea modules that will run can emit the concepts they need:
+the entry-event concept sets, plus any inclusion criterion that requires an event. It
+considers your custom module **and** Synthea's built-in modules, because workflow 04 runs
+them all (without an `-m` flag), so common comorbidities are often supplied by the built-ins.
+The module's codes are mapped to standard OMOP concepts through the loaded vocabulary and
+matched with `concept_ancestor`, so a concept set that includes descendants is matched by
+its child concepts. Each cohort is reported `COVERED` (with whether the custom module,
+the built-ins, or both supply it), `NOT_COVERED`, `NOT_EVALUABLE` (an entry criterion has no
+concept set) or `EXPECTED_EMPTY` (listed in `expected_empty`). Results go to
+`output/qc/module_coverage.csv`.
+
+`COVERED` means the module **can** emit the concept; age, sex, probabilities and the ETL can
+still make it rare or empty, so the final counts are judged by consumer-study QC in Step 7.
+On a real dataset this check named exactly the three outcomes that later had no people.
+It needs the vocabulary (a database connection); skip it with `--skip_coverage_check=true`.
 
 Realism matters for testing the pipeline (event rates, timing, coding), but
 remember the data is synthetic: it shows that the analysis plan works, not

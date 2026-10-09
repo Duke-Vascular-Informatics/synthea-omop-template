@@ -21,7 +21,7 @@ This file is a step-level reference for what each workflow script does.
 |------|--------|:----------:|---------|
 | 1 | `01_setup_synthea_etl_qc_env.R` | — | Install packages, verify DB connectivity, provision JDBC driver |
 | **2** | **`02_define_omop_cohort_outcome_covariates.R`** | **Yes** | Declare study design, validate cohort SQL and covariate files |
-| 3 | `03_generate_synthea_module_artifacts.R` | — | Validate Synthea disease module JSON and regenerate HTML diagram |
+| 3 | `03_generate_synthea_module_artifacts.R` | — | Validate Synthea disease module JSON, regenerate HTML diagram, and check the module can produce the cohorts of every study in `consumers.yaml` (`scripts/module_coverage_check.R`) |
 | 4 | `04_generate_synthea_csv.ps1` / `.sh` | — | Generate synthetic patients |
 | 5 | `05_etl_csv_to_omop.R` | — | ETL Synthea CSV → OMOP CDM tables |
 | 6 | `06_quality_check_defined_phenotypes.R` | — | Post-ETL data quality checks, then consumer-study QC of every study in `consumers.yaml` (`scripts/consumer_cohort_qc.R`) — the last step this repo documents |
@@ -104,3 +104,13 @@ Rscript scripts/consumer_cohort_qc.R --enforce_thresholds=true                  
 It reads `consumers.yaml`, renders each consuming Strategus study's cohorts from their
 circe JSON, instantiates them against the active CDM schema, and fails any cohort below its
 per-role minimum (target, outcome-in-target, covariate). With no consumers listed it only warns.
+
+**Module coverage check** (part of Step 3; flags are forwarded to `scripts/module_coverage_check.R`):
+```bash
+Rscript workflow/03_generate_synthea_module_artifacts.R --enforce_coverage=true
+Rscript workflow/03_generate_synthea_module_artifacts.R --skip_coverage_check=true
+Rscript scripts/module_coverage_check.R --enforce_coverage=true     # coverage check only
+```
+Before data generation it checks that the custom module **and** Synthea's built-in modules (all of
+which workflow 04 runs) can emit the concepts in each consuming study's cohorts. Step 2 prints
+the requirements (`consumers.yaml`), Step 3 checks the module, Step 6 checks the final data.
