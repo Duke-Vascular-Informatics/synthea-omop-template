@@ -56,7 +56,7 @@ cohort_json <- function(primary_sets, concept_sets, inclusion = NULL) {
     InclusionRules = inclusion %||% list()), auto_unbox = TRUE)
 }
 
-test_that("parse_cohort_requirements finds primary (OR) and required inclusion sets", {
+test_that("parse_cohort_requirements finds primary (OR) and required inclusion sets", {  # ALL criteria, ANY groups, exactly-0
   cs <- list(`0` = data.frame(concept_id = 910001, descendants = TRUE, excluded = FALSE),
              `1` = data.frame(concept_id = 910002, descendants = FALSE, excluded = FALSE))
   incl <- list(list(name = "needs set 1", expression = list(Type = "ALL", CriteriaList = list(
@@ -70,20 +70,67 @@ test_that("parse_cohort_requirements finds primary (OR) and required inclusion s
     Groups = list())))
   req <- parse_cohort_requirements(cohort_json(c(0L), cs, incl))
   expect_equal(req$primary, 0L)
-  expect_equal(req$required, 1L)          # ANY-group and exactly-0 criteria do not require anything
+  expect_equal(req$required, list(1L, 0L)) # ALL-group criterion; the ANY group is one requirement; exactly-0 requires nothing
   expect_false(req$unevaluable)
   expect_equal(req$concept_sets[["0"]]$descendants, TRUE)
   req2 <- parse_cohort_requirements(cohort_json(c(0L, NA), cs))
   expect_true(req2$unevaluable)
 })
 
+test_that("visit entry events are not judged; the cohort rests on its other required criteria", {
+  cs <- list(`0` = data.frame(concept_id = 9201, descendants = FALSE, excluded = FALSE),
+             `1` = data.frame(concept_id = 910001, descendants = FALSE, excluded = FALSE))
+  visit_json <- function(incl) jsonlite::toJSON(list(
+    ConceptSets = lapply(names(cs), function(id) list(id = as.integer(id), name = id, expression = list(items = list(list(
+      concept = list(CONCEPT_ID = cs[[id]]$concept_id), includeDescendants = FALSE, isExcluded = FALSE, includeMapped = FALSE))))),
+    PrimaryCriteria = list(CriteriaList = list(list(VisitOccurrence = list(CodesetId = 0L)))),
+    InclusionRules = incl), auto_unbox = TRUE)
+  need1 <- list(list(name = "needs set 1", expression = list(Type = "ALL", CriteriaList = list(
+    list(Criteria = list(ProcedureOccurrence = list(CodesetId = 1L)), Occurrence = list(Type = 2L, Count = 1L))), Groups = list())))
+
+  # Visit-only cohort: nothing to judge.
+  r0 <- parse_cohort_requirements(visit_json(list()))
+  expect_true(r0$visit_entry); expect_length(r0$primary, 0)
+  expect_equal(evaluate_cohort_coverage(r0, list())$status, "NOT_EVALUABLE")
+
+  # Visit entry plus a required procedure criterion: judged on the procedure.
+  r1 <- parse_cohort_requirements(visit_json(need1))
+  expect_equal(r1$required, list(1L))
+  expect_equal(evaluate_cohort_coverage(r1, list(`1` = 5))$status, "COVERED")
+  expect_equal(evaluate_cohort_coverage(r1, list(`1` = numeric(0)))$status, "NOT_COVERED")
+
+  # A required VISIT criterion is skipped, not required.
+  incl_visit <- list(list(name = "inpatient", expression = list(Type = "ALL", CriteriaList = list(
+    list(Criteria = list(VisitOccurrence = list(CodesetId = 0L)), Occurrence = list(Type = 2L, Count = 1L))), Groups = list())))
+  expect_length(parse_cohort_requirements(visit_json(incl_visit))$required, 0)
+})
+
+test_that("an ANY inclusion group is one requirement satisfied by any of its sets", {
+  cs <- list(`0` = data.frame(concept_id = 910001, descendants = FALSE, excluded = FALSE),
+             `1` = data.frame(concept_id = 910002, descendants = FALSE, excluded = FALSE),
+             `2` = data.frame(concept_id = 910003, descendants = FALSE, excluded = FALSE))
+  crit <- function(id, type = 2L, cnt = 1L) list(Criteria = list(ConditionOccurrence = list(CodesetId = id)),
+                                                 Occurrence = list(Type = type, Count = cnt))
+  any_rule <- list(list(name = "any of 1,2", expression = list(Type = "ANY", CriteriaList = list(crit(1L), crit(2L)), Groups = list())))
+  req <- parse_cohort_requirements(cohort_json(0L, cs, any_rule))
+  expect_equal(req$required, list(c(1L, 2L)))
+  expect_equal(evaluate_cohort_coverage(req, list(`0` = 1, `1` = numeric(0), `2` = 7))$status, "COVERED")      # one set is enough
+  r <- evaluate_cohort_coverage(req, list(`0` = 1, `1` = numeric(0), `2` = numeric(0)))
+  expect_equal(r$status, "NOT_COVERED"); expect_equal(r$missing, c(1L, 2L))
+
+  # An ANY group containing a criterion that cannot be judged (an exclusion) is skipped, not required.
+  mixed <- list(list(name = "mixed", expression = list(Type = "ANY",
+              CriteriaList = list(crit(1L), crit(2L, type = 0L, cnt = 0L)), Groups = list())))
+  expect_length(parse_cohort_requirements(cohort_json(0L, cs, mixed))$required, 0)
+})
+
 test_that("evaluate_cohort_coverage applies OR for primary and AND for required", {
-  req <- list(primary = c(0L, 1L), required = 2L, unevaluable = FALSE)
+  req <- list(primary = c(0L, 1L), required = list(2L), unevaluable = FALSE)
   expect_equal(evaluate_cohort_coverage(req, list(`0` = 1, `1` = numeric(0), `2` = 5))$status, "COVERED")
   r <- evaluate_cohort_coverage(req, list(`0` = 1, `1` = numeric(0), `2` = numeric(0)))
   expect_equal(r$status, "NOT_COVERED"); expect_equal(r$missing, 2L)
   expect_equal(evaluate_cohort_coverage(req, list(`0` = numeric(0), `1` = numeric(0), `2` = 5))$status, "NOT_COVERED")
-  unk <- list(primary = 0L, required = integer(0), unevaluable = TRUE)
+  unk <- list(primary = 0L, required = list(), unevaluable = TRUE)
   expect_equal(evaluate_cohort_coverage(unk, list(`0` = numeric(0)))$status, "NOT_EVALUABLE")
   expect_equal(evaluate_cohort_coverage(unk, list(`0` = 3))$status, "COVERED")
 })
