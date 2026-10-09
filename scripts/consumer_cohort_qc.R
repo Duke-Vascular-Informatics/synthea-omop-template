@@ -73,7 +73,7 @@ cat("Consumer-study QC for dataset '", cfg$dataset_id, "': ",
     paste(studies, collapse = ", "), "\n", sep = "")
 
 # consumers.yaml and the workspace registry must tell the same story.
-agree <- check_registry_agreement(cfg$dataset_id, studies, registry_path)
+agree <- check_registry_agreement(cfg$dataset_id, studies, registry_path, cfg$not_checked)
 for (p in agree) cat("  [WARN] ", p, "\n", sep = "")
 
 # -----------------------------------------------------------------------------
@@ -104,7 +104,8 @@ out <- run_consumer_cohort_qc(
   cdm_schema         = cdm_schema,
   results_schema     = config$results_schema,
   consumers          = cfg$consumers,
-  repo_root          = getwd())
+  repo_root          = getwd(),
+  database           = config$database)  # SQL Server needs <database>.<schema>
 
 if (!is.null(out$results)) {
   show <- out$results[, c("consumer", "cohort_id", "cohort_name", "role",
