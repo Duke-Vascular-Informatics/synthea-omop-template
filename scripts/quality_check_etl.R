@@ -67,6 +67,10 @@ source("R/connection.R")
 #     on a synthetic CDM — pass --run_achilles=false --run_dqd=false for a
 #     fast Step 6.
 #   --achilles_threads=<n>          Parallel threads for ACHILLES (default: 1)
+#     NOTE: keep this at 1 on SQL Server. With 2+ threads every worker logged
+#     'Connection is closed' and the merge step failed (reproduced on the full
+#     and the pruned package library alike); 1 thread profiles a ~1,500-person
+#     CDM in about 2 minutes.
 parse_args <- function(args) {
   opts <- list(
     run_name = "",
@@ -633,22 +637,20 @@ if (isTRUE(opts$run_dqd) && isTRUE(results_schema_ready)) {
     )
 
     # Print a pass/fail summary from the results table if it was written.
+    # DQD writes one row per check, with 0/1 flag columns in snake_case
+    # (failed, passed, is_error, not_applicable). The summary used to reference
+    # camelCase names (numFailedChecks, isError, notApplicable) from the JSON report,
+    # which do not exist in the table, so the query errored and was silently skipped.
+    # A check can carry more than one flag (e.g. an errored check is also not passed),
+    # so the counts need not sum to total_checks.
     dqd_summary_sql <- SqlRender::translate(SqlRender::render(
       "SELECT
-         failed       AS failed_checks,
-         passed       AS passed_checks,
-         is_error     AS error_checks,
-         not_applicable AS not_applicable_checks,
-         total_checks
-       FROM (
-         SELECT
-           SUM(CASE WHEN numFailedChecks  > 0 THEN 1 ELSE 0 END)  AS failed,
-           SUM(CASE WHEN numFailedChecks  = 0 THEN 1 ELSE 0 END)  AS passed,
-           SUM(CASE WHEN isError          = 1 THEN 1 ELSE 0 END)  AS is_error,
-           SUM(CASE WHEN notApplicable    = 1 THEN 1 ELSE 0 END)  AS not_applicable,
-           COUNT(*)                                                 AS total_checks
-         FROM @results_schema.dqdashboard_results
-       ) s;",
+         SUM(CASE WHEN failed         = 1 THEN 1 ELSE 0 END) AS failed_checks,
+         SUM(CASE WHEN passed         = 1 THEN 1 ELSE 0 END) AS passed_checks,
+         SUM(CASE WHEN is_error       = 1 THEN 1 ELSE 0 END) AS error_checks,
+         SUM(CASE WHEN not_applicable = 1 THEN 1 ELSE 0 END) AS not_applicable_checks,
+         COUNT(*)                                            AS total_checks
+       FROM @results_schema.dqdashboard_results;",
       results_schema = config$results_schema
     ), targetDialect = config$dbms)
 
