@@ -160,9 +160,11 @@ run from any shell working directory.
 
 ## Package Management
 
-R packages are pinned in `renv.lock` (R 4.5.2, cloud.r-project.org). Packages needed for
-synthetic data generation (ETLSyntheaBuilder, Synthea tooling, and the rest of this
-repo's lockfile) are CRAN- or OHDSI-drat-available and handled by `renv` directly.
+R packages are pinned in `renv.lock` (R 4.5.2, cloud.r-project.org). The lockfile holds only
+what synthetic data generation and QC need: the Synthea ETL (ETLSyntheaBuilder), Achilles and
+DataQualityDashboard, and the consumer-study QC and module-coverage checks (CirceR,
+CohortGenerator). It is deliberately not the HADES analysis stack; analysis packages
+(PatientLevelPrediction, CohortMethod, FeatureExtraction, ...) belong in the Strategus repo's own lockfile.
 
 To add a new package:
 
