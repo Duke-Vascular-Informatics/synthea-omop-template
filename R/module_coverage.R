@@ -19,7 +19,23 @@
 #        enough) plus inclusion criteria that require "at least one" event.
 #     4. A concept set is covered when at least one mapped module concept is the
 #        set's concept, or a descendant of it (when the set includes
-#        descendants), and is not excluded by the set.
+#        descendants), and is not excluded by the set, AND the concept's OMOP
+#        domain is the one the criterion's table holds (see below).
+#
+#   DOMAIN-AWARENESS
+#   A circe criterion reads exactly one OMOP table: PrimaryCriteria `Observation`
+#   reads `observation`, `ConditionOccurrence` reads `condition_occurrence`, and so
+#   on. A concept set can span several domains (a "falls" set may hold Condition
+#   fractures and Observation fall-history concepts), yet only concepts whose
+#   domain_id belongs to the criterion's table can ever appear in that table. So a
+#   mapped concept counts toward a criterion only when its domain_id matches
+#   (CRITERION_TABLE_DOMAIN). The domain is judged from the MAPPED STANDARD CONCEPT,
+#   never from the Synthea state type: ETLSyntheaBuilder routes a conditions.csv
+#   row to the observation table when the standard concept's domain is Observation,
+#   so a ConditionOnset state with an Observation-domain concept DOES satisfy an
+#   Observation criterion. Criteria on tables outside the map (Death, Specimen, ...)
+#   and concepts with no known domain are not domain-filtered (the check only
+#   under-requires).
 #
 # WHAT A PASS MEANS (limits)
 #   "Covered" is necessary, not sufficient: the module can emit the concept, but
@@ -52,6 +68,38 @@ SYNTHEA_SYSTEM_TO_VOCAB <- c(
   "ICD-10-CM" = "ICD10CM", "ICD-9-CM" = "ICD9CM", "CPT" = "CPT4", "HCPCS" = "HCPCS",
   "NUBC" = "NUBC"
 )
+
+# circe criterion name (= the OMOP table it reads) -> the concept domain_id that table
+# holds. Era criteria read tables derived from the event tables, so they hold the same
+# domain. Visit criteria are deliberately absent: they are not judged (see header).
+CRITERION_TABLE_DOMAIN <- c(
+  ConditionOccurrence = "Condition",   ConditionEra = "Condition",
+  Observation         = "Observation",
+  DrugExposure        = "Drug",        DrugEra = "Drug", DoseEra = "Drug",
+  ProcedureOccurrence = "Procedure",
+  Measurement         = "Measurement",
+  DeviceExposure      = "Device"
+)
+
+# -----------------------------------------------------------------------------
+# filter_hits_by_domain   (pure; no database)
+#
+# Keeps the concepts that can actually appear in the table a criterion reads.
+#
+# @param concept_ids numeric vector of mapped standard concept ids
+# @param domains     named character vector: names = concept id, values = domain_id
+#                    (NULL = no domain information, nothing is filtered)
+# @param table       circe criterion name, e.g. "Observation" (NA = not filtered)
+# @return numeric vector: concept_ids whose domain matches the table's domain; a concept
+#         with unknown (NA) domain is kept, so a gap in the vocabulary never creates a
+#         false NOT_COVERED.
+# -----------------------------------------------------------------------------
+filter_hits_by_domain <- function(concept_ids, domains, table = NA_character_) {
+  want <- unname(CRITERION_TABLE_DOMAIN[table %||% NA_character_])
+  if (is.na(want) || is.null(domains) || length(concept_ids) == 0) return(concept_ids)
+  have <- unname(domains[as.character(concept_ids)])
+  concept_ids[is.na(have) | have == want]
+}
 
 # -----------------------------------------------------------------------------
 # collect_codes_from_module
@@ -132,9 +180,11 @@ collect_all_module_codes <- function(custom_module_paths, synthea_home) {
 #
 # Maps (system, code) pairs to standard OMOP concept ids using the vocabulary:
 # the source concept's "Maps to" target, or the concept itself if it is
-# standard. Batched per vocabulary; read-only.
+# standard. The target's domain_id is returned too, because it decides which OMOP
+# table the ETL writes the event to (and so which criteria it can satisfy).
+# Batched per vocabulary; read-only.
 #
-# @return data.frame(system, code, concept_id) (unmapped codes are absent)
+# @return data.frame(system, code, concept_id, domain_id) (unmapped codes are absent)
 # -----------------------------------------------------------------------------
 map_codes_to_concepts <- function(connection, vocab_schema, codes, batch_size = 500) {
   dbms <- connection@dbms
@@ -148,7 +198,8 @@ map_codes_to_concepts <- function(connection, vocab_schema, codes, batch_size = 
       code_list <- paste0("'", gsub("'", "''", sub$code[chunk], fixed = TRUE), "'", collapse = ", ")
       sql <- SqlRender::translate(SqlRender::render(
         "SELECT c.concept_code AS code,
-                COALESCE(t.concept_id, CASE WHEN c.standard_concept = 'S' THEN c.concept_id END) AS concept_id
+                COALESCE(t.concept_id, CASE WHEN c.standard_concept = 'S' THEN c.concept_id END) AS concept_id,
+                COALESCE(t.domain_id, CASE WHEN c.standard_concept = 'S' THEN c.domain_id END) AS domain_id
          FROM @vocab_schema.concept c
          LEFT JOIN @vocab_schema.concept_relationship r
                 ON r.concept_id_1 = c.concept_id
@@ -164,12 +215,13 @@ map_codes_to_concepts <- function(connection, vocab_schema, codes, batch_size = 
         out[[length(out) + 1L]] <- data.frame(
           system = names(SYNTHEA_SYSTEM_TO_VOCAB)[match(vocab, SYNTHEA_SYSTEM_TO_VOCAB)],
           code = as.character(res$code), concept_id = as.numeric(res$conceptId),
-          stringsAsFactors = FALSE)
+          domain_id = as.character(res$domainId), stringsAsFactors = FALSE)
       }
     }
   }
   if (length(out) == 0) {
-    return(data.frame(system = character(), code = character(), concept_id = numeric()))
+    return(data.frame(system = character(), code = character(), concept_id = numeric(),
+                      domain_id = character()))
   }
   unique(do.call(rbind, out))
 }
@@ -180,9 +232,14 @@ map_codes_to_concepts <- function(connection, vocab_schema, codes, batch_size = 
 # Reads a circe cohort JSON and returns what must be populated for the cohort
 # to be non-empty:
 #   primary   - concept-set ids of the primary criteria. The cohort needs ANY ONE.
+#   primary_table - the circe criterion (= OMOP table) each `primary` id is read from,
+#               e.g. "Observation"; same length and order as `primary`.
 #   required  - list of requirements, each a vector of concept-set ids satisfied by ANY of
 #               them: one per "at least one" criterion inside an ALL group, and one per
 #               ANY group whose criteria are all plain "at least one" concept-set criteria.
+#   required_table - list parallel to `required`: the criterion name of each id. The same
+#               concept set can be read by criteria on different tables, so the table
+#               belongs to the criterion, not to the concept set.
 #   unevaluable - TRUE when a primary criterion has no concept set (e.g. an
 #               observation-period entry), so coverage is unknown.
 #   visit_entry - TRUE when a primary criterion is a visit criterion (not judged).
@@ -215,8 +272,15 @@ parse_cohort_requirements <- function(json_text) {
   visit_entry  <- any(vapply(primary_list, is_visit, logical(1)))
   evaluable    <- primary_list[!vapply(primary_list, is_visit, logical(1))]
   primary_ids  <- vapply(evaluable, codeset_of, integer(1))
+  # The criterion's name (first list key) is the OMOP table it reads.
+  primary_tbl  <- vapply(evaluable, function(cr) names(cr)[1], character(1))
   unevaluable  <- (length(primary_list) == 0) || any(is.na(primary_ids))
+  primary_tbl  <- primary_tbl[!is.na(primary_ids)]
   primary_ids  <- primary_ids[!is.na(primary_ids)]
+  # Drop exact repeats (same set read from the same table); keep the same set on two tables.
+  keep_p       <- !duplicated(paste(primary_ids, primary_tbl))
+  primary_ids  <- primary_ids[keep_p]
+  primary_tbl  <- primary_tbl[keep_p]
 
   # Each requirement is a vector of concept-set ids satisfied by ANY of them.
   #   ALL group: every criterion that needs "at least one" event is its own requirement
@@ -225,7 +289,11 @@ parse_cohort_requirements <- function(json_text) {
   #              is a plain "at least one" concept-set criterion; otherwise the group is
   #              skipped (the check only under-requires).
   # Visit criteria and criteria without a concept set are never required.
-  required <- list()
+  required <- list(); required_table <- list()
+  add_required <- function(ids, tables) {
+    required[[length(required) + 1L]] <<- ids
+    required_table[[length(required_table) + 1L]] <<- tables
+  }
   at_least_one <- function(cr) {
     occ <- cr$Occurrence %||% list()
     (occ$Type %||% -1L) %in% c(0L, 2L) && (occ$Count %||% 0L) >= 1L
@@ -237,19 +305,25 @@ parse_cohort_requirements <- function(json_text) {
       for (cr in crits) {
         if (at_least_one(cr) && !is_visit(cr$Criteria)) {
           id <- codeset_of(cr$Criteria)
-          if (!is.na(id)) required[[length(required) + 1L]] <<- id
+          if (!is.na(id)) add_required(id, names(cr$Criteria)[1])
         }
       }
       for (sub in g$Groups %||% list()) walk_group(sub)
     } else if (type == "ANY" && length(crits) > 0 && length(g$Groups %||% list()) == 0) {
       ids <- vapply(crits, function(cr)
         if (at_least_one(cr) && !is_visit(cr$Criteria)) codeset_of(cr$Criteria) else NA_integer_, integer(1))
-      if (!anyNA(ids)) required[[length(required) + 1L]] <<- unique(ids)
+      if (!anyNA(ids)) {
+        tbls <- vapply(crits, function(cr) names(cr$Criteria)[1], character(1))
+        add_required(ids[!duplicated(paste(ids, tbls))], tbls[!duplicated(paste(ids, tbls))])
+      }
     }
   }
   for (rule in j$InclusionRules %||% list()) walk_group(rule$expression)
 
-  list(primary = unique(primary_ids), required = unique(required),
+  # Drop duplicate requirements (same ids on the same tables) from both lists together.
+  keep_r <- !duplicated(mapply(function(i, t) paste(i, t, collapse = ","), required, required_table))
+  list(primary = primary_ids, primary_table = primary_tbl,
+       required = required[keep_r], required_table = required_table[keep_r],
        unevaluable = unevaluable, visit_entry = visit_entry, concept_sets = sets)
 }
 
@@ -258,7 +332,9 @@ parse_cohort_requirements <- function(json_text) {
 #
 # Which of `module_concepts` fall inside one concept set: the set's included
 # concepts (and their descendants where the item says so), minus anything the
-# set excludes. Uses concept_ancestor, so it never expands the whole set.
+# set excludes. Uses concept_ancestor, so it never expands the whole set. Domain-agnostic
+# on purpose: the domain test depends on the criterion that reads the set, not on the set,
+# so it is applied afterwards by filter_hits_by_domain().
 #
 # @param module_concepts numeric vector of standard concept ids the module emits
 # @return numeric vector of the matching module concept ids
@@ -292,39 +368,90 @@ concept_set_hits <- function(connection, vocab_schema, set, module_concepts, bat
 # -----------------------------------------------------------------------------
 # evaluate_cohort_coverage
 #
-# Applies the primary / required rules to per-set hits.
+# Applies the primary / required rules to per-set hits, counting only the hits whose
+# concept domain belongs to the table the criterion reads.
 #
 # @param req        parse_cohort_requirements() result
-# @param hits       named list: concept-set id -> matching module concept ids
-# @return list(status = "COVERED"|"NOT_COVERED"|"NOT_EVALUABLE", missing = <set ids>, note)
+# @param hits       named list: concept-set id -> matching module concept ids (any domain)
+# @param domains    named character vector: names = concept id, values = domain_id
+#                   (NULL = skip the domain test)
+# @return list(status = "COVERED"|"NOT_COVERED"|"NOT_EVALUABLE", missing = <set ids>, note,
+#              domain_notes = named character vector: set id -> reason, for sets that
+#              the module reaches only in a domain the criterion does not read)
 # -----------------------------------------------------------------------------
-evaluate_cohort_coverage <- function(req, hits) {
-  has <- function(id) length(hits[[as.character(id)]] %||% numeric(0)) > 0
+evaluate_cohort_coverage <- function(req, hits, domains = NULL) {
+  # Concepts of set `id` that can reach the table `tbl` (NA tbl = no domain test).
+  hits_for <- function(id, tbl) {
+    filter_hits_by_domain(hits[[as.character(id)]] %||% numeric(0), domains, tbl)
+  }
+  has <- function(id, tbl) length(hits_for(id, tbl)) > 0
+  # Tables are optional so hand-built requirement lists (and older callers) still work.
+  p_tbl <- req$primary_table %||% rep(NA_character_, length(req$primary))
+  r_tbl <- req$required_table %||% lapply(req$required, function(ids) rep(NA_character_, length(ids)))
+
+  # For a missing set: say so when the module DOES reach the set, just in another domain.
+  # Named by set id; sets with no domain problem are left out.
+  notes_for <- function(ids, tbls) {
+    out <- character(0)
+    for (k in seq_along(ids)) {
+      all_hits <- hits[[as.character(ids[k])]] %||% numeric(0)
+      if (length(all_hits) == 0 || has(ids[k], tbls[k])) next
+      found <- sort(unique(stats::na.omit(unname(domains[as.character(all_hits)]))))
+      out[as.character(ids[k])] <- paste0(
+        "codes reach the concept set only in the ", paste(found, collapse = "/"),
+        " domain; criterion reads ", tbls[k])
+    }
+    out
+  }
   visit_entry <- isTRUE(req$visit_entry)
 
   # A required inclusion criterion (or ANY-group) with no module code leaves the cohort
   # empty whatever the entry events do.
-  covered_req <- vapply(req$required, function(ids) any(vapply(ids, has, logical(1))), logical(1))
+  covered_req <- vapply(seq_along(req$required), function(k)
+    any(mapply(has, req$required[[k]], r_tbl[[k]])), logical(1))
   if (any(!covered_req)) {
-    return(list(status = "NOT_COVERED", missing = unique(unlist(req$required[!covered_req])), note = ""))
+    bad <- which(!covered_req)
+    notes <- unlist(lapply(bad, function(k) notes_for(req$required[[k]], r_tbl[[k]])))
+    return(list(status = "NOT_COVERED", missing = unique(unlist(req$required[bad])), note = "",
+                domain_notes = notes[!duplicated(names(notes))]))
   }
-  if (length(req$primary) > 0 && any(vapply(req$primary, has, logical(1)))) {
-    return(list(status = "COVERED", missing = integer(0), note = ""))
+  if (length(req$primary) > 0 && any(mapply(has, req$primary, p_tbl))) {
+    return(list(status = "COVERED", missing = integer(0), note = "", domain_notes = character(0)))
   }
   # Visit entry events are not judged (the ETL derives visit types from encounter
   # class). If the cohort has other required criteria, those decide and they are met.
   if (visit_entry) {
     if (length(req$required) > 0) {
-      return(list(status = "COVERED", missing = integer(0),
+      return(list(status = "COVERED", missing = integer(0), domain_notes = character(0),
                   note = "visit entry event not evaluated; its required criteria are covered"))
     }
-    return(list(status = "NOT_EVALUABLE", missing = integer(0),
+    return(list(status = "NOT_EVALUABLE", missing = integer(0), domain_notes = character(0),
                 note = "visit-only cohort: visit types come from the ETL, not module codes"))
   }
   # Primary criteria are OR-ed. If one has no concept set (observation period, ...)
   # it may still populate the cohort, so we cannot say.
-  if (req$unevaluable) return(list(status = "NOT_EVALUABLE", missing = integer(0), note = ""))
-  list(status = "NOT_COVERED", missing = unique(req$primary), note = "")
+  if (req$unevaluable) {
+    return(list(status = "NOT_EVALUABLE", missing = integer(0), note = "", domain_notes = character(0)))
+  }
+  list(status = "NOT_COVERED", missing = unique(req$primary), note = "",
+       domain_notes = notes_for(req$primary, p_tbl))
+}
+
+# -----------------------------------------------------------------------------
+# satisfying_concepts   (pure)
+#
+# The module concepts that actually satisfy some criterion of the cohort: its primary and
+# required sets, each filtered to the domain of the table that criterion reads. Used to
+# report which module codes provide a cohort, so a concept that cannot reach the table
+# is never credited.
+# -----------------------------------------------------------------------------
+satisfying_concepts <- function(req, hits, domains = NULL) {
+  p_tbl <- req$primary_table %||% rep(NA_character_, length(req$primary))
+  r_tbl <- req$required_table %||% lapply(req$required, function(ids) rep(NA_character_, length(ids)))
+  ids  <- c(req$primary, unlist(req$required))
+  tbls <- c(p_tbl, unlist(r_tbl))
+  unique(unlist(lapply(seq_along(ids), function(k)
+    filter_hits_by_domain(hits[[as.character(ids[k])]] %||% numeric(0), domains, tbls[k]))))
 }
 
 # -----------------------------------------------------------------------------
@@ -349,6 +476,10 @@ check_module_coverage <- function(connection, vocab_schema, consumers, module_co
   by_concept <- merge(module_codes[, c("module", "state", "concept_key", "display")],
                       mapped[, c("concept_key", "concept_id")], by = "concept_key")
   module_concepts <- unique(by_concept$concept_id)
+  # concept id -> OMOP domain of the mapped standard concept. This (not the Synthea state
+  # type) decides which table the ETL writes the event to, hence which criteria it can meet.
+  dom <- unique(mapped[, c("concept_id", "domain_id")])
+  concept_domains <- setNames(dom$domain_id, as.character(dom$concept_id))
   unmapped_systems <- setdiff(unique(module_codes$system), names(SYNTHEA_SYSTEM_TO_VOCAB))
 
   results <- list(); problems <- character(0)
@@ -377,17 +508,25 @@ check_module_coverage <- function(connection, vocab_schema, consumers, module_co
       hits <- setNames(lapply(needed, function(id) {
         concept_set_hits(connection, vocab_schema, req$concept_sets[[as.character(id)]], module_concepts)
       }), as.character(needed))
-      ev <- evaluate_cohort_coverage(req, hits)
+      ev <- evaluate_cohort_coverage(req, hits, concept_domains)
 
-      matched <- unique(unlist(hits[as.character(unique(c(req$primary, unlist(req$required))))]))
+      # Credit only concepts that can reach the table their criterion reads.
+      matched <- satisfying_concepts(req, hits, concept_domains)
       src <- by_concept[by_concept$concept_id %in% matched, , drop = FALSE]
       provided_by <- if (nrow(src) == 0) "" else if (all(src$module == "custom")) "custom module"
                      else if (any(src$module == "custom")) "custom + built-in" else "built-in only"
       example <- head(unique(paste0(src$display, " [", src$module, "]")), 2)
 
       status <- ev$status
-      detail <- if (length(ev$missing)) paste0("no module code reaches concept set(s) ",
-                                               paste(ev$missing, collapse = ", ")) else ev$note
+      # Sets reached only in the wrong domain get their own reason; the rest keep the
+      # original "no module code reaches" wording.
+      detail <- if (length(ev$missing)) {
+        no_code <- setdiff(as.character(ev$missing), names(ev$domain_notes))
+        paste(c(if (length(no_code)) paste0("no module code reaches concept set(s) ",
+                                            paste(no_code, collapse = ", ")),
+                if (length(ev$domain_notes)) paste0("concept set ", names(ev$domain_notes), ": ",
+                                                    ev$domain_notes)), collapse = "; ")
+      } else ev$note
       if (cid %in% co$expected_empty) {
         detail <- paste(c(detail, if (status == "COVERED") "declared expected_empty but the module can emit it"
                                   else "expected empty"), collapse = if (nzchar(detail)) "; " else "")
