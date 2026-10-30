@@ -357,6 +357,17 @@ summary_sql <- SqlRender::translate(SqlRender::render(
 summary_df <- run_query(summary_sql)
 cat("OMOP summary\n")
 print(summary_df)
+
+# Machine-readable copy of the summary for synthetic_data/registry.yaml's qc_summary
+# (added 2026-10-29: previously copied by hand from the console).
+if (requireNamespace("yaml", quietly = TRUE) && nrow(summary_df) > 0L) {
+  qc_yaml_dir <- file.path("output", "qc"); dir.create(qc_yaml_dir, recursive = TRUE, showWarnings = FALSE)
+  qc_list <- c(list(cdm_schema = as.character(cdm_schema_active), generated = format(Sys.time(), "%Y-%m-%d")),
+               as.list(summary_df[1, , drop = FALSE]))
+  names(qc_list) <- gsub("([a-z0-9])([A-Z])", "\\1_\\2", names(qc_list)); names(qc_list) <- tolower(names(qc_list))
+  yaml::write_yaml(qc_list, file.path(qc_yaml_dir, "qc_summary.yaml"))
+  cat("Wrote ", file.path(qc_yaml_dir, "qc_summary.yaml"), " (paste into registry qc_summary)\n", sep = "")
+}
 cat("\n")
 
 # Helper to tolerate snake_case/camelCase name differences returned by
@@ -628,6 +639,12 @@ if (isTRUE(opts$run_dqd) && isTRUE(results_schema_ready)) {
         writeTableName        = "dqdashboard_results",
         writeToCsv            = FALSE,
         checkLevels           = c("TABLE", "FIELD", "CONCEPT"),
+        # DQD's default exclusions (vocabulary tables) plus COHORT / COHORT_DEFINITION:
+        # this synthetic CDM has no cohort tables in its results schema, so those checks
+        # only produce "Invalid object name ...COHORT" errors (added 2026-10-29).
+        tablesToExclude       = c("CONCEPT", "VOCABULARY", "CONCEPT_ANCESTOR", "CONCEPT_RELATIONSHIP",
+                                  "CONCEPT_CLASS", "CONCEPT_SYNONYM", "RELATIONSHIP", "DOMAIN",
+                                  "DRUG_STRENGTH", "COHORT", "COHORT_DEFINITION"),
         cdmVersion            = "5.4"
       ),
       error = function(e) {

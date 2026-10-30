@@ -6,6 +6,15 @@
 # Usage:
 #   bash workflow/04_generate_synthea_csv.sh [population] [age_range] [state]
 #
+# Environment:
+#   SYNTHEA_SEED            Integer seed passed to Synthea (-s). If unset a random seed is
+#                           drawn, and ALWAYS recorded in output/generation_params.txt, so
+#                           any dataset can be regenerated with the same population.
+#   SYNTHEA_OVERWRITE_OUTPUT=true
+#                           Delete existing output/ instead of archiving it (default: move
+#                           it to output_prev_<timestamp>/ so a previous dataset's source
+#                           CSVs are never destroyed silently).
+#
 # Defaults:
 #   population = 1000
 #   age_range  = 18-100
@@ -71,9 +80,30 @@ echo "Verified Step 3 module sync: $SYNCED_MODULE"
 # Run Synthea from its home directory
 cd "$SYNTHEA_HOME"
 
-echo "Running Synthea (population=$POPULATION, age=$AGE_RANGE, state=$STATE)..."
+# ---- Seed: always explicit, always recorded --------------------------------
+# Without -s every run is different and the registry's generation_params.seed stays
+# null, so a lost dataset can be rebuilt in shape only (this is how pad_oler_ssi v1
+# became unrecoverable). A random seed is drawn when none is given.
+SEED="${SYNTHEA_SEED:-$(( (RANDOM << 15) | RANDOM ))}"
+
+# ---- Do not clobber a previous run's CSVs -----------------------------------
+# Synthea writes into output/ and overwrites what is there. Those CSVs can be the
+# only source of a dataset whose seed was never recorded.
+if [ -d output ] && [ -n "$(ls -A output 2>/dev/null)" ]; then
+  if [ "${SYNTHEA_OVERWRITE_OUTPUT:-false}" = "true" ]; then
+    echo "SYNTHEA_OVERWRITE_OUTPUT=true: deleting existing output/"
+    rm -rf output
+  else
+    ARCHIVE="output_prev_$(date +%Y%m%d_%H%M%S)"
+    echo "Existing output/ found ($(du -sh output | cut -f1)); moving to $ARCHIVE/ (delete it when no longer needed)."
+    mv output "$ARCHIVE"
+  fi
+fi
+
+echo "Running Synthea (population=$POPULATION, age=$AGE_RANGE, state=$STATE, seed=$SEED)..."
 
 ./run_synthea \
+  -s "$SEED" \
   -p "$POPULATION" \
   -a "$AGE_RANGE" \
   --exporter.csv.export=true \
@@ -82,6 +112,20 @@ echo "Running Synthea (population=$POPULATION, age=$AGE_RANGE, state=$STATE)..."
   "$STATE"
 
 CSV_OUTPUT="$SYNTHEA_HOME/output/csv"
+# Provenance for synthetic_data/registry.yaml (generation_params).
+{
+  echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "module=$MODULE_NAME"
+  echo "module_sha256=$( (sha256sum "$SYNCED_MODULE" 2>/dev/null || shasum -a 256 "$SYNCED_MODULE") | cut -d' ' -f1)"
+  echo "population=$POPULATION"
+  echo "age_range=$AGE_RANGE"
+  echo "state=$STATE"
+  echo "seed=$SEED"
+  echo "synthea_commit=$(git -C "$SYNTHEA_HOME" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "patients_csv_rows=$(($(wc -l < "$CSV_OUTPUT/patients.csv") - 1))"
+} > "$SYNTHEA_HOME/output/generation_params.txt"
+
 echo ""
 echo "Step 4 complete: Synthea CSV data generated."
 echo "CSV output folder: $CSV_OUTPUT"
+echo "Provenance (seed etc.): $SYNTHEA_HOME/output/generation_params.txt -> copy into registry generation_params."

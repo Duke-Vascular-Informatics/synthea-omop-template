@@ -329,6 +329,50 @@ if (n_placeholders == 0L) {
 }
 
 # -----------------------------------------------------------------------------
+# Chunk 7 - State-graph integrity check (added 2026-10-29)
+# Purpose:
+# Catch module-authoring mistakes that Synthea itself accepts silently and that
+# otherwise surface only as odd counts after a multi-hour Step 4/5 run:
+#   - a transition that targets a state which does not exist,
+#   - a state no other state ever reaches (dead branch — its codes never appear),
+#   - a distributed_transition whose probabilities do not sum to 1.
+# Code path notes:
+# - Errors stop the script BEFORE the module is trusted for Step 4.
+# - Only direct, distributed, conditional and complex transitions are followed;
+#   a state using any other transition key is reported and skipped, not guessed at.
+# -----------------------------------------------------------------------------
+source("R/module_validation.R")  # validate_module_graph(): returns a character vector of problems
+graph_errors <- validate_module_graph(module$states)
+all_state_names <- names(module$states)
+if (length(graph_errors) > 0L) {
+  stop("Module state-graph check FAILED:\n  - ", paste(graph_errors, collapse = "\n  - "), call. = FALSE)
+}
+cat(sprintf("State-graph check PASSED: %d states, all transition targets exist, all reachable, all distributions sum to 1.\n",
+            length(all_state_names)))
+
+# -----------------------------------------------------------------------------
+# Chunk 7b - Vocabulary code check (optional; needs the SQL Server vocabulary)
+# Purpose:
+# CLAUDE.md Rule 1 for module codes: a SNOMED/LOINC/RxNorm code that does not
+# exist in omop_vocab ETLs to concept_id 0 with no error. scripts/module_vocab_check.R
+# looks every coded state up and reports codes with no concept or no standard
+# mapping. Skipped (not failed) when no database is reachable, so Step 3 still
+# runs offline; pass MODULE_VOCAB_CHECK=strict to make a miss fatal.
+# -----------------------------------------------------------------------------
+vocab_mode <- tolower(Sys.getenv("MODULE_VOCAB_CHECK", unset = "warn"))
+if (!vocab_mode %in% c("off", "false", "0") && file.exists("scripts/module_vocab_check.R")) {
+  vocab_status <- tryCatch(
+    system2(file.path(R.home("bin"), "Rscript"),
+            c("scripts/module_vocab_check.R", shQuote(module_path), if (vocab_mode == "strict") "--strict"),
+            stdout = "", stderr = ""),
+    error = function(e) 99L
+  )
+  if (identical(vocab_mode, "strict") && !identical(as.integer(vocab_status), 0L)) {
+    stop("Module vocabulary check failed in strict mode (exit ", vocab_status, ").", call. = FALSE)
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Chunk 8 - Diagram regeneration subprocess
 # Purpose:
 # Rebuild the HTML state-diagram artifact from the validated module JSON.

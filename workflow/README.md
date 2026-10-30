@@ -63,13 +63,31 @@ Edit `consumers.yaml`, then run Step 2 early and often.
 
 ## Step parameters
 
-**Step 5** (`05_etl_csv_to_omop.R`):
+**Step 4** (`04_generate_synthea_csv.sh [population] [age_range] [state]`):
 ```bash
-Rscript workflow/05_etl_csv_to_omop.R \
-  --csv_input_dir=/path/to/synthea/output/csv \
-  --run_name=my_study_run_001 \
-  --reset_before_etl=true
+SYNTHEA_SEED=12345 bash workflow/04_generate_synthea_csv.sh 5000 18-100 "North Carolina"
 ```
+The seed is always recorded (a random one is drawn if unset) in `external/synthea/output/generation_params.txt`
+with the module hash and population — copy it into the registry's `generation_params`. An existing `output/` is
+moved to `output_prev_<timestamp>/`, never overwritten (`SYNTHEA_OVERWRITE_OUTPUT=true` deletes it instead).
+
+**Step 5** (`05_etl_csv_to_omop.R`) takes **no command-line flags** — passing one is an error. Configure with
+environment variables:
+```bash
+SYNTHEA_CSV_DIR=/path/to/synthea/output/csv \
+SYNTHEA_SKIP_CLAIMS=true \
+  bash scripts/run_logged.sh logs/step5.log Rscript workflow/05_etl_csv_to_omop.R
+```
+- `SYNTHEA_SKIP_CLAIMS=true` stages `claims.csv` / `claims_transactions.csv` header-only. Those two files are the
+  largest (6.1 GB for 5,000 patients) and only feed the `cost` table; loading them whole needs ~1.8x their size in RAM.
+- A memory guard refuses to start if the largest CSV would not fit in available RAM; `SYNTHEA_FORCE_FULL_LOAD=true` bypasses it.
+- The target schema comes from `study_params.yaml` `cdm_schema` (the same field Step 6 reads); it is no longer set in two places.
+- `scripts/run_logged.sh` appends `[RUN_LOGGED] EXIT=<code>` to the log, labelling exit 137 as an out-of-memory kill.
+- Step 5 reloads from scratch on every run; there is no per-table resume.
+
+**Step 3** also checks the module's state graph (missing transition targets, unreachable states, distributions that
+do not sum to 1 — fatal) and, when a database is reachable, that every SNOMED/LOINC/RxNorm/CVX code resolves to a
+standard concept (`MODULE_VOCAB_CHECK=off|warn|strict`, default `warn`).
 
 **Step 6** (`06_quality_check_defined_phenotypes.R`):
 ```bash
