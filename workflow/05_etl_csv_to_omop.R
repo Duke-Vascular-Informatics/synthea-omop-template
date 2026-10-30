@@ -74,6 +74,75 @@ if (!dir.exists(csv_input_dir)) {
   csv_input_dir <- "../synthea-data/output/csv"
 }
 
+# ---------------------------------------------------------------------------
+# Step 5 takes NO command-line flags (guard added 2026-10-29).
+# README used to document --csv_input_dir / --run_name / --reset_before_etl, but
+# this script never read them: a run with --csv_input_dir=<other dir> silently
+# loaded the default directory instead. Failing on any flag makes that mistake
+# loud. Configure with environment variables:
+#   SYNTHEA_CSV_DIR           CSV directory (default <synthea>/output/csv)
+#   SYNTHEA_SKIP_CLAIMS=true  load claims.csv / claims_transactions.csv HEADER-ONLY
+#   SYNTHEA_FORCE_FULL_LOAD=true  bypass the memory guard below
+#   ALLOW_PINNED_CDM_SCHEMA=1 see the registry interlock below
+# ---------------------------------------------------------------------------
+.cli_args <- commandArgs(trailingOnly = TRUE)
+if (length(.cli_args) > 0L) {
+  stop(
+    "Step 5 takes no command-line flags, but got: ", paste(.cli_args, collapse = " "), "\n",
+    "Set environment variables instead, e.g.\n",
+    "  SYNTHEA_CSV_DIR=/path/to/csv SYNTHEA_SKIP_CLAIMS=true Rscript workflow/05_etl_csv_to_omop.R",
+    call. = FALSE
+  )
+}
+
+# ---------------------------------------------------------------------------
+# Claims: skip option and memory guard (added 2026-10-29).
+# claims_transactions.csv is by far the largest Synthea file (6.1 GB / 13.4M rows
+# for a 5,000-person population) and is only used to build the `cost` table. Both
+# the staging pre-flight and the loader read each CSV whole, so peak memory is
+# ~1.8x the file (measured: 6.1 GB file -> ~11 GB resident). Twice a 15.8 GB
+# container OOM-killed (exit 137) this step silently on that file. Two defences:
+#   SYNTHEA_SKIP_CLAIMS=true  stage claims files with a header row only (the
+#                             staging tables still exist, `cost` is empty)
+#   memory guard              refuse to start when 2.5x the largest CSV exceeds
+#                             MemAvailable, with the options spelled out
+# ---------------------------------------------------------------------------
+skip_claims <- tolower(Sys.getenv("SYNTHEA_SKIP_CLAIMS", unset = "false")) %in% c("1", "true", "yes")
+if (skip_claims && dir.exists(csv_input_dir)) {
+  stage_dir <- file.path(dirname(normalizePath(csv_input_dir)), "csv_etl_noclaims")
+  unlink(stage_dir, recursive = TRUE); dir.create(stage_dir)
+  for (f in list.files(csv_input_dir, pattern = "\\.csv$")) {
+    src <- normalizePath(file.path(csv_input_dir, f))
+    if (f %in% c("claims.csv", "claims_transactions.csv")) {
+      writeLines(readLines(src, n = 1L), file.path(stage_dir, f))        # header only
+    } else if (!isTRUE(file.symlink(src, file.path(stage_dir, f)))) {
+      file.copy(src, file.path(stage_dir, f))                          # no symlinks (e.g. Windows)
+    }
+  }
+  message("SYNTHEA_SKIP_CLAIMS=true: claims files staged header-only in ", stage_dir,
+          " (the `cost` table will be empty).")
+  csv_input_dir <- stage_dir
+}
+.mem_available_gb <- function() {
+  f <- "/proc/meminfo"
+  if (!file.exists(f)) return(NA_real_)                                 # non-Linux: no guard
+  l <- grep("^MemAvailable:", readLines(f, warn = FALSE), value = TRUE)
+  if (length(l) == 0L) NA_real_ else as.numeric(gsub("[^0-9]", "", l)) / 1024 / 1024
+}
+if (dir.exists(csv_input_dir) && !tolower(Sys.getenv("SYNTHEA_FORCE_FULL_LOAD", "false")) %in% c("1", "true", "yes")) {
+  .sizes <- file.size(list.files(csv_input_dir, pattern = "\\.csv$", full.names = TRUE))
+  .need  <- 2.5 * max(.sizes, 0, na.rm = TRUE) / 1e9
+  .have  <- .mem_available_gb()
+  if (!is.na(.have) && .need > .have) {
+    stop(sprintf(paste0(
+      "Memory guard: the largest CSV in %s is %.1f GB, so loading it needs about %.1f GB, ",
+      "but only %.1f GB is available. Step 5 would be OOM-killed (exit 137) partway through.\n",
+      "Options: (1) SYNTHEA_SKIP_CLAIMS=true (claims only feed the empty-able `cost` table), ",
+      "(2) give the container more RAM, (3) SYNTHEA_FORCE_FULL_LOAD=true to try anyway."),
+      csv_input_dir, max(.sizes) / 1e9, .need, .have), call. = FALSE)
+  }
+}
+
 # ETL run identifier that appears in logs/output metadata.
 # Derived from cfg$study_name after config loads; placeholder set here.
 run_name <- NULL  # resolved after cfg loads below
@@ -134,8 +203,9 @@ vocab_delimiter <- "\t"
 
 # Fresh CDM schema used only for ETLSyntheaBuilder-driven table lifecycle.
 # Derived from cfg$study_name after config loads: omop_synth_<study_name>.
-# Set to a non-NULL string here only to override the derived value.
-target_cdm_schema_base <- NULL  # NULL = derive from cfg$study_name (recommended)
+# NULL (recommended) = use study_params.yaml cdm_schema, else omop_synth_<study_name>.
+# A non-NULL value must equal study_params.yaml cdm_schema or Step 5 stops.
+target_cdm_schema_base <- NULL
 target_cdm_schema <- NA_character_  # resolved after cfg loads below
 
 # Fallback vocabulary source schema if CSV reload is disabled.
@@ -177,8 +247,18 @@ cfg <- get_validation_config()
 
 # Derive target CDM schema from study name unless overridden above.
 # Produces e.g. "omop_synth_pad_oler_macce_val" for study_name = "pad-oler-macce-val".
+# ONE source of truth for the schema name (changed 2026-10-29). Step 6 reads
+# cfg$cdm_schema from study_params.yaml, so Step 5 now derives its target from the
+# same field. Setting target_cdm_schema_base above to something different from a
+# non-empty cfg$cdm_schema is a hard error here, not a silent split where Step 5
+# loads one schema and Step 6 QCs an empty one.
+cfg_cdm_schema <- if (!is.null(cfg$cdm_schema) && nzchar(cfg$cdm_schema)) cfg$cdm_schema else NA_character_
 if (is.null(target_cdm_schema_base)) {
-  target_cdm_schema_base <- paste0("omop_synth_", cfg$study_name)
+  target_cdm_schema_base <- if (!is.na(cfg_cdm_schema)) cfg_cdm_schema else paste0("omop_synth_", cfg$study_name)
+} else if (!is.na(cfg_cdm_schema) && !identical(target_cdm_schema_base, cfg_cdm_schema)) {
+  stop("target_cdm_schema_base ('", target_cdm_schema_base, "') differs from study_params.yaml cdm_schema ('",
+       cfg_cdm_schema, "'). Step 5 and Step 6 would use different schemas. Set target_cdm_schema_base <- NULL ",
+       "and change only study_params.yaml.", call. = FALSE)
 }
 target_cdm_schema <- target_cdm_schema_base
 
