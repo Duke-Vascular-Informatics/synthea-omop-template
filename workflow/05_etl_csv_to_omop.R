@@ -83,6 +83,8 @@ if (!dir.exists(csv_input_dir)) {
 #   SYNTHEA_CSV_DIR           CSV directory (default <synthea>/output/csv)
 #   SYNTHEA_SKIP_CLAIMS=true  load claims.csv / claims_transactions.csv HEADER-ONLY
 #   SYNTHEA_FORCE_FULL_LOAD=true  bypass the memory guard below
+#   SYNTHEA_RESUME=true       continue an interrupted run: keep the staging tables and
+#                             skip CSVs already loaded (per-table checkpoints)
 #   ALLOW_PINNED_CDM_SCHEMA=1 see the registry interlock below
 # ---------------------------------------------------------------------------
 .cli_args <- commandArgs(trailingOnly = TRUE)
@@ -150,6 +152,9 @@ run_name <- NULL  # resolved after cfg loads below
 # TRUE  = drop/recreate staging/event artifacts before load.
 # FALSE = incremental/reuse behavior where possible.
 reset_before_etl <- TRUE
+# Resume an interrupted staging load instead of starting over (see the runner's
+# `resume` parameter).  Off by default: a normal run is a clean rebuild.
+resume_etl <- tolower(Sys.getenv("SYNTHEA_RESUME", unset = "false")) %in% c("1", "true", "yes")
 
 # TRUE  = attempt SQL Server bulk insert path first.
 # FALSE = force non-bulk row load path.
@@ -531,6 +536,7 @@ if (reload_vocab_from_csv) {
 }
 message("Vocabulary source schema (fallback): ", vocabulary_source_schema)
 message("Reset before ETL       : ", ifelse(reset_before_etl, "true", "false"))
+message("Resume interrupted run : ", ifelse(resume_etl, "true", "false"))
 message("Synthea bulk load      : ", ifelse(synthea_bulk_load, "true", "false"))
 message("CSV input directory    : ", normalizePath(csv_input_dir, winslash = "/", mustWork = FALSE))
 message("Run name               : ", run_name)
@@ -579,6 +585,7 @@ run_synthea_full_csv_builder_etl(
   vocab_file_loc           = vocab_file_loc,
   vocab_delimiter          = vocab_delimiter,
   reset_before_etl         = reset_before_etl,
+  resume                   = resume_etl,
   synthea_bulk_load        = synthea_bulk_load,
   use_shared_vocab_schema  = use_shared_vocab_schema,
   shared_vocab_schema      = shared_vocab_schema,
