@@ -277,6 +277,11 @@ On Windows run
 `powershell -ExecutionPolicy Bypass -File workflow/04_generate_synthea_csv.ps1`
 for the first command. Never run `.sh`/`.ps1` files with `Rscript`.
 
+Step 4 records its random seed (or `SYNTHEA_SEED`) in `external/synthea/output/generation_params.txt` and moves any
+existing `output/` aside instead of overwriting it (bash script only). Step 5 takes no command-line flags; it
+reads environment variables. If it would run out of memory it stops with a message; `SYNTHEA_SKIP_CLAIMS=true` loads the
+large claims files header-only (the `cost` table stays empty). Details: `workflow/README.md`, "Step parameters".
+
 The ETL links to the shared `omop_vocab` schema rather than reloading it. The
 generic QC checks the dataset in general: people, visits, procedures and conditions,
 the share of conditions mapped to standard concepts, the era tables and age
