@@ -11,7 +11,7 @@ Describe what changed and why.
 
 ## Validation
 
-- [ ] I ran: `Rscript scripts/validate_docs_commands.R`
+- [ ] I ran: `Rscript scripts/maintainer/validate_docs_commands.R`
 - [ ] I ran relevant tests or noted why they were skipped.
 
 ## Notes

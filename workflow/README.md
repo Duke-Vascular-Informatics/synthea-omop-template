@@ -83,7 +83,15 @@ SYNTHEA_SKIP_CLAIMS=true \
 - A memory guard refuses to start if the largest CSV would not fit in available RAM; `SYNTHEA_FORCE_FULL_LOAD=true` bypasses it.
 - The target schema comes from `study_params.yaml` `cdm_schema` (the same field Step 6 reads); it is no longer set in two places.
 - `scripts/run_logged.sh` appends `[RUN_LOGGED] EXIT=<code>` to the log, labelling exit 137 as an out-of-memory kill.
-- Step 5 reloads from scratch on every run; there is no per-table resume.
+- **Resume an interrupted run:** the staging load is checkpointed per CSV (`<synthea_schema>.etl_load_checkpoint`: file
+  size+mtime, loaded row count). After a crash or OOM kill, rerun with `SYNTHEA_RESUME=true`:
+  ```bash
+  SYNTHEA_RESUME=true SYNTHEA_SKIP_CLAIMS=true bash scripts/run_logged.sh logs/step5.log Rscript workflow/05_etl_csv_to_omop.R
+  ```
+  Staging tables are kept, CSVs whose checkpoint is still valid are skipped, and a table that was mid-load is truncated and
+  reloaded (no duplicate rows). A CSV whose size/mtime changed, or whose staging row count no longer matches, is reloaded.
+  Without `SYNTHEA_RESUME` a run is a clean rebuild and discards old checkpoints. Only the staging load is resumable; the later
+  ETL phases (event tables, eras) always run in full. With no checkpoint table present, `SYNTHEA_RESUME` falls back to a fresh run.
 
 **Step 3** also checks the module's state graph (missing transition targets, unreachable states, distributions that
 do not sum to 1 — fatal) and, when a database is reachable, that every SNOMED/LOINC/RxNorm/CVX code resolves to a

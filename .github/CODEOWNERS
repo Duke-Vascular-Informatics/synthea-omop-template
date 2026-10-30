@@ -8,7 +8,7 @@
 /docs/COMMANDS.md @Duke-Vascular-Informatics/reviewers
 /docs/workflow_steps.yaml @Duke-Vascular-Informatics/reviewers
 /docs/TOPIC_OWNERSHIP.csv @Duke-Vascular-Informatics/reviewers
-/scripts/validate_docs_commands.R @Duke-Vascular-Informatics/reviewers
+/scripts/maintainer/validate_docs_commands.R @Duke-Vascular-Informatics/reviewers
 /scripts/generate_checklist_step_index.R @Duke-Vascular-Informatics/reviewers
 /.githooks/pre-commit @Duke-Vascular-Informatics/reviewers
 /.github/workflows/ci.yml @Duke-Vascular-Informatics/reviewers

@@ -68,8 +68,15 @@ source("R/connection.R")
 #   vocab_delimiter        Column delimiter used in the vocabulary CSVs.
 #                          OHDSI distributions are tab-delimited ("\t").
 #   reset_before_etl       Drop and recreate all Synthea staging tables and OMOP
-#                          event tables before loading.  Set FALSE only for
-#                          incremental / resumption runs.
+#                          event tables before loading.
+#   resume                 Continue an interrupted run: keep the staging tables
+#                          and skip every CSV already recorded in
+#                          <synthea_schema>.etl_load_checkpoint (same size, same
+#                          mtime, row count still matches).  A table that was
+#                          mid-load when the run died is truncated and reloaded.
+#                          Only the staging LOAD is resumable; the later ETL
+#                          phases always run in full.  Falls back to a fresh run
+#                          (with a message) when no checkpoint table exists.
 #   synthea_bulk_load      Attempt high-speed JDBC bulk insert first.  Falls
 #                          back automatically to row-by-row mode on failure.
 #   use_shared_vocab_maps  Build source_to_standard_vocab_map and
@@ -95,6 +102,7 @@ run_synthea_full_csv_builder_etl <- function(
   vocab_file_loc = NULL,
   vocab_delimiter = "\t",
     reset_before_etl = TRUE,
+    resume = FALSE,
     synthea_bulk_load = TRUE,
     use_shared_vocab_schema = FALSE,
     shared_vocab_schema = "omop_vocab",
@@ -1924,7 +1932,25 @@ run_synthea_full_csv_builder_etl <- function(
   #   b) ETLSyntheaBuilder::DropSyntheaTables — drops synthea staging rows
   #   c) drop_rollup_helper_tables + clear_schema_tables — defensive fallback
   #      for version mismatches or partial prior runs
-  if (isTRUE(reset_before_etl)) {
+  # ---- Resume mode (added 2026-10-30) -------------------------------------
+  # resume_active is TRUE only when the caller asked to resume AND a checkpoint
+  # table from a previous run exists.  When active, the staging tables are kept
+  # as they are (no drop, no create) and the loader skips checkpointed CSVs.
+  checkpoint_table <- paste0(synthea_schema, ".etl_load_checkpoint")
+  resume_active <- FALSE
+  if (isTRUE(resume)) {
+    conn_resume <- connect_with_retry(connection_details)
+    resume_active <- table_exists(conn_resume, synthea_schema, "etl_load_checkpoint")
+    DatabaseConnector::disconnect(conn_resume)
+    if (resume_active) {
+      message("RESUME: found ", checkpoint_table, "; staging tables are kept and checkpointed CSVs will be skipped.")
+    } else {
+      message("RESUME requested but no checkpoint table exists in ", synthea_schema,
+              "; running a normal fresh load.")
+    }
+  }
+
+  if (isTRUE(reset_before_etl) && !resume_active) {
     message("Reset requested: dropping event + synthea staging tables before reload ...")
     suppressWarnings(try(run_step_with_retry("ETLSyntheaBuilder::DropEventTables", ETLSyntheaBuilder::DropEventTables(
       connectionDetails = connection_details,
@@ -1940,6 +1966,8 @@ run_synthea_full_csv_builder_etl <- function(
     conn_reset <- connect_with_retry(connection_details)
     drop_rollup_helper_tables(conn_reset, config$cdm_schema)
     clear_schema_tables(conn_reset, synthea_schema)
+    # A fresh reset invalidates any checkpoint from an earlier run.
+    execute_sql_with_retry(conn_reset, paste0("IF OBJECT_ID('", checkpoint_table, "', 'U') IS NOT NULL DROP TABLE ", checkpoint_table, ";"))
     DatabaseConnector::disconnect(conn_reset)
 
     # Some reset paths can remove non-vocabulary CDM tables; recreate if needed.
@@ -1955,11 +1983,13 @@ run_synthea_full_csv_builder_etl <- function(
   # These staging tables mirror the Synthea CSV column layout precisely — they
   # are the insertion target for the raw Synthea CSV data before the OMOP
   # mapping transforms are applied.
-  run_step_with_retry("ETLSyntheaBuilder::CreateSyntheaTables", ETLSyntheaBuilder::CreateSyntheaTables(
-    connectionDetails = connection_details,
-    syntheaSchema = synthea_schema,
-    syntheaVersion = synthea_version
-  ))
+  if (!resume_active) {
+    run_step_with_retry("ETLSyntheaBuilder::CreateSyntheaTables", ETLSyntheaBuilder::CreateSyntheaTables(
+      connectionDetails = connection_details,
+      syntheaSchema = synthea_schema,
+      syntheaVersion = synthea_version
+    ))
+  }
   progress$tick("Synthea staging tables created")
 
   # ---------------------------------------------------------------------------
@@ -2002,7 +2032,7 @@ run_synthea_full_csv_builder_etl <- function(
   # attempted.  This runs once and prevents the reactive retry loop from having
   # to discover problems one CSV/column at a time.
   # ---------------------------------------------------------------------------
-  align_synthea_staging_schema_to_csvs <- function() {
+  align_synthea_staging_schema_to_csvs <- function(only_tables = NULL) {
     log_msg("Pre-flight: aligning synthea staging schema to CSV column widths and types ...")
 
     # Fetch all staging column metadata in one query.
@@ -2035,6 +2065,9 @@ run_synthea_full_csv_builder_etl <- function(
 
     # Group by table.
     staging_tables <- unique(as.character(schema_df$table_name))
+    # On resume, only CSVs that still have to be loaded are scanned (each scan reads
+    # the whole file, which is what made claims_transactions.csv expensive).
+    if (!is.null(only_tables)) staging_tables <- staging_tables[tolower(staging_tables) %in% tolower(only_tables)]
 
     for (tbl in staging_tables) {
       csv_path <- file.path(csv_input_dir, paste0(tolower(tbl), ".csv"))
@@ -2113,8 +2146,56 @@ run_synthea_full_csv_builder_etl <- function(
     invisible(NULL)
   }
 
+  # ---------------------------------------------------------------------------
+  # 10c. Load checkpoints (added 2026-10-30)
+  # ---------------------------------------------------------------------------
+  # Each CSV is loaded on its own and, once ALL its rows are in, recorded in
+  # <synthea_schema>.etl_load_checkpoint with the file's size+mtime signature and
+  # the staging row count.  If the run dies (OOM kill, lost connection, ...) a
+  # rerun with resume = TRUE skips every CSV whose checkpoint is still valid and
+  # reloads only the rest.  A checkpoint is valid only if (a) the CSV signature
+  # is unchanged and (b) the staging table still holds exactly the recorded rows,
+  # so a regenerated CSV or a hand-edited table is reloaded, never trusted.
+  csv_files_sorted <- sort(list.files(csv_input_dir, pattern = "\\.csv$", full.names = TRUE))
+  csv_table_name   <- function(f) tolower(sub("\\.csv$", "", basename(f)))
+  csv_signature    <- function(f) paste0(file.size(f), "|", format(as.numeric(file.mtime(f)), nsmall = 3))
+
+  conn_ckpt <- connect_with_retry(connection_details)
+  execute_sql_with_retry(conn_ckpt, paste0(
+    "IF OBJECT_ID('", checkpoint_table, "', 'U') IS NULL CREATE TABLE ", checkpoint_table,
+    " (table_name VARCHAR(128) NOT NULL PRIMARY KEY, csv_signature VARCHAR(64) NOT NULL,",
+    " loaded_rows BIGINT NOT NULL, loaded_at DATETIME2 NOT NULL);"))
+
+  staging_row_count <- function(conn, tbl) {
+    r <- tryCatch(query_sql_with_retry(conn, paste0("SELECT COUNT_BIG(*) AS n FROM ", synthea_schema, ".", tbl, ";")),
+                  error = function(e) NULL)
+    if (is.null(r)) NA_real_ else as.numeric(r[[1]][1])
+  }
+  checkpoint_is_current <- function(conn, f) {
+    tbl <- csv_table_name(f)
+    row <- query_sql_with_retry(conn, paste0(
+      "SELECT csv_signature, loaded_rows FROM ", checkpoint_table, " WHERE table_name = '", tbl, "';"))
+    if (nrow(row) == 0L) return(FALSE)
+    names(row) <- tolower(names(row))
+    identical(as.character(row$csv_signature[1]), csv_signature(f)) &&
+      isTRUE(as.numeric(row$loaded_rows[1]) == staging_row_count(conn, tbl))
+  }
+  pending_csvs <- csv_files_sorted
+  if (resume_active) {
+    keep <- vapply(csv_files_sorted, function(f) !checkpoint_is_current(conn_ckpt, f), logical(1))
+    done_n <- sum(!keep)
+    pending_csvs <- csv_files_sorted[keep]
+    message(sprintf("RESUME: %d of %d CSVs already loaded and unchanged (skipped); %d to load: %s",
+                    done_n, length(csv_files_sorted), length(pending_csvs),
+                    if (length(pending_csvs)) paste(vapply(pending_csvs, csv_table_name, ""), collapse = ", ") else "none"))
+  }
+  DatabaseConnector::disconnect(conn_ckpt)
+
   # Run the pre-flight alignment immediately after staging tables are created.
-  align_synthea_staging_schema_to_csvs()
+  # On resume it only scans the CSVs still to be loaded.
+  align_synthea_staging_schema_to_csvs(
+    only_tables = if (resume_active) vapply(pending_csvs, csv_table_name, "") else NULL
+  )
 
   # ---------------------------------------------------------------------------
   # 11. Reactive load-error detection helpers
@@ -2314,11 +2395,15 @@ run_synthea_full_csv_builder_etl <- function(
     message("Loading Synthea staging with bulkLoad=FALSE")
   }
 
+  # .load_loc is the directory LoadSyntheaTables reads.  The checkpointed loop
+  # below points it at a one-file staging directory per CSV; it starts as the
+  # full CSV directory so any caller outside that loop behaves as before.
+  .load_loc <- csv_input_dir
   load_synthea_tables <- function(use_bulk_load) {
     run_step_with_retry("ETLSyntheaBuilder::LoadSyntheaTables", ETLSyntheaBuilder::LoadSyntheaTables(
       connectionDetails = connection_details,
       syntheaSchema = synthea_schema,
-      syntheaFileLoc = csv_input_dir,
+      syntheaFileLoc = .load_loc,
       bulkLoad = use_bulk_load
     ))
   }
@@ -2377,24 +2462,50 @@ run_synthea_full_csv_builder_etl <- function(
     }
   }
 
-  if (isTRUE(synthea_bulk_load)) {
-    loaded_with_bulk <- tryCatch({
-      load_synthea_tables(TRUE)
-      TRUE
-    }, error = function(e) {
-      warning(
-        "Bulk Synthea staging load failed; retrying with bulkLoad=FALSE. Error: ",
-        conditionMessage(e)
-      )
-      FALSE
-    })
-
-    if (!isTRUE(loaded_with_bulk)) {
+  # Load ONE csv: bulk first (when enabled), then the mitigating row-by-row path.
+  load_one_csv_staging <- function() {
+    if (isTRUE(synthea_bulk_load)) {
+      loaded_with_bulk <- tryCatch({
+        load_synthea_tables(TRUE)
+        TRUE
+      }, error = function(e) {
+        warning(
+          "Bulk Synthea staging load failed; retrying with bulkLoad=FALSE. Error: ",
+          conditionMessage(e)
+        )
+        FALSE
+      })
+      if (!isTRUE(loaded_with_bulk)) load_synthea_tables_with_mitigations(FALSE)
+    } else {
       load_synthea_tables_with_mitigations(FALSE)
     }
-  } else {
-    load_synthea_tables_with_mitigations(FALSE)
   }
+
+  stage_root <- file.path(tempdir(), "synthea_stage_one")
+  conn_load <- connect_with_retry(connection_details)
+  for (f in pending_csvs) {
+    tbl <- csv_table_name(f)
+    message(sprintf("[load %d/%d] %s (%.2f GB)", match(f, pending_csvs), length(pending_csvs), tbl,
+                    file.size(f) / 1e9))
+    # A table half-loaded by a killed run has rows but no checkpoint: start it clean.
+    execute_sql_with_retry(conn_load, paste0("IF OBJECT_ID('", synthea_schema, ".", tbl,
+                                             "', 'U') IS NOT NULL TRUNCATE TABLE ", synthea_schema, ".", tbl, ";"))
+    execute_sql_with_retry(conn_load, paste0("DELETE FROM ", checkpoint_table, " WHERE table_name = '", tbl, "';"))
+    unlink(stage_root, recursive = TRUE); dir.create(stage_root, recursive = TRUE)
+    if (!isTRUE(file.symlink(normalizePath(f), file.path(stage_root, basename(f))))) {
+      file.copy(f, file.path(stage_root, basename(f)))     # no symlinks (e.g. Windows)
+    }
+    .load_loc <- stage_root
+    load_one_csv_staging()
+    n_loaded <- staging_row_count(conn_load, tbl)
+    execute_sql_with_retry(conn_load, paste0("INSERT INTO ", checkpoint_table,
+      " (table_name, csv_signature, loaded_rows, loaded_at) VALUES ('", tbl, "', '", csv_signature(f), "', ",
+      format(n_loaded, scientific = FALSE), ", SYSDATETIME());"))
+    message(sprintf("[checkpoint] %s: %s rows", tbl, format(n_loaded, big.mark = ",")))
+  }
+  unlink(stage_root, recursive = TRUE)
+  DatabaseConnector::disconnect(conn_load)
+  .load_loc <- csv_input_dir
   progress$tick("Synthea CSV staging loaded")
 
   # ---------------------------------------------------------------------------
